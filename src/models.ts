@@ -34,6 +34,7 @@ export interface ModelInfo {
   punctuates: boolean;
 }
 
+/** Lightest first, as the menu lists them. */
 export const MODELS: ModelInfo[] = [
   {
     id: "seda",
@@ -52,22 +53,6 @@ export const MODELS: ModelInfo[] = [
     punctuates: false,
   },
   {
-    id: "whisper-turbo",
-    engine: "whisper",
-    name: "Whisper Turbo",
-    tier: "Yüksek doğruluk",
-    note: "En az hata, noktalama ve rakamlarla yazar. Büyük indirme, ekran kartı gerekir; canlı kayıtta kullanılmaz.",
-    size: "1,5 GB",
-    spec: "whisper-large-v3-turbo (fp16 encoder, q4f16 decoder)",
-    dir: "whisper-large-v3-turbo",
-    files: ["encoder_model_fp16.onnx", "decoder_model_merged_q4f16.onnx", "vocab.json", "silero_vad.onnx"],
-    link: "https://huggingface.co/openai/whisper-large-v3-turbo",
-    live: false,
-    gpuOnly: true,
-    needsF16: true,
-    punctuates: true,
-  },
-  {
     id: "whisper-turbo-q4",
     engine: "whisper",
     name: "Whisper Turbo Hafif",
@@ -77,6 +62,22 @@ export const MODELS: ModelInfo[] = [
     spec: "whisper-large-v3-turbo (q4f16 encoder, q4f16 decoder)",
     dir: "whisper-large-v3-turbo",
     files: ["encoder_model_q4f16.onnx", "decoder_model_merged_q4f16.onnx", "vocab.json", "silero_vad.onnx"],
+    link: "https://huggingface.co/openai/whisper-large-v3-turbo",
+    live: false,
+    gpuOnly: true,
+    needsF16: true,
+    punctuates: true,
+  },
+  {
+    id: "whisper-turbo",
+    engine: "whisper",
+    name: "Whisper Turbo",
+    tier: "Yüksek doğruluk",
+    note: "En az hata, noktalama ve rakamlarla yazar. Büyük indirme, ekran kartı gerekir; canlı kayıtta kullanılmaz.",
+    size: "1,5 GB",
+    spec: "whisper-large-v3-turbo (fp16 encoder, q4f16 decoder)",
+    dir: "whisper-large-v3-turbo",
+    files: ["encoder_model_fp16.onnx", "decoder_model_merged_q4f16.onnx", "vocab.json", "silero_vad.onnx"],
     link: "https://huggingface.co/openai/whisper-large-v3-turbo",
     live: false,
     gpuOnly: true,

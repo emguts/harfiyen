@@ -490,6 +490,11 @@ export function App() {
   const micBlocked = chosen.live
     ? null
     : `Canlı kayıt ${chosen.name} ile yapılamaz; mikrofon için üst çubuktan ${modelInfo(DEFAULT_MODEL).name}'yı seç.`;
+  // A finished transcript made with another model than the one chosen now.
+  const otherModel =
+    job && job.status !== "running" && job.file && job.model !== model
+      ? modelInfo(job.model)
+      : null;
   const goLiveRef = useRef<() => Promise<void>>(async () => {});
   const goLive = async () => {
     setNotice(null);
@@ -623,6 +628,20 @@ export function App() {
               </IconButton>
             )}
           </PaneHead>
+          {otherModel && (
+            <div className="flex flex-none items-center gap-2.5 border-b border-line-soft bg-cini-wash px-3.5 py-2 text-[12px] text-fg-2">
+              <span className="min-w-0 flex-1">
+                Bu döküm {otherModel.name} ile yapıldı.
+              </span>
+              <Button
+                variant="primary"
+                className="flex-none"
+                onClick={() => job?.file && openFile(job.file)}
+              >
+                {chosen.name} ile yeniden dök
+              </Button>
+            </div>
+          )}
           <PaneBody>
             {job ? (
               <Transcript
