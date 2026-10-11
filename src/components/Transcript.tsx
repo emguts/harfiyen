@@ -3,6 +3,7 @@ import type { Word } from "../engine";
 import { buildCues, READING_RULES, type Cue } from "../lib/cues";
 import { clock } from "../lib/format";
 import { IconEdit, IconTrash } from "./icons";
+import { EmptyNote, IconButton } from "./ui";
 
 interface Props {
   words: Word[];
@@ -48,7 +49,7 @@ function CueEditor({ initial, onDone }: { initial: string; onDone: (text: string
   return (
     <textarea
       ref={ref}
-      className="cue__editor"
+      className="-my-[3px] block w-full resize-none overflow-hidden rounded-ui-sm border border-cini bg-bg px-1.5 py-0.5 text-[15px] leading-[1.6] font-[560] text-fg outline-none [font-family:inherit]"
       value={value}
       spellCheck
       lang="tr"
@@ -90,18 +91,37 @@ const CueRow = memo(function CueRow({
     if (value !== null && value.trim() !== text) onEdit?.(cue.first, cue.words.length, value);
   };
   return (
-    <li className={`cue${active >= 0 ? " cue--active" : ""}${editing ? " cue--editing" : ""}`} data-start={cue.start}>
-      <button className="tc" onClick={() => onSeek(cue.start)} aria-label={`${clock(cue.start)} konumuna git`}>
+    <li
+      className={`group/cue relative grid scroll-m-10 grid-cols-[52px_minmax(0,1fr)] items-baseline border-l-2 py-1.5 pr-3.5 pl-0 transition-[background,border-color] duration-150 ease-[ease] ${
+        active >= 0 ? "border-cini bg-linear-to-r from-cini-wash to-transparent to-75%" : "border-transparent"
+      }`}
+      data-start={cue.start}
+    >
+      <button
+        className={`justify-self-start border-0 bg-transparent py-0 pr-0 pl-3 text-[11px] font-medium tabular-nums transition-colors duration-150 ease-[ease] [font-feature-settings:'tnum'_1] hover:text-wave-played ${
+          active >= 0 ? "text-wave-played" : "text-fg-3"
+        }`}
+        onClick={() => onSeek(cue.start)}
+        aria-label={`${clock(cue.start)} konumuna git`}
+      >
         {clock(cue.start)}
       </button>
       {editing ? (
         <CueEditor initial={text} onDone={finish} />
       ) : (
-        <p className="cue__text" onDoubleClick={() => onEdit && setEditing(true)}>
+        <p
+          className="m-0 font-[family-name:var(--read)] text-[14.5px] leading-[1.65] font-[480] tracking-[-0.008em]"
+          onDoubleClick={() => onEdit && setEditing(true)}>
           {cue.words.map((w, i) => (
             <span key={i}>
               <span
-                className={`w${i === active ? " w--now" : ""}${i >= tentativeFrom ? " w--live" : ""}`}
+                className={`-mx-px inline-block rounded-[4px] px-[3px] py-px transition-[background,color] duration-150 ease-[ease] hover:bg-raised motion-reduce:transition-none ${
+                  i === active
+                    ? "bg-cini font-[550] text-white shadow-[0_1px_4px_rgba(71,109,230,0.4)]"
+                    : i >= tentativeFrom
+                      ? "text-firuze"
+                      : ""
+                }`}
                 onClick={() => onSeek(w.start)}
               >
                 {w.text}
@@ -111,13 +131,13 @@ const CueRow = memo(function CueRow({
         </p>
       )}
       {onEdit && !editing && (
-        <span className="cue__tools">
-          <button className="cue__tool" onClick={() => setEditing(true)} title="Düzenle (çift tıkla)" aria-label="Satırı düzenle">
+        <span className="absolute top-[3px] right-1.5 hidden gap-0.5 rounded-ui bg-raised p-0.5 group-hover/cue:flex focus-within:flex">
+          <IconButton onClick={() => setEditing(true)} title="Düzenle (çift tıkla)" aria-label="Satırı düzenle">
             <IconEdit />
-          </button>
-          <button className="cue__tool" onClick={() => onEdit(cue.first, cue.words.length, "")} title="Satırı sil" aria-label="Satırı sil">
+          </IconButton>
+          <IconButton onClick={() => onEdit(cue.first, cue.words.length, "")} title="Satırı sil" aria-label="Satırı sil">
             <IconTrash />
-          </button>
+          </IconButton>
         </span>
       )}
     </li>
@@ -151,7 +171,7 @@ export function Transcript({ words, tentative, running, waiting, time, playing, 
   // The list scrolls inside its panel (the nearest scrollable ancestor).
   const nearEnd = useRef(true);
   useEffect(() => {
-    const el = list.current?.closest(".scroll");
+    const el = list.current?.closest("[data-scroll]");
     if (!el) return;
     const onScroll = () => {
       nearEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
@@ -174,18 +194,18 @@ export function Transcript({ words, tentative, running, waiting, time, playing, 
 
   if (!all.length) {
     return (
-      <p className="empty-note" aria-live="polite">
+      <EmptyNote aria-live="polite">
         {waiting
           ? "Model hazırlanıyor, bitince yazıya dökme başlayacak."
           : running
             ? "Konuşma bekleniyor…"
             : "Bu dosyada konuşma bulunamadı."}
-      </p>
+      </EmptyNote>
     );
   }
 
   return (
-    <ol className="cues" ref={list}>
+    <ol className="m-0 list-none p-0 pb-6" ref={list}>
       {cues.map((c) => {
         const end = c.first + c.words.length;
         return (

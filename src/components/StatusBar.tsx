@@ -1,36 +1,47 @@
 import { clock, duration as fmtDuration, megabytes } from "../lib/format";
 import type { BurnState } from "../lib/useBurner";
 import type { EngineState, Job, PunctState } from "../lib/useTranscriber";
+import { Meter, RecDot } from "./Indicators";
+
+const ITEM =
+  "inline-flex min-w-0 items-center gap-[7px] overflow-hidden text-ellipsis tabular-nums [font-feature-settings:'tnum'_1]";
+const ERROR = `${ITEM} text-mercan`;
+const DIM = "text-fg-3";
 
 function EngineItem({ engine }: { engine: EngineState }) {
   switch (engine.phase) {
     case "idle":
-      return <span className="sb-item">Model ilk dosyada indirilecek</span>;
+      return <span className={ITEM}>Model ilk dosyada indirilecek</span>;
     case "downloading": {
       const pct = engine.total ? engine.loaded / engine.total : 0;
       return (
-        <span className="sb-item" role="status">
+        <span className={ITEM} role="status">
           {engine.fromCache ? "Model önbellekten açılıyor" : `Model indiriliyor ${megabytes(engine.loaded)} / ${megabytes(engine.total)} MB`}
-          <span className="meter" aria-hidden>
-            <span style={{ transform: `scaleX(${pct})` }} />
-          </span>
+          <Meter value={pct} />
         </span>
       );
     }
     case "compiling":
-      return <span className="sb-item">Model hazırlanıyor</span>;
+      return <span className={ITEM}>Model hazırlanıyor</span>;
     case "ready":
       return (
-        <span className="sb-item" title={engine.gpu ?? engine.fallbackReason ?? undefined}>
-          <span className={`dot${engine.provider === "webgpu" ? "" : " dot--cpu"}`} aria-hidden />
+        <span className={ITEM} title={engine.gpu ?? engine.fallbackReason ?? undefined}>
+          <span
+            className={`size-[7px] flex-none rounded-full ${
+              engine.provider === "webgpu"
+                ? "bg-cini shadow-[0_0_6px_rgba(71,109,230,0.6)]"
+                : "bg-firuze shadow-[0_0_6px_rgba(54,194,180,0.6)]"
+            }`}
+            aria-hidden
+          />
           {engine.provider === "webgpu" ? "WebGPU" : "İşlemci (WASM)"}
-          {engine.gpu && <span className="sb-dim">{engine.gpu}</span>}
-          {engine.provider === "wasm" && engine.fallbackReason && <span className="sb-dim">{engine.fallbackReason}</span>}
+          {engine.gpu && <span className={DIM}>{engine.gpu}</span>}
+          {engine.provider === "wasm" && engine.fallbackReason && <span className={DIM}>{engine.fallbackReason}</span>}
         </span>
       );
     case "error":
       return (
-        <span className="sb-item sb-item--error" role="alert">
+        <span className={ERROR} role="alert">
           Model yüklenemedi: {engine.message}
         </span>
       );
@@ -39,17 +50,17 @@ function EngineItem({ engine }: { engine: EngineState }) {
 
 function JobItem({ job, engine, liveWaiting }: { job: Job | null; engine: EngineState; liveWaiting: boolean }) {
   // The model progress is on the right; the job itself has not started yet.
-  if (liveWaiting) return <span className="sb-item" role="status">Model hazır olunca kayıt başlayacak</span>;
+  if (liveWaiting) return <span className={ITEM} role="status">Model hazır olunca kayıt başlayacak</span>;
   if (!job) return null;
   if (job.status === "running" && !job.live && engine.phase !== "ready" && engine.phase !== "error") {
-    return <span className="sb-item" role="status">Model hazır olunca yazıya dökme başlayacak</span>;
+    return <span className={ITEM} role="status">Model hazır olunca yazıya dökme başlayacak</span>;
   }
   if (job.live && job.status === "running") {
     return (
-      <span className="sb-item" role="status">
+      <span className={ITEM} role="status">
         {job.recording ? (
           <>
-            <span className="rec-dot" aria-hidden /> Dinleniyor, {clock(job.decoded)} yazıya döküldü
+            <RecDot /> Dinleniyor, {clock(job.decoded)} yazıya döküldü
           </>
         ) : (
           "Son kelimeler yazılıyor"
@@ -61,29 +72,27 @@ function JobItem({ job, engine, liveWaiting }: { job: Job | null; engine: Engine
     case "running": {
       const pct = job.duration ? Math.min(99, Math.floor((job.decoded / job.duration) * 100)) : 0;
       return (
-        <span className="sb-item" role="status">
+        <span className={ITEM} role="status">
           Yazıya dökülüyor %{pct}
-          <span className="meter" aria-hidden>
-            <span style={{ transform: `scaleX(${pct / 100})` }} />
-          </span>
-          {job.speed > 0.5 && <span className="sb-dim">{job.speed.toFixed(1)}× hız</span>}
+          <Meter value={pct / 100} />
+          {job.speed > 0.5 && <span className={DIM}>{job.speed.toFixed(1)}× hız</span>}
         </span>
       );
     }
     case "done":
       return (
-        <span className="sb-item">
+        <span className={ITEM}>
           {job.words.length} kelime
-          <span className="sb-dim">
+          <span className={DIM}>
             {fmtDuration(job.duration ?? job.decoded)} kayıt, {fmtDuration(job.elapsed ?? 0)} içinde
           </span>
         </span>
       );
     case "cancelled":
-      return <span className="sb-item">Durduruldu, {clock(job.decoded)} konumuna kadar yazıya döküldü</span>;
+      return <span className={ITEM}>Durduruldu, {clock(job.decoded)} konumuna kadar yazıya döküldü</span>;
     case "error":
       return (
-        <span className="sb-item sb-item--error" role="alert">
+        <span className={ERROR} role="alert">
           {job.error}
         </span>
       );
@@ -94,20 +103,18 @@ function PunctItem({ punct }: { punct: PunctState }) {
   if (punct.phase === "idle") return null;
   if (punct.phase === "error") {
     return (
-      <span className="sb-item sb-item--error" role="alert">
+      <span className={ERROR} role="alert">
         Noktalama eklenemedi: {punct.message}
       </span>
     );
   }
   const pct = punct.total ? punct.done / punct.total : 0;
   return (
-    <span className="sb-item" role="status">
+    <span className={ITEM} role="status">
       {punct.phase === "download"
         ? `Noktalama modeli indiriliyor ${megabytes(punct.done)} / ${megabytes(punct.total)} MB`
         : "Noktalama ekleniyor"}
-      <span className="meter" aria-hidden>
-        <span style={{ transform: `scaleX(${pct})` }} />
-      </span>
+      <Meter value={pct} />
     </span>
   );
 }
@@ -115,11 +122,9 @@ function PunctItem({ punct }: { punct: PunctState }) {
 function BurnItem({ burn }: { burn: BurnState }) {
   if (burn.status !== "running") return null;
   return (
-    <span className="sb-item" role="status">
+    <span className={ITEM} role="status">
       Video oluşturuluyor %{Math.floor(burn.progress * 100)}
-      <span className="meter" aria-hidden>
-        <span style={{ transform: `scaleX(${burn.progress})` }} />
-      </span>
+      <Meter value={burn.progress} />
     </span>
   );
 }
@@ -141,16 +146,16 @@ export function StatusBar({
   notice: string | null;
 }) {
   return (
-    <footer className="statusbar">
+    <footer className="flex items-center gap-[18px] border-t border-line-soft bg-[#111417] px-3.5 text-[11px] tracking-[-0.005em] whitespace-nowrap text-fg-2 max-[860px]:order-5 max-[860px]:mt-auto max-[860px]:h-[26px]">
       {notice && (
-        <span className="sb-item sb-item--error" role="alert">
+        <span className={ERROR} role="alert">
           {notice}
         </span>
       )}
       <JobItem job={job} engine={engine} liveWaiting={liveWaiting} />
       <PunctItem punct={punct} />
       <BurnItem burn={burn} />
-      <span className="statusbar__spacer" />
+      <span className="flex-1" />
       <EngineItem engine={engine} />
     </footer>
   );

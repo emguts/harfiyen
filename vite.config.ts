@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 
@@ -45,7 +46,7 @@ export default defineConfig(({ mode }) => {
   });
 
   return {
-    plugins: [react(), remoteWasm()],
+    plugins: [react(), tailwindcss(), remoteWasm()],
     server: { headers: isolation, https, host: !!https },
     preview: { headers: isolation, https, host: !!https },
     optimizeDeps: { exclude: ["onnxruntime-web"] },

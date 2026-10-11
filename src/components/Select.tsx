@@ -1,6 +1,12 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { IconCheck, IconUpDown } from "./icons";
 
+// Building blocks for option renderings (an option title turns white once selected).
+export const OPT = "flex min-w-0 items-center gap-2.5";
+export const OPT_TEXT = "grid min-w-0";
+export const OPT_TITLE = "truncate font-[560] text-fg group-aria-selected/option:text-white";
+export const OPT_NOTE = "text-[11.5px] leading-[1.35] text-fg-3";
+
 export interface Option<T extends string> {
   value: T;
   /** Accessible name. */
@@ -116,7 +122,7 @@ export function Select<T extends string>({
       <button
         ref={button}
         type="button"
-        className={`select${open ? " select--open" : ""}`}
+        className="group/select flex w-full min-w-0 flex-1 items-center gap-2 rounded-ui border border-line bg-pane-2 py-1 pr-1.5 pl-[9px] text-left shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-all duration-150 ease-[ease] min-h-[34px] hover:not-disabled:border-[#3e4753] hover:not-disabled:bg-raised disabled:opacity-50 aria-expanded:border-[#3e4753] aria-expanded:bg-raised"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={id}
@@ -130,8 +136,11 @@ export function Select<T extends string>({
           }
         }}
       >
-        <span className="select__value">{options[selected] && render(options[selected], false)}</span>
-        <span className="select__arrow" aria-hidden>
+        <span className="min-w-0 flex-1">{options[selected] && render(options[selected], false)}</span>
+        <span
+          className="grid size-5 flex-none place-items-center rounded-ui-sm text-fg-2 transition-[transform,background] duration-150 ease-[ease] group-aria-expanded/select:bg-line group-aria-expanded/select:text-fg group-[:hover:not(:disabled)]/select:bg-line group-[:hover:not(:disabled)]/select:text-fg"
+          aria-hidden
+        >
           <IconUpDown size={14} />
         </span>
       </button>
@@ -143,7 +152,7 @@ export function Select<T extends string>({
           tabIndex={-1}
           aria-label={label}
           aria-activedescendant={`${id}-${active}`}
-          className={`select__list${pos.up ? " select__list--up" : ""}`}
+          className="fixed z-50 m-0 list-none overflow-auto rounded-lg border border-[#363e48] bg-[#20252b] p-1 shadow-[0_16px_36px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.05)] outline-none backdrop-blur-[12px] [scrollbar-width:thin]"
           style={{
             left: pos.left,
             width: pos.width,
@@ -158,12 +167,12 @@ export function Select<T extends string>({
               id={`${id}-${i}`}
               role="option"
               aria-selected={i === selected}
-              className={`select__option${i === active ? " select__option--active" : ""}`}
+              className={`group/option flex items-center gap-2 rounded-ui-sm py-1.5 pr-1.5 pl-2 ${i === active ? "bg-cini-wash" : ""}`}
               onPointerMove={() => setActive(i)}
               onClick={() => choose(i)}
             >
-              <span className="select__option-body">{render(o, true)}</span>
-              <span className="select__check" aria-hidden>
+              <span className="min-w-0 flex-1">{render(o, true)}</span>
+              <span className="grid w-4 flex-none place-items-center text-wave-played" aria-hidden>
                 {i === selected && <IconCheck size={14} />}
               </span>
             </li>

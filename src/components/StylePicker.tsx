@@ -66,23 +66,32 @@ function StyleCard({
     <button
       role="radio"
       aria-checked={selected}
-      className={`style-card${selected ? " style-card--on" : ""}`}
+      className="group/card grid gap-1.5 border-0 bg-transparent p-0 text-left"
       onClick={onPick}
     >
       <span
-        className="style-card__frame"
+        className={`relative block aspect-video cursor-pointer overflow-hidden rounded-ui transition-all duration-150 ease-[ease] group-hover/card:-translate-y-px ${
+          selected
+            ? "shadow-[0_0_0_2px_var(--cini),0_4px_12px_rgba(71,109,230,0.35),inset_0_0_0_1px_rgba(255,255,255,0.1)]"
+            : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] group-hover/card:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]"
+        }`}
         style={{
           background: `radial-gradient(120% 90% at 15% 20%, ${a}cc, transparent 60%), radial-gradient(110% 90% at 85% 30%, ${b}aa, transparent 60%), radial-gradient(120% 100% at 50% 100%, ${c}99, transparent 65%), #0b0e13`,
         }}
       >
-        <canvas ref={canvas} aria-hidden />
+        <canvas ref={canvas} className="absolute inset-0 size-full" aria-hidden />
         {selected && (
-          <span className="style-card__check" aria-hidden>
+          <span
+            className="absolute top-1.5 right-1.5 grid size-[18px] place-items-center rounded-full bg-cini text-white shadow-[0_1px_4px_rgba(0,0,0,0.4)]"
+            aria-hidden
+          >
             <IconCheck size={12} />
           </span>
         )}
       </span>
-      <span className="style-card__label">{label}</span>
+      <span className={`pl-0.5 text-[12px] font-[550] tracking-[-0.01em] ${selected ? "text-white" : "text-fg-2"}`}>
+        {label}
+      </span>
     </button>
   );
 }
@@ -95,7 +104,7 @@ export function StylePicker({
   onChange: (s: CaptionSettings) => void;
 }) {
   return (
-    <div className="style-grid" role="radiogroup" aria-label="Altyazı stili">
+    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Altyazı stili">
       {PRESETS.map((p) => (
         <StyleCard
           key={p.id}

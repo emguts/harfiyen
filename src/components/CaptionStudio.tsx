@@ -2,8 +2,24 @@ import { useEffect } from "react";
 import { captionFamily, FONTS, fontById, loadCaptionFont, type FontId } from "../captions/fonts";
 import { ACCENT_COLORS, presetById, TEXT_COLORS, type CaptionSettings } from "../captions/style";
 import { AURA_PALETTES, paletteById, type AuraPaletteId } from "../render/aura";
-import { Select } from "./Select";
+import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import { StylePicker } from "./StylePicker";
+import { Hint, Range, Row, RowGroup, RowLabel, RowValue, Section, Switch } from "./ui";
+
+const SWATCH =
+  "relative size-[22px] cursor-pointer rounded-full border border-white/18 p-0 transition-[transform,outline-color] duration-150 ease-[ease] hover:scale-112";
+
+/** Small preview tile at the start of an option. */
+const TILE = "grid h-6 w-[30px] flex-none place-items-center rounded-ui-sm";
+const BAR_AT = { top: "top-[3px]", middle: "top-2", bottom: "bottom-[3px]" };
+const BG_LOOK = {
+  box: "shadow-[inset_0_0_0_5px_rgba(10,16,22,0.75)]",
+  outline: "[-webkit-text-stroke:1px_#000] [paint-order:stroke_fill]",
+  shadow: "[text-shadow:0_1px_4px_rgba(0,0,0,0.9)]",
+};
+
+/** Inspector body: no border or padding of its own; dims while disabled. */
+export const STUDIO = "m-0 min-w-0 border-0 p-0 pb-5 disabled:opacity-50";
 
 function Swatches({
   label,
@@ -17,12 +33,12 @@ function Swatches({
   onChange: (c: string) => void;
 }) {
   return (
-    <div className="row swatches" role="radiogroup" aria-label={label}>
-      <span className="row__label">{label}</span>
+    <RowGroup wrap role="radiogroup" aria-label={label}>
+      <RowLabel>{label}</RowLabel>
       {colors.map((c) => (
         <button
           key={c}
-          className="swatch"
+          className={`${SWATCH} aria-checked:outline-2 aria-checked:outline-offset-2 aria-checked:outline-cini`}
           role="radio"
           aria-checked={value === c}
           aria-label={c}
@@ -30,10 +46,19 @@ function Swatches({
           onClick={() => onChange(c)}
         />
       ))}
-      <label className="swatch swatch--custom" title="Başka renk">
-        <input type="color" value={value} onChange={(e) => onChange(e.target.value)} aria-label={`${label}, özel renk`} />
+      <label
+        className={`${SWATCH} overflow-hidden bg-[conic-gradient(#ff5a5f,#ffd60a,#7ed957,#5ce1e6,#4f74e8,#ff5a5f)]`}
+        title="Başka renk"
+      >
+        <input
+          type="color"
+          className="absolute inset-0 cursor-pointer opacity-0"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={`${label}, özel renk`}
+        />
       </label>
-    </div>
+    </RowGroup>
   );
 }
 
@@ -67,15 +92,13 @@ export function CaptionStudio({
   const preset = presetById(settings.preset);
 
   return (
-    <fieldset className="studio" disabled={disabled}>
-      <section className="section">
-        <h3 className="section__title">Stil</h3>
+    <fieldset className={STUDIO} disabled={disabled}>
+      <Section title="Stil">
         <StylePicker settings={settings} onChange={onChange} />
-        <p className="hint">{preset.note}</p>
-      </section>
+        <Hint>{preset.note}</Hint>
+      </Section>
 
-      <section className="section">
-        <h3 className="section__title">Yazı</h3>
+      <Section title="Yazı">
         <Select<FontId>
           label="Yazı tipi"
           value={settings.font}
@@ -86,44 +109,42 @@ export function CaptionStudio({
             const f = fontById(o.value);
             const style = { fontFamily: `"${captionFamily(f.id)}"`, fontWeight: f.weight };
             return inList ? (
-              <span className="opt opt--font">
-                <span className="opt__specimen" style={style}>
+              <span className="grid min-w-0 gap-px">
+                <span className="text-[17px] leading-[1.2] text-balance" style={style}>
                   Pijamalı hasta yağız şoföre çabucak güvendi.
                 </span>
-                <span className="opt__note">{f.label}</span>
+                <span className={OPT_NOTE}>{f.label}</span>
               </span>
             ) : (
-              <span className="opt">
-                <span className="opt__aa" style={style}>
+              <span className={OPT}>
+                <span className={`${TILE} bg-bg text-[15px]`} style={style}>
                   Ağ
                 </span>
-                <span className="opt__title">{f.label}</span>
+                <span className={OPT_TITLE}>{f.label}</span>
               </span>
             );
           }}
         />
-        <label className="row">
-          <span className="row__label">Boyut</span>
-          <input
-            type="range"
+        <Row>
+          <RowLabel>Boyut</RowLabel>
+          <Range
             min={0.03}
             max={0.14}
             step={0.002}
             value={settings.size}
             onChange={(e) => set({ size: Number(e.target.value) })}
           />
-          <span className="row__value">{Math.round(settings.size * 1000) / 10}</span>
-        </label>
-        <label className="row">
-          <span className="row__label">Büyük harf</span>
-          <input type="checkbox" className="switch" checked={settings.uppercase} onChange={(e) => set({ uppercase: e.target.checked })} />
-        </label>
-      </section>
+          <RowValue>{Math.round(settings.size * 1000) / 10}</RowValue>
+        </Row>
+        <Row>
+          <RowLabel>Büyük harf</RowLabel>
+          <Switch checked={settings.uppercase} onChange={(e) => set({ uppercase: e.target.checked })} />
+        </Row>
+      </Section>
 
-      <section className="section">
-        <h3 className="section__title">Yerleşim</h3>
-        <div className="row">
-          <span className="row__label">Konum</span>
+      <Section title="Yerleşim">
+        <RowGroup>
+          <RowLabel>Konum</RowLabel>
           <Select
             label="Konum"
             value={settings.position}
@@ -131,17 +152,17 @@ export function CaptionStudio({
             onChange={(position) => set({ position })}
             disabled={disabled}
             render={(o) => (
-              <span className="opt">
-                <span className={`opt__frame opt__frame--${o.value}`} aria-hidden>
-                  <span />
+              <span className={OPT}>
+                <span className="relative h-5 w-[30px] flex-none rounded-[3px] border border-line bg-bg" aria-hidden>
+                  <span className={`absolute inset-x-1.5 h-[3px] rounded-[2px] bg-fg-2 ${BAR_AT[o.value]}`} />
                 </span>
-                <span className="opt__title">{o.label}</span>
+                <span className={OPT_TITLE}>{o.label}</span>
               </span>
             )}
           />
-        </div>
-        <div className="row">
-          <span className="row__label">Zemin</span>
+        </RowGroup>
+        <RowGroup>
+          <RowLabel>Zemin</RowLabel>
           <Select
             label="Zemin"
             value={settings.background}
@@ -149,30 +170,31 @@ export function CaptionStudio({
             onChange={(background) => set({ background })}
             disabled={disabled}
             render={(o, inList) => (
-              <span className="opt">
-                <span className={`opt__bg opt__bg--${o.value}`} aria-hidden>
+              <span className={OPT}>
+                <span
+                  className={`${TILE} bg-[linear-gradient(160deg,#6f8796,#2b3640)] text-[13px] font-extrabold text-white ${BG_LOOK[o.value]}`}
+                  aria-hidden
+                >
                   Aa
                 </span>
-                <span className="opt__text">
-                  <span className="opt__title">{o.label}</span>
-                  {inList && <span className="opt__note">{BACKGROUNDS.find((b) => b.value === o.value)!.note}</span>}
+                <span className={OPT_TEXT}>
+                  <span className={OPT_TITLE}>{o.label}</span>
+                  {inList && <span className={OPT_NOTE}>{BACKGROUNDS.find((b) => b.value === o.value)!.note}</span>}
                 </span>
               </span>
             )}
           />
-        </div>
-      </section>
+        </RowGroup>
+      </Section>
 
-      <section className="section">
-        <h3 className="section__title">Renk</h3>
+      <Section title="Renk">
         <Swatches label="Yazı" colors={TEXT_COLORS} value={settings.textColor} onChange={(textColor) => set({ textColor })} />
         {preset.effect !== "none" && (
           <Swatches label="Vurgu" colors={ACCENT_COLORS} value={settings.accentColor} onChange={(accentColor) => set({ accentColor })} />
         )}
-      </section>
+      </Section>
 
-      <section className="section">
-        <h3 className="section__title">Ses kayıtlarında arka plan</h3>
+      <Section title="Ses kayıtlarında arka plan">
         <Select<AuraPaletteId>
           label="Aura renkleri"
           value={settings.aura}
@@ -182,21 +204,21 @@ export function CaptionStudio({
           render={(o) => {
             const [a, b, c] = paletteById(o.value).colors;
             return (
-              <span className="opt">
+              <span className={OPT}>
                 <span
-                  className="opt__aura"
+                  className="h-[22px] w-[30px] flex-none rounded-ui-sm"
                   aria-hidden
                   style={{
                     background: `radial-gradient(circle at 30% 40%, ${a}, transparent 60%), radial-gradient(circle at 70% 60%, ${b}, transparent 55%), radial-gradient(circle at 50% 90%, ${c}, transparent 50%), #05070b`,
                   }}
                 />
-                <span className="opt__title">{o.label}</span>
+                <span className={OPT_TITLE}>{o.label}</span>
               </span>
             );
           }}
         />
-        <p className="hint">Sadece ses olan dosyalarda ve mikrofon kayıtlarında, görüntü yerine sesle hareket eden bir aura çizilir.</p>
-      </section>
+        <Hint>Sadece ses olan dosyalarda ve mikrofon kayıtlarında, görüntü yerine sesle hareket eden bir aura çizilir.</Hint>
+      </Section>
     </fieldset>
   );
 }

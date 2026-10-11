@@ -4,6 +4,10 @@ import { clock } from "../lib/format";
 import type { LiveMeter } from "../render/aura";
 import { PEAK_STEP } from "../worker/protocol";
 
+/** The timeline box; on phones it takes its own full-width row in the transport. */
+export const TIMELINE =
+  "relative my-2 ml-2 flex-1 touch-none self-stretch rounded-md border border-line-soft bg-[#101316] max-[860px]:-order-1 max-[860px]:m-0 max-[860px]:h-16 max-[860px]:flex-[1_0_100%]";
+
 /**
  * Editor timeline drawn on one canvas at display refresh rate.
  *
@@ -167,7 +171,7 @@ export function Timeline({
 
   return (
     <div
-      className={`timeline${live ? " timeline--live" : ""}`}
+      className={`${TIMELINE} ${live ? "cursor-default" : ""}`}
       role="slider"
       tabIndex={live ? -1 : 0}
       aria-label="Zaman çizelgesi"
@@ -189,7 +193,7 @@ export function Timeline({
         e.stopPropagation();
       }}
     >
-      <canvas ref={canvas} className="timeline__canvas" />
+      <canvas ref={canvas} className="block size-full" />
     </div>
   );
 }

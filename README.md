@@ -71,6 +71,18 @@ konuşurken de canlı çalışır.
   görselleştirmesi. Bunlar da altyazılı 1080p MP4 olarak dışa aktarılabilir.
 - SRT, WebVTT, düz metin, kelime zamanlı JSON ve panoya kopyalama.
 
+### Projeler
+
+- Otomatik kayıt: transkript, düzeltmeler, altyazı stili ve dalga formu tarayıcıda (IndexedDB) saklanır;
+  sekme kapansa da kaybolmaz.
+- Son projeler **Projeler** menüsünde ve boş ekranda listelenir; tek tıkla model yeniden çalışmadan açılır.
+  Projeler yeniden adlandırılabilir ve silinebilir.
+- Medya kopyalanmadan bağlanır: Chrome ve Edge dosyanın kendisine erişim izni saklar, diğer tarayıcılar
+  1 GB'a kadar dosyaların kopyasını tutar. Tarayıcı izin isterse ya da dosya bulunamazsa tek düğmeyle yeniden
+  bağlanır; kelime zamanları korunur.
+- **.harfiyen** proje dosyası: projeyi dosya olarak indir, başka zaman ya da başka tarayıcıda aç. Medya
+  dosyası içine eklenmez, açarken bir kez seçilir.
+
 > Konuşma tanıma modeli küçük harfli, noktalamasız metin üretir; noktalama ve büyük harf ayrı bir modelle
 > sonradan eklenir. Sayılar yazıyla kalır ("bin dokuz yüz yirmi üç").
 
@@ -120,6 +132,9 @@ güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarla
 | Otomatik noktalama         | Sağ panelde **Noktalama ve büyük harf → Otomatik ekle** (varsayılan açık; tercih saklanır) |
 | Noktalamayı elle uygulamak | Döküm bitince aynı bölümde **Şimdi uygula**                                                |
 | Dışa aktarmak              | Sağ üstte **Dışa aktar**                                                                   |
+| Kayıtlı projeyi açmak      | **Projeler** menüsü ya da boş ekrandaki **Son projeler**                                   |
+| Proje adını değiştirmek    | Üstteki proje adına tıkla, **Enter** kaydeder, **Esc** vazgeçer                            |
+| Proje dosyası              | **Projeler → Projeyi dosya olarak indir**; açmak için **Dosya aç** ya da sürükle-bırak     |
 
 ## Performans
 
@@ -184,10 +199,18 @@ npm run build      # üretim derlemesi
 npm run preview    # derlemeyi lokalinde önizle
 ```
 
+Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/vite` eklentisi):
+
+- `src/index.css`: Tailwind'in giriş dosyası. Preflight (sıfırlama stilleri) kullanılmaz; tasarım
+  değişkenleri `@theme` ile Tailwind'e bağlanır (`bg-pane`, `text-fg-2`, `border-line`, `bg-cini`,
+  `text-firuze`, `rounded-ui` ...). Animasyonlar ve kaydırıcı / anahtar stilleri de buradadır.
+- `src/styles.css`: renk ve yazı tipi değişkenleri ile temel eleman stilleri.
+- `src/components/ui.tsx`, `Menu.tsx`, `Dropzone.tsx`, `Indicators.tsx`: ortak bileşenler (düğmeler,
+  paneller, form satırları, açılır menüler).
+
 ## Bilinen sınırlar
 
 - Altyazılı video şimdilik bellekte oluşturulup indiriliyor; çok uzun videolarda bellek yetmeyebilir.
-- Döndürme bilgisi taşıyan dikey telefon videoları henüz denenmedi.
 - Düzenleme metinle sınırlı; kelime zamanlarını elle kaydırmak yok.
 - Ses dosyalarından üretilen MP4'te ses AAC ile kodlanır; tarayıcı AAC kodlayamıyorsa Opus kullanılır.
   Opus'lu MP4'ü QuickTime ve iPhone Fotoğraflar açmayabilir (Chrome, VLC ve sosyal platformlar açar).
@@ -196,13 +219,11 @@ npm run preview    # derlemeyi lokalinde önizle
 
 Önerilen öncelik sırasıyla:
 
-- [ ] **Projeyi kaydetme ve geri açma:** transkript ve düzeltmeler için otomatik yerel kayıt;
+- [x] **Projeyi kaydetme ve geri açma:** transkript ve düzeltmeler için otomatik yerel kayıt;
       projeyi dosya olarak indirip yeniden açma.
 - [ ] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
       tüm altyazıya toplu zaman kaydırma.
 - [ ] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
-- [ ] **Dikey video ve uyumluluk kontrolleri:** telefon videolarının döndürme bilgisi,
-      farklı çözünürlükler ve iPhone / QuickTime ses uyumluluğu.
 - [ ] **Noktalama için Türkçe testleri:** özel ad ekleri, kısaltmalar, soru cümleleri ve uzun metinler;
       tekrar uygulama ve geri alma akışı.
 - [ ] **Sayıları rakama çevirme seçeneği:** "bin dokuz yüz yirmi üç" → "1923";
@@ -218,5 +239,5 @@ npm run preview    # derlemeyi lokalinde önizle
 - Dil modeli dosyaları (`rnnlm`, `2gram`): CC BY-SA 4.0 (Türkçe Vikipedi üzerinde eğitildi).
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.
 - [ONNX Runtime Web](https://onnxruntime.ai) (MIT), [mediabunny](https://mediabunny.dev) (MPL-2.0),
-  [React](https://react.dev) (MIT).
+  [React](https://react.dev) (MIT), [Tailwind CSS](https://tailwindcss.com) (MIT).
 - Yazı tipleri: SIL Open Font License 1.1.

@@ -2,8 +2,12 @@ import { useState } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod } from "../engine";
 import type { EngineState, Job } from "../lib/useTranscriber";
-import { CaptionStudio } from "./CaptionStudio";
+import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { MethodPicker, methodTitle } from "./MethodPicker";
+import { Button, Hint, Pane, PaneBody, Row, RowLabel, Section, SectionActions, Switch } from "./ui";
+
+const TAB =
+  "h-[26px] flex-1 rounded-[5px] border-0 bg-transparent text-[12px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-white aria-selected:shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)]";
 
 type Tab = "captions" | "transcribe";
 
@@ -40,63 +44,56 @@ export function Inspector({
   const running = job?.status === "running";
 
   return (
-    <aside className="pane inspector">
-      <div className="tabs" role="tablist">
-        <button role="tab" aria-selected={tab === "captions"} onClick={() => setTab("captions")}>
+    <Pane side="right">
+      <div
+        className="mx-3 mt-2.5 mb-1.5 flex gap-0.5 rounded-lg border border-line-soft bg-[#101316] p-[3px]"
+        role="tablist"
+      >
+        <button className={TAB} role="tab" aria-selected={tab === "captions"} onClick={() => setTab("captions")}>
           Altyazı
         </button>
-        <button role="tab" aria-selected={tab === "transcribe"} onClick={() => setTab("transcribe")}>
+        <button className={TAB} role="tab" aria-selected={tab === "transcribe"} onClick={() => setTab("transcribe")}>
           Yazıya döküm
         </button>
       </div>
-      <div className="scroll pane__body">
+      <PaneBody>
         {tab === "captions" ? (
           <CaptionStudio settings={settings} onChange={onSettings} disabled={burning} />
         ) : (
-          <div className="studio">
-            <section className="section">
-              <h3 className="section__title">Doğruluk</h3>
+          <div className={STUDIO}>
+            <Section title="Doğruluk">
               <MethodPicker value={method} onChange={onMethod} disabled={running} />
               {job && (
-                <div className="section__actions">
+                <SectionActions>
                   {running ? (
-                    <button className="btn" onClick={onCancel}>
-                      Durdur
-                    </button>
+                    <Button onClick={onCancel}>Durdur</Button>
                   ) : (
-                    <button className="btn btn--primary" onClick={onRestart}>
+                    <Button variant="primary" onClick={onRestart}>
                       {method === job.options.method ? "Yeniden yazıya dök" : `${methodTitle(method)} ile yeniden dök`}
-                    </button>
+                    </Button>
                   )}
-                </div>
+                </SectionActions>
               )}
-            </section>
-            <section className="section">
-              <h3 className="section__title">Noktalama ve büyük harf</h3>
-              <label className="row">
-                <span className="row__label row__label--wide">Otomatik ekle</span>
-                <input
-                  type="checkbox"
-                  className="switch"
-                  checked={autoPunct}
-                  onChange={(e) => onAutoPunct(e.target.checked)}
-                />
-              </label>
-              <p className="hint">
+            </Section>
+            <Section title="Noktalama ve büyük harf">
+              <Row>
+                <RowLabel wide>Otomatik ekle</RowLabel>
+                <Switch checked={autoPunct} onChange={(e) => onAutoPunct(e.target.checked)} />
+              </Row>
+              <Hint>
                 Yazıya döküm bitince nokta, virgül ve soru işareti eklenir; cümle başları ve özel adlar büyük harfle
                 yazılır ("İstanbul'da"). ⌘Z ile geri alınır. İlk kullanımda yaklaşık 60 MB model indirilir.
-              </p>
+              </Hint>
               {job && (
-                <div className="section__actions">
-                  <button className="btn" disabled={running || punctBusy || !job.words.length} onClick={onPunctuate}>
+                <SectionActions>
+                  <Button disabled={running || punctBusy || !job.words.length} onClick={onPunctuate}>
                     {punctBusy ? "Ekleniyor…" : "Şimdi uygula"}
-                  </button>
-                </div>
+                  </Button>
+                </SectionActions>
               )}
-            </section>
-            <section className="section">
-              <h3 className="section__title">Model</h3>
-              <dl className="facts">
+            </Section>
+            <Section title="Model">
+              <dl className="m-0 grid grid-cols-[88px_1fr] gap-x-2.5 gap-y-1.5 text-[12.5px] [&_dd]:m-0 [&_dt]:text-fg-3">
                 <dt>Model</dt>
                 <dd>
                   <a href="https://huggingface.co/atasoglu/seda-v0.1">seda-v0.1</a>, Türkçe
@@ -112,13 +109,13 @@ export function Inspector({
                 <dt>Gizlilik</dt>
                 <dd>Ses ve video bu bilgisayardan çıkmaz.</dd>
               </dl>
-              <p className="hint">
+              <Hint>
                 Sayılar yazıyla gelir ("bin dokuz yüz yirmi üç"). Bir kelimeye tıklayınca kayıt o ana atlar.
-              </p>
-            </section>
+              </Hint>
+            </Section>
           </div>
         )}
-      </div>
-    </aside>
+      </PaneBody>
+    </Pane>
   );
 }

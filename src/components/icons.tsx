@@ -157,3 +157,9 @@ export const IconAuto = (p: P) => (
     <path d="M11.9 2v2.6H9.3M4.1 14v-2.6h2.6" />
   </Svg>
 );
+
+export const IconProjects = (p: P) => (
+  <Svg {...p}>
+    <path d="M2.5 5.5h11v7a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1zM4 3.5h8M5.5 1.5h5" />
+  </Svg>
+);

@@ -8,6 +8,11 @@ import type { Player } from "../lib/usePlayer";
 import { levelsAt, paletteById, type AuraFrame, type AuraLevels } from "../render/aura";
 import { createCompositor, type Compositor } from "../render/compositor";
 import { IconCollapse, IconExpand, IconPause, IconPlay } from "./icons";
+import { RecDot } from "./Indicators";
+
+/** The media element only decodes; the picture is drawn on the canvas. */
+const MEDIA = "pointer-events-none absolute size-px opacity-0";
+const HUD_BTN = "grid size-[30px] place-items-center rounded-full border-0 bg-white/14 text-white hover:bg-white/26";
 
 /** Audio files get a 16:9 black frame so captions can still be previewed. */
 const AUDIO_FRAME = { w: 1920, h: 1080 };
@@ -200,44 +205,57 @@ export function Viewer({
     };
   }, [fullscreen]);
 
+  const hidden = fullscreen && idle && player.playing;
+  // Controls fade in on hover; always shown in fullscreen until the pointer rests.
+  const hud = hidden
+    ? "opacity-0"
+    : fullscreen
+      ? "px-6 pt-10 pb-5 opacity-100"
+      : "px-3 pt-6 pb-2.5 opacity-0 group-hover/stage:opacity-100 focus-within:opacity-100";
+  const canvasClass = `absolute inset-0 size-full object-contain ${hidden ? "cursor-none" : ""}`;
+
   return (
     <div
       ref={stage}
-      className={`stage${fullscreen ? " stage--fullscreen" : ""}${fullscreen && idle && player.playing ? " stage--idle" : ""}`}
+      className={`group/stage relative grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden bg-black group-data-dragging/shell:outline-2 group-data-dragging/shell:-outline-offset-8 group-data-dragging/shell:outline-cini group-data-dragging/shell:outline-dashed ${
+        fullscreen ? "rounded-none" : "rounded-ui"
+      } ${hidden ? "cursor-none" : ""}`}
     >
       {live ? (
         <>
-          <canvas ref={canvas} className="stage__canvas" aria-label="Canlı altyazı" />
+          <canvas ref={canvas} className={canvasClass} aria-label="Canlı altyazı" />
           {!words.length && (
-            <p className="stage__note stage__note--live">
-              <span className="rec-dot" aria-hidden /> Dinleniyor, konuşmaya başlayabilirsin
+            <p className="absolute m-0 inline-flex items-center gap-2 text-fg-2">
+              <RecDot /> Dinleniyor, konuşmaya başlayabilirsin
             </p>
           )}
         </>
       ) : url ? (
         <>
           {isVideo ? (
-            <video ref={player.ref} src={url} className="media-source" playsInline preload="auto" />
+            <video ref={player.ref} src={url} className={MEDIA} playsInline preload="auto" />
           ) : (
-            <audio ref={player.ref} src={url} className="media-source" preload="auto" />
+            <audio ref={player.ref} src={url} className={MEDIA} preload="auto" />
           )}
           <canvas
             ref={canvas}
-            className="stage__canvas"
+            className={canvasClass}
             onClick={player.toggle}
             onDoubleClick={toggleFullscreen}
             aria-label={player.playing ? "Duraklat" : "Oynat"}
           />
-          <div className="stage__hud">
-            <button className="hud-btn" onClick={player.toggle} aria-label={player.playing ? "Duraklat" : "Oynat"}>
+          <div
+            className={`absolute inset-x-0 bottom-0 flex items-center gap-2.5 bg-linear-to-b from-transparent to-black/60 transition-opacity duration-200 ease-[ease] motion-reduce:transition-none ${hud}`}
+          >
+            <button className={HUD_BTN} onClick={player.toggle} aria-label={player.playing ? "Duraklat" : "Oynat"}>
               {player.playing ? <IconPause /> : <IconPlay />}
             </button>
-            <span className="hud-time">
+            <span className="text-[12px] text-white tabular-nums">
               {clock(player.time)} / {clock(player.duration)}
             </span>
             {fullscreen && (
               <input
-                className="hud-seek"
+                className="flex-1 accent-cini"
                 type="range"
                 min={0}
                 max={player.duration || 1}
@@ -248,7 +266,7 @@ export function Viewer({
               />
             )}
             <button
-              className="hud-btn hud-btn--end"
+              className={`${HUD_BTN} ml-auto`}
               onClick={toggleFullscreen}
               aria-label={fullscreen ? "Tam ekrandan çık" : "Tam ekran"}
               title="Tam ekran (F)"

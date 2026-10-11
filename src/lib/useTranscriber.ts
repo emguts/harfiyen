@@ -288,6 +288,41 @@ export function useTranscriber() {
     [prepare, send, cancelLiveWait],
   );
 
+  /** Open a saved transcript as a finished job; `file` may come later (attach). */
+  const load = useCallback(
+    (p: Pick<Job, "file" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands">) => {
+      const prev = jobRef.current;
+      if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
+      cancelLiveWait();
+      void mic.current?.stop();
+      mic.current = null;
+      const j: Job = {
+        ...p,
+        id: nextId.current++,
+        live: false,
+        recording: false,
+        status: "done",
+        decoded: p.duration ?? p.words.at(-1)?.end ?? 0,
+        tentative: [],
+        speed: p.duration && p.elapsed ? p.duration / p.elapsed : 0,
+        error: null,
+      };
+      jobRef.current = j;
+      setJob(j);
+      return j.id;
+    },
+    [send, cancelLiveWait],
+  );
+
+  /** Give a loaded job its media. */
+  const attach = useCallback(
+    (file: File) => {
+      const j = jobRef.current;
+      if (j && j.status !== "running") update(j.id, (x) => ({ ...x, file }));
+    },
+    [update],
+  );
+
   /** Real-time microphone meter (levels for the aura, peaks for the timeline). */
   const liveMeter = useRef<LiveMeter | null>(null);
   const liveLevels = useRef<AuraLevels | null>(null);
@@ -430,7 +465,7 @@ export function useTranscriber() {
     [restartWorker, prepare],
   );
 
-  return { engine, job, liveWaiting, provider, setProvider, prepare, start, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
+  return { engine, job, liveWaiting, provider, setProvider, prepare, start, load, attach, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
 }
 
 export { MicError };
