@@ -19,6 +19,9 @@ const cert = ".cert/dev.pem";
 const key = ".cert/dev-key.pem";
 const https = existsSync(cert) && existsSync(key) ? { cert: readFileSync(cert), key: readFileSync(key) } : undefined;
 
+// Shown next to the logo, linking to CHANGELOG.md.
+const { version } = JSON.parse(readFileSync("package.json", "utf8"));
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
   const wasmUrl = env.VITE_ORT_WASM_URL;
@@ -47,6 +50,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss(), remoteWasm()],
+    define: { __APP_VERSION__: JSON.stringify(version) },
     server: { headers: isolation, https, host: !!https },
     preview: { headers: isolation, https, host: !!https },
     optimizeDeps: { exclude: ["onnxruntime-web"] },

@@ -516,12 +516,28 @@ export function App() {
       {/* On phones only the title may shrink; buttons keep their size. */}
       <header className="flex items-center gap-2 border-b border-line-soft bg-pane pr-3 pl-3.5 select-none max-[860px]:h-11 max-[860px]:gap-1.5 max-[860px]:px-2.5 max-[860px]:*:shrink-0">
         <h1 className="m-0 mr-2.5 flex items-center max-[480px]:mr-1">
-          <img
-            className="block h-5 w-auto drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
-            src={`${import.meta.env.BASE_URL}brand/harfiyen-logo-light.png`}
-            alt="Harfiyen"
-          />
+          {/* The mobile header has no room for the wordmark; show the H mark. */}
+          <picture>
+            <source
+              media="(max-width: 860px)"
+              srcSet={`${import.meta.env.BASE_URL}brand/harfiyen-mark-light.png`}
+            />
+            <img
+              className="block h-5 w-auto drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
+              src={`${import.meta.env.BASE_URL}brand/harfiyen-logo-light.png`}
+              alt="Harfiyen"
+            />
+          </picture>
         </h1>
+        <a
+          className="-ml-1.5 mr-2 text-[11px] tabular-nums text-fg-3 no-underline hover:text-fg-2 max-[480px]:hidden"
+          href="https://github.com/ozcancelik/harfiyen/blob/main/CHANGELOG.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Bu sürümde neler var"
+        >
+          v{__APP_VERSION__}
+        </a>
         <button
           className={toolbarButton({ compact: true })}
           onClick={pickFile}
