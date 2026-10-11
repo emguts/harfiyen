@@ -72,7 +72,7 @@ export const MODELS: ModelInfo[] = [
     engine: "whisper",
     name: "Whisper Turbo Hafif",
     tier: "Daha küçük",
-    note: "Whisper Turbo'nun 4 bitlik hâli: üçte bir boyutta, zor seste biraz daha fazla hata. Ekran kartı gerekir.",
+    note: "Whisper Turbo'nun 4 bitlik hâli: üçte bir boyutta, zor seste biraz daha fazla hata. Ekran kartı gerekir; canlı kayıtta kullanılmaz.",
     size: "600 MB",
     spec: "whisper-large-v3-turbo (q4f16 encoder, q4f16 decoder)",
     dir: "whisper-large-v3-turbo",

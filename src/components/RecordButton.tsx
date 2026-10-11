@@ -14,12 +14,15 @@ export function RecordButton({
   waiting,
   onStart,
   onStop,
+  disabledReason,
 }: {
   recording: boolean;
   /** Recording will start once the model is ready; clicking cancels. */
   waiting: boolean;
   onStart: () => void;
   onStop: () => void;
+  /** Why recording is not possible now (e.g. the chosen model cannot stream). */
+  disabledReason?: string | null;
 }) {
   const [since, setSince] = useState(0);
   const [now, setNow] = useState(0);
@@ -56,8 +59,11 @@ export function RecordButton({
     </button>
   ) : (
     <button
-      className={`${BASE} border-line bg-pane-2 p-0 hover:border-[rgba(239,107,86,0.6)] hover:bg-[rgba(239,107,86,0.12)]`}
-      onClick={onStart} title="Mikrofondan kaydet (R)" aria-label="Mikrofondan kaydet">
+      className={`${BASE} border-line bg-pane-2 p-0 hover:not-disabled:border-[rgba(239,107,86,0.6)] hover:not-disabled:bg-[rgba(239,107,86,0.12)] disabled:opacity-35`}
+      onClick={onStart}
+      disabled={!!disabledReason}
+      title={disabledReason ?? "Mikrofondan kaydet (R)"}
+      aria-label="Mikrofondan kaydet">
       <span className="size-3 rounded-full bg-mercan" aria-hidden />
     </button>
   );

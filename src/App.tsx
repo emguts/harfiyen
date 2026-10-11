@@ -486,16 +486,15 @@ export function App() {
     if (text) download(`${name}${PROJECT_EXT}`, text, "application/json");
   };
 
+  // Only models that stream (seda) can transcribe the microphone.
+  const micBlocked = chosen.live
+    ? null
+    : `Canlı kayıt ${chosen.name} ile yapılamaz; mikrofon için üst çubuktan ${modelInfo(DEFAULT_MODEL).name}'yı seç.`;
   const goLiveRef = useRef<() => Promise<void>>(async () => {});
   const goLive = async () => {
     setNotice(null);
     resetBurn();
-    if (!chosen.live) {
-      // Only seda streams fast enough for live captions.
-      const live = modelInfo(DEFAULT_MODEL).name;
-      setModel(DEFAULT_MODEL);
-      setNotice(`Canlı kayıt ${live} ile yapılır; model ${live} olarak değiştirildi.`);
-    }
+    if (micBlocked) return;
     try {
       await startLive(optionsFor(method));
     } catch (e) {
@@ -732,7 +731,13 @@ export function App() {
                         Model hazırlanıyor, iptal et
                       </Button>
                     ) : (
-                      <Button size="lg" className={DROP_BTN} onClick={goLive}>
+                      <Button
+                        size="lg"
+                        className={DROP_BTN}
+                        onClick={goLive}
+                        disabled={!!micBlocked}
+                        title={micBlocked ?? undefined}
+                      >
                         <IconMic /> Mikrofonla başla
                       </Button>
                     )}
@@ -792,6 +797,7 @@ export function App() {
           recording={!!job?.recording}
           waiting={liveWaiting}
           onStart={goLive}
+          disabledReason={micBlocked}
           onStop={stopLive}
         />
         <span className="mx-1 h-[22px] w-px flex-none bg-line" aria-hidden />
