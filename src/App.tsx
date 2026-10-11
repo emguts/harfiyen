@@ -37,6 +37,7 @@ import {
 } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
 import { Inspector } from "./components/Inspector";
+import { ModelMenu } from "./components/ModelMenu";
 import { ProviderMenu } from "./components/ProviderMenu";
 import { StatusBar } from "./components/StatusBar";
 import { Timeline, TIMELINE } from "./components/Timeline";
@@ -52,7 +53,8 @@ import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { usePlayer } from "./lib/usePlayer";
 import { useProjects } from "./lib/useProjects";
-import { useTranscriber } from "./lib/useTranscriber";
+import { modelIsCached, useTranscriber } from "./lib/useTranscriber";
+import { DEFAULT_MODEL, modelInfo } from "./models";
 
 const EMPTY_BANDS = new Float32Array(0);
 /** Play and mute in the transport bar. */
@@ -88,16 +90,6 @@ const optionsFor = (method: DecodingMethod): DecodeOptions => ({
   lodrScale: -0.5,
 });
 
-/** Open the model right away when it is already in the cache. */
-async function modelIsCached() {
-  try {
-    const c = await caches.open("seda-models-v1");
-    return (await c.keys()).length >= 7;
-  } catch {
-    return false;
-  }
-}
-
 function loadSettings(): CaptionSettings {
   try {
     return {
@@ -121,6 +113,8 @@ export function App() {
     liveWaiting,
     provider,
     setProvider,
+    model,
+    setModel,
     prepare,
     start,
     load,
@@ -176,8 +170,10 @@ export function App() {
     () => localStorage.setItem("harfiyen.captions", JSON.stringify(settings)),
     [settings],
   );
+  // Open the model right away when it is already in the cache.
+  const initialModel = useRef(model);
   useEffect(() => {
-    modelIsCached().then((yes) => yes && prepare());
+    modelIsCached(initialModel.current).then((yes) => yes && prepare());
   }, [prepare]);
 
   const resetBurn = burner.reset;
@@ -198,6 +194,7 @@ export function App() {
         setMethod(p.method);
         const jobId = load({
           file,
+          model: p.model ?? DEFAULT_MODEL,
           options: optionsFor(p.method),
           duration: p.duration,
           elapsed: p.elapsed,
@@ -397,6 +394,17 @@ export function App() {
     setCanUndo(false);
   }, [job?.id]);
 
+  const chosen = modelInfo(model);
+  // Why GPU-only models cannot run here, if they cannot.
+  const gpuReason =
+    provider === "wasm"
+      ? "İşlemci (WASM) seçili; bu model ekran kartı gerektirir."
+      : !("gpu" in navigator)
+        ? "Bu tarayıcı WebGPU desteklemiyor."
+        : engine.phase === "ready" && engine.provider === "wasm" && !chosen.gpuOnly
+          ? (engine.fallbackReason ?? "Ekran kartı kullanılamıyor.")
+          : null;
+
   // Punctuation and capitals, once per finished transcript (undo restores the plain text).
   const applyPunct = useCallback(async () => {
     if (!job || job.status !== "done" || !job.words.length) return;
@@ -418,10 +426,11 @@ export function App() {
       autoPunct &&
       job?.status === "done" &&
       job.words.length &&
+      !modelInfo(job.model).punctuates &&
       !punctuated.current.has(job.id)
     )
       void applyPunct();
-  }, [autoPunct, job?.status, job?.id, job?.words.length, applyPunct]);
+  }, [autoPunct, job?.status, job?.id, job?.model, job?.words.length, applyPunct]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const inField = !!(e.target as HTMLElement).closest(
@@ -481,6 +490,12 @@ export function App() {
   const goLive = async () => {
     setNotice(null);
     resetBurn();
+    if (!chosen.live) {
+      // Only seda streams fast enough for live captions.
+      const live = modelInfo(DEFAULT_MODEL).name;
+      setModel(DEFAULT_MODEL);
+      setNotice(`Canlı kayıt ${live} ile yapılır; model ${live} olarak değiştirildi.`);
+    }
     try {
       await startLive(optionsFor(method));
     } catch (e) {
@@ -542,8 +557,8 @@ export function App() {
             baseName={name}
             meta={{
               file: title,
-              model: "seda-v0.1",
-              method: job.options.method,
+              model: modelInfo(job.model).spec,
+              ...(job.model === "seda" && { method: job.options.method }),
             }}
             complete={job.status === "done"}
             isVideo={player.isVideo}
@@ -555,10 +570,25 @@ export function App() {
             onCancelBurn={burner.cancel}
           />
         )}
+        <ModelMenu
+          value={model}
+          onChange={setModel}
+          gpuReason={gpuReason}
+          locked={
+            job?.status === "running" ||
+            punct.phase === "run" ||
+            punct.phase === "download"
+          }
+        />
         <ProviderMenu
           value={provider}
           engine={engine}
           onChange={setProvider}
+          cpuUnavailable={
+            chosen.gpuOnly
+              ? `${chosen.name} işlemcide çalışmaz; önce Seda'ya geç.`
+              : null
+          }
           locked={
             job?.status === "running" ||
             punct.phase === "run" ||
@@ -711,8 +741,9 @@ export function App() {
                 fine={
                   <>
                     Dosyayı pencereye sürükleyebilirsin: MP4, MOV, MKV, WebM,
-                    MP3, M4A, WAV, FLAC, OGG. İlk kullanımda yaklaşık 105 MB
-                    model indirilir ve saklanır.
+                    MP3, M4A, WAV, FLAC, OGG. İlk kullanımda yaklaşık{" "}
+                    {chosen.size} model ({chosen.name}) indirilir ve
+                    saklanır.
                     {engine.phase === "idle" && (
                       <>
                         {" "}
@@ -742,6 +773,7 @@ export function App() {
           settings={settings}
           onSettings={changeSettings}
           burning={burner.state.status === "running"}
+          model={model}
           method={method}
           onMethod={setMethod}
           job={job}

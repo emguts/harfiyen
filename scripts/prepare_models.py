@@ -440,10 +440,73 @@ def prepare_punct(cache: Path) -> None:
     print(f"punct: {out.stat().st_size / 1e6:.1f} MB model, {len(spm['pieces'])} pieces")
 
 
+WHISPER_REPO = "onnx-community/whisper-large-v3-turbo_timestamped"
+WHISPER_OUT = ROOT / "public" / "models" / "whisper-large-v3-turbo"
+# Two choices in the app: fp16 encoder with q4f16 decoder ("Whisper Turbo"),
+# and q4f16 for both ("Whisper Turbo Hafif"); they share the decoder. The *_timestamped export also
+# returns cross-attention, which word timestamps need.
+WHISPER_FILES = [
+    "encoder_model_fp16.onnx",
+    "decoder_model_merged_q4f16.onnx",
+    "encoder_model_q4f16.onnx",
+]
+# Silero VAD v5 (MIT): Whisper invents text over silence.
+VAD_URL = "https://github.com/snakers4/silero-vad/raw/v5.1.2/src/silero_vad/data/silero_vad.onnx"
+
+
+def prepare_whisper() -> None:
+    """Whisper large-v3 turbo for the high-accuracy option. Used as published."""
+    WHISPER_OUT.mkdir(parents=True, exist_ok=True)
+    for f in [*(f"onnx/{f}" for f in WHISPER_FILES), "vocab.json", "added_tokens.json", "config.json", "generation_config.json"]:
+        p = WHISPER_OUT / Path(f).name
+        if not p.exists():
+            url = f"https://huggingface.co/{WHISPER_REPO}/resolve/main/{f}"
+            print("download", url)
+            urllib.request.urlretrieve(url, str(p) + ".part")
+            os.replace(str(p) + ".part", p)
+    vad = WHISPER_OUT / "silero_vad.onnx"
+    if not vad.exists():
+        print("download", VAD_URL)
+        urllib.request.urlretrieve(VAD_URL, vad)
+
+    cfg = json.loads((WHISPER_OUT / "config.json").read_text())
+    gen = json.loads((WHISPER_OUT / "generation_config.json").read_text())
+    added = json.loads((WHISPER_OUT / "added_tokens.json").read_text())
+    whisper = {
+        "name": "whisper-large-v3-turbo",
+        "numMel": cfg["num_mel_bins"],
+        "decoderLayers": cfg["decoder_layers"],
+        "heads": cfg["decoder_attention_heads"],
+        "headDim": cfg["d_model"] // cfg["decoder_attention_heads"],
+        "maxTargetPositions": cfg["max_target_positions"],
+        "tokens": {
+            "sot": added["<|startoftranscript|>"],
+            "eot": added["<|endoftext|>"],
+            "language": gen["lang_to_id"]["<|tr|>"],
+            "transcribe": gen["task_to_id"]["transcribe"],
+            "noTimestamps": gen["no_timestamps_token_id"],
+            "noSpeech": added["<|nospeech|>"],
+            "timestampBegin": added["<|0.00|>"],
+        },
+        "suppress": gen["suppress_tokens"],
+        "beginSuppress": gen["begin_suppress_tokens"],
+        "alignmentHeads": gen["alignment_heads"],
+        "medianFilterWidth": cfg["median_filter_width"],
+        "maxInitialTimestampIndex": gen["max_initial_timestamp_index"],
+        "files": {f: (WHISPER_OUT / f).stat().st_size for f in [*WHISPER_FILES, "vocab.json", "silero_vad.onnx"]},
+    }
+    (WHISPER_OUT / "model.json").write_text(json.dumps(whisper, indent=2))
+    print(f"whisper: {sum(whisper['files'].values()) / 1e6:.0f} MB")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", type=Path, default=ROOT / ".cache" / "seda-v0.1")
+    ap.add_argument("--whisper-only", action="store_true", help="only (re)build the Whisper files")
     args = ap.parse_args()
+    if args.whisper_only:
+        prepare_whisper()
+        return
     args.src.mkdir(parents=True, exist_ok=True)
     download(args.src)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -457,6 +520,7 @@ def main() -> None:
     convert_fst(args.src / "lm/2gram.fst", OUT / "lodr.bin")
     write_config(args.src)
     prepare_punct(args.src.parent / "punct_cap_seg_47_language")
+    prepare_whisper()
 
 
 if __name__ == "__main__":

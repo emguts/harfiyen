@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DecodeOptions, Word } from "../engine";
+import { DEFAULT_MODEL, isModelId, modelFileUrl, modelInfo, type ModelId } from "../models";
+import { allCached } from "../worker/modelStore";
 import type { FromWorker, ProviderChoice, ToWorker } from "../worker/protocol";
 import { decodeWithAudioContext } from "./decodeFallback";
 import { LiveMeter, type AuraLevels } from "../render/aura";
@@ -26,6 +28,8 @@ export interface Job {
   /** Microphone job: `recording` while the mic is open. */
   live: boolean;
   recording: boolean;
+  /** The model that wrote the transcript. */
+  model: ModelId;
   options: DecodeOptions;
   status: JobStatus;
   duration: number | null;
@@ -41,6 +45,22 @@ export interface Job {
 }
 
 const PROVIDER_KEY = "harfiyen.provider";
+const MODEL_KEY = "harfiyen.model";
+
+function loadModel(): ModelId {
+  try {
+    const v = localStorage.getItem(MODEL_KEY);
+    return isModelId(v) ? v : DEFAULT_MODEL;
+  } catch {
+    return DEFAULT_MODEL;
+  }
+}
+
+/** True if the model's files are all in the cache, so loading costs no download. */
+export function modelIsCached(id: ModelId) {
+  const m = modelInfo(id);
+  return allCached(m.files.map((f) => modelFileUrl(m, f)));
+}
 
 function loadProvider(): ProviderChoice {
   try {
@@ -76,6 +96,8 @@ export function useTranscriber() {
   /** The user's choice; the worker may run on the CPU anyway after a GPU failure. */
   const [provider, setProviderState] = useState<ProviderChoice>(loadProvider);
   const workerProvider = useRef<ProviderChoice>(provider);
+  const [model, setModelState] = useState<ModelId>(loadModel);
+  const workerModel = useRef<ModelId>(model);
   const cpuReason = useRef<string | undefined>(undefined);
   const onGpuFailure = useRef(() => {});
 
@@ -241,7 +263,7 @@ export function useTranscriber() {
   const prepare = useCallback(() => {
     const e = engineRef.current;
     if (e.phase !== "idle" && e.phase !== "error") return;
-    send({ type: "init", provider: workerProvider.current, reason: cpuReason.current });
+    send({ type: "init", model: workerModel.current, provider: workerProvider.current, reason: cpuReason.current });
     if (e.phase === "error") setEngineState({ phase: "idle" });
   }, [send, setEngineState]);
 
@@ -269,6 +291,7 @@ export function useTranscriber() {
         file,
         live: false,
         recording: false,
+        model: workerModel.current,
         options,
         status: "running",
         duration: null,
@@ -290,7 +313,7 @@ export function useTranscriber() {
 
   /** Open a saved transcript as a finished job; `file` may come later (attach). */
   const load = useCallback(
-    (p: Pick<Job, "file" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands">) => {
+    (p: Pick<Job, "file" | "model" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands">) => {
       const prev = jobRef.current;
       if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
       cancelLiveWait();
@@ -358,6 +381,7 @@ export function useTranscriber() {
         file: null,
         live: true,
         recording: true,
+        model: workerModel.current,
         options,
         status: "running",
         duration: null,
@@ -433,6 +457,15 @@ export function useTranscriber() {
   // over there; a recording stops, since its audio so far went to the old worker.
   onGpuFailure.current = () => {
     const j = jobRef.current;
+    const m = modelInfo(workerModel.current);
+    if (m.gpuOnly) {
+      // No CPU to fall back to: say so and leave the choice to the user.
+      const message = `Ekran kartı hata verdi. ${m.name} işlemcide çalışmaz; Seda ile deneyebilirsin.`;
+      restartWorker(workerProvider.current);
+      setEngineState({ phase: "error", message });
+      if (j?.status === "running") update(j.id, (x) => ({ ...x, status: "error", tentative: [], error: message }));
+      return;
+    }
     restartWorker("wasm", GPU_FAILED);
     if (j?.status === "running" && j.live) {
       void stopLive();
@@ -465,7 +498,28 @@ export function useTranscriber() {
     [restartWorker, prepare],
   );
 
-  return { engine, job, liveWaiting, provider, setProvider, prepare, start, load, attach, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
+  /**
+   * Choose the speech model; the next transcription uses it. Loads it right
+   * away only if it was loaded before and costs no download.
+   */
+  const setModel = useCallback(
+    (m: ModelId) => {
+      try {
+        localStorage.setItem(MODEL_KEY, m);
+      } catch {
+        // Not remembered, still used for this visit.
+      }
+      setModelState(m);
+      workerModel.current = m;
+      const was = engineRef.current.phase;
+      // Back to the user's provider choice: a CPU fallback was for the old model.
+      restartWorker(provider);
+      if (was !== "idle") void modelIsCached(m).then((yes) => yes && workerModel.current === m && prepare());
+    },
+    [restartWorker, prepare, provider],
+  );
+
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, start, load, attach, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
 }
 
 export { MicError };

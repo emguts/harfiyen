@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "models": "python3 scripts/prepare_models.py",
-    "test:engine": "tsx tests/engine.node.ts"
+    "upload-models": "python3 scripts/upload_models.py",
+    "test:engine": "tsx tests/engine.node.ts",
+    "test:whisper": "tsx tests/whisper.node.ts"
   },
   "dependencies": {
     "@fontsource-variable/google-sans-flex": "^5.3.1",

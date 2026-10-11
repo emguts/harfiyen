@@ -25,11 +25,14 @@ export function ProviderMenu({
   value,
   engine,
   onChange,
+  cpuUnavailable,
   locked,
 }: {
   value: ProviderChoice;
   engine: EngineState;
   onChange: (p: ProviderChoice) => void;
+  /** Why the chosen model cannot run on the CPU, if it cannot. */
+  cpuUnavailable: string | null;
   /** A transcription is running; switching would abort it. */
   locked: boolean;
 }) {
@@ -61,30 +64,33 @@ export function ProviderMenu({
     >
       <MenuGroup>
         <MenuTitle>Model nerede çalışsın</MenuTitle>
-        {CHOICES.map((c) => (
-          <MenuItem
-            key={c.value}
-            choice
-            role="menuitemradio"
-            aria-checked={c.value === value}
-            disabled={locked}
-            onClick={() => {
-              setOpen(false);
-              if (c.value !== value) onChange(c.value);
-            }}
-          >
-            <span className="grid h-[18px] w-[14px] flex-none place-items-center" aria-hidden>
-              {c.value === value && <IconCheck size={14} />}
-            </span>
-            <span className={`grid h-[18px] flex-none place-items-center ${PROVIDER_COLOR[c.value]} ${ON_HOVER}`}>
-              <c.Icon />
-            </span>
-            <span className="grid gap-0.5">
-              <span>{c.label}</span>
-              <MenuNote>{c.note}</MenuNote>
-            </span>
-          </MenuItem>
-        ))}
+        {CHOICES.map((c) => {
+          const blocked = c.value === "wasm" ? cpuUnavailable : null;
+          return (
+            <MenuItem
+              key={c.value}
+              choice
+              role="menuitemradio"
+              aria-checked={c.value === value}
+              disabled={locked || (!!blocked && c.value !== value)}
+              onClick={() => {
+                setOpen(false);
+                if (c.value !== value) onChange(c.value);
+              }}
+            >
+              <span className="grid h-[18px] w-[14px] flex-none place-items-center" aria-hidden>
+                {c.value === value && <IconCheck size={14} />}
+              </span>
+              <span className={`grid h-[18px] flex-none place-items-center ${PROVIDER_COLOR[c.value]} ${ON_HOVER}`}>
+                <c.Icon />
+              </span>
+              <span className="grid gap-0.5">
+                <span>{c.label}</span>
+                <MenuNote>{blocked ?? c.note}</MenuNote>
+              </span>
+            </MenuItem>
+          );
+        })}
       </MenuGroup>
       {ready?.fallbackReason && <MenuFoot>{ready.fallbackReason}</MenuFoot>}
       {ready?.gpu && <MenuFoot>Şu an: {ready.gpu}</MenuFoot>}

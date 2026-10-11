@@ -78,6 +78,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
         createdAt: now,
         updatedAt: now,
         live: job.live,
+        model: job.model,
         method: job.options.method,
         duration: null,
         elapsed: null,
@@ -94,6 +95,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
     if (p.name === LIVE_NAME && job.file) p.name = stripExt(job.file.name);
     Object.assign(p, {
       updatedAt: Date.now(),
+      model: job.model,
       method: job.options.method,
       duration: job.duration ?? job.decoded,
       elapsed: job.elapsed,

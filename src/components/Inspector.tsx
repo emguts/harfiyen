@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod } from "../engine";
 import type { EngineState, Job } from "../lib/useTranscriber";
+import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { Button, Hint, Pane, PaneBody, Row, RowLabel, Section, SectionActions, Switch } from "./ui";
@@ -15,6 +16,7 @@ export function Inspector({
   settings,
   onSettings,
   burning,
+  model,
   method,
   onMethod,
   job,
@@ -29,6 +31,7 @@ export function Inspector({
   settings: CaptionSettings;
   onSettings: (s: CaptionSettings) => void;
   burning: boolean;
+  model: ModelId;
   method: DecodingMethod;
   onMethod: (m: DecodingMethod) => void;
   job: Job | null;
@@ -42,6 +45,14 @@ export function Inspector({
 }) {
   const [tab, setTab] = useState<Tab>("captions");
   const running = job?.status === "running";
+  const info = modelInfo(model);
+  // What a new run would change: the model, or (seda only) the method.
+  const differs = job && (model !== job.model || (model === "seda" && method !== job.options.method));
+  const restartLabel = !differs
+    ? "Yeniden yazıya dök"
+    : model !== job.model
+      ? `${info.name} ile yeniden dök`
+      : `${methodTitle(method)} ile yeniden dök`;
 
   return (
     <Pane side="right">
@@ -62,14 +73,21 @@ export function Inspector({
         ) : (
           <div className={STUDIO}>
             <Section title="Doğruluk">
-              <MethodPicker value={method} onChange={onMethod} disabled={running} />
+              {info.id === "seda" ? (
+                <MethodPicker value={method} onChange={onMethod} disabled={running} />
+              ) : (
+                <Hint>
+                  {info.name} sesi 30 saniyelik parçalar hâlinde işler; kelimeler her parça bitince gelir. Model
+                  seçimi üst çubukta.
+                </Hint>
+              )}
               {job && (
                 <SectionActions>
                   {running ? (
                     <Button onClick={onCancel}>Durdur</Button>
                   ) : (
                     <Button variant="primary" onClick={onRestart}>
-                      {method === job.options.method ? "Yeniden yazıya dök" : `${methodTitle(method)} ile yeniden dök`}
+                      {restartLabel}
                     </Button>
                   )}
                 </SectionActions>
@@ -81,6 +99,9 @@ export function Inspector({
                 <Switch checked={autoPunct} onChange={(e) => onAutoPunct(e.target.checked)} />
               </Row>
               <Hint>
+                {info.punctuates
+                  ? `${info.name} noktalamayı ve büyük harfleri kendisi yazar; bu ayar Seda dökümleri için. `
+                  : ""}
                 Yazıya döküm bitince nokta, virgül ve soru işareti eklenir; cümle başları ve özel adlar büyük harfle
                 yazılır ("İstanbul'da"). ⌘Z ile geri alınır. İlk kullanımda yaklaşık 60 MB model indirilir.
               </Hint>
@@ -96,7 +117,8 @@ export function Inspector({
               <dl className="m-0 grid grid-cols-[88px_1fr] gap-x-2.5 gap-y-1.5 text-[12.5px] [&_dd]:m-0 [&_dt]:text-fg-3">
                 <dt>Model</dt>
                 <dd>
-                  <a href="https://huggingface.co/atasoglu/seda-v0.1">seda-v0.1</a>, Türkçe
+                  <a href={info.link}>{info.spec}</a>
+                  {info.engine === "seda" ? ", Türkçe" : ", çok dilli (Türkçe seçili)"}
                 </dd>
                 <dt>Çalıştığı yer</dt>
                 <dd>
@@ -110,7 +132,8 @@ export function Inspector({
                 <dd>Ses ve video bu bilgisayardan çıkmaz.</dd>
               </dl>
               <Hint>
-                Sayılar yazıyla gelir ("bin dokuz yüz yirmi üç"). Bir kelimeye tıklayınca kayıt o ana atlar.
+                {info.id === "seda" && 'Sayılar yazıyla gelir ("bin dokuz yüz yirmi üç"). '}
+                Bir kelimeye tıklayınca kayıt o ana atlar.
               </Hint>
             </Section>
           </div>

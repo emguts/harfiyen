@@ -7,6 +7,7 @@
 
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod, Word } from "../engine";
+import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
 
 export interface MediaInfo {
   name: string;
@@ -24,6 +25,8 @@ export interface Project {
   updatedAt: number;
   /** Made from the microphone. */
   live: boolean;
+  /** Missing in projects saved before there was a choice (seda). */
+  model?: ModelId;
   method: DecodingMethod;
   duration: number | null;
   elapsed: number | null;
@@ -201,6 +204,7 @@ export function projectToFile(p: Project): string {
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     live: p.live,
+    model: p.model,
     method: p.method,
     duration: p.duration,
     elapsed: p.elapsed,
@@ -235,6 +239,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     createdAt: num(d.createdAt) ?? now,
     updatedAt: now,
     live: d.live === true,
+    model: isModelId(d.model) ? d.model : DEFAULT_MODEL,
     method: (d.method as DecodingMethod) ?? "beam-lm",
     duration: num(d.duration),
     elapsed: num(d.elapsed),

@@ -163,3 +163,9 @@ export const IconProjects = (p: P) => (
     <path d="M2.5 5.5h11v7a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1zM4 3.5h8M5.5 1.5h5" />
   </Svg>
 );
+
+export const IconWave = (p: P) => (
+  <Svg {...p}>
+    <path d="M2.5 7v2M5 5v6M8 2.5v11M11 5v6M13.5 7v2" />
+  </Svg>
+);

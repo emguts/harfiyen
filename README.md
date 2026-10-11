@@ -35,7 +35,8 @@ https://github.com/user-attachments/assets/72944ea4-75aa-4462-b5eb-b98a2f604bfc
 ---
 
 Harfiyen, [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) Türkçe konuşma tanıma modelini doğrudan
-tarayıcıda, ekran kartı üzerinde (**WebGPU**) çalıştırır. Bir video ya da ses dosyası yüklersin, kelimeler
+tarayıcıda, ekran kartı üzerinde (**WebGPU**) çalıştırır. Daha yüksek doğruluk için
+[Whisper large-v3 turbo](https://huggingface.co/openai/whisper-large-v3-turbo) da seçilebilir. Bir video ya da ses dosyası yüklersin, kelimeler
 zaman kodlarıyla belirir, istediğin altyazı stilini seçersin ve altyazılı videoyu indirirsin. Mikrofonla
 konuşurken de canlı çalışır.
 
@@ -46,7 +47,14 @@ konuşurken de canlı çalışır.
 - Video ve ses dosyaları: MP4, MOV, MKV, WebM, MP3, M4A, WAV, FLAC, OGG. Uzun dosyaları parça parça işler,
   bellek şişmez.
 - Canlı mikrofon: kelimeler konuştuktan yaklaşık bir saniye sonra belirir, kayıt aynı anda saklanır.
-- Üç doğruluk ayarı: **Hızlı**, **Dengeli** ve dil modeliyle **En doğru**.
+- İki model, üst çubuktan seçilir:
+  - **Seda** (varsayılan, ~105 MB): küçük ve hızlı, canlı mikrofonda ve her cihazda çalışır. Üç doğruluk
+    ayarı var: **Hızlı**, **Dengeli** ve dil modeliyle **En doğru**.
+  - **Whisper Turbo** (~1,5 GB) ve **Whisper Turbo Hafif** (~600 MB, 4 bit encoder): daha az hata,
+    noktalamayı, büyük harfleri ve rakamları kendisi yazar. Hafif sürüm zor seste biraz daha fazla hata
+    yapabilir. Yalnızca dosyalarda ve ekran kartında (WebGPU, `shader-f16`) çalışır; sesi 30 saniyelik
+    parçalar hâlinde işler. Sessiz bölümlerde metin uydurmaması için ses etkinliği algılayıcı (Silero VAD)
+    kullanır.
 - Otomatik noktalama ve büyük harf: döküm bitince nokta, virgül ve soru işareti eklenir; cümle başları
   ve özel adlar büyük harfle yazılır. Türkçe özel ad ekleri için kesme işareti eklenir ("İstanbul'da").
   Kelime zamanları korunur; işlem ⌘Z / Ctrl+Z ile geri alınabilir.
@@ -94,12 +102,12 @@ tarayıcı (masaüstü Chrome veya Edge önerilir).
 ```bash
 npm install
 python3 -m pip install -r scripts/requirements.txt
-npm run models     # konuşma tanıma ve noktalama modellerini indirir ve tarayıcı için dönüştürür (bir kez)
+npm run models     # konuşma tanıma ve noktalama modellerini indirir ve tarayıcı için dönüştürür (bir kez, Whisper dahil ~2 GB)
 npm run dev        # http://localhost:5173
 ```
 
-İlk açılışta tarayıcı yaklaşık 105 MB indirir (model ve ONNX Runtime) ve saklar; sonraki açılışlar
-önbellekten, internetsiz çalışır. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB indirilir ve
+İlk açılışta tarayıcı yaklaşık 105 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
+önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB) indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB indirilir ve
 önbelleğe alınır. Ses ve metin işlenmek için sunucuya gönderilmez.
 
 ### Telefondan veya ağdaki başka bir cihazdan açmak
@@ -184,6 +192,9 @@ VITE_ORT_WASM_URL=https://YOUR-R2-PUBLIC-HOST/runtime/ort-wasm-simd-threaded.asy
 
 R2'ye `public/models/` içeriğini `models/` altında, kullanılan ONNX Runtime sürümüne ait
 `node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm` dosyasını `runtime/` altında yükle.
+Bunu `npm run upload-models` yapar (`boto3` gerekir): yalnızca uygulamanın indirdiği dosyaları gönderir,
+büyük dosyaları parça parça yükler, bucket'ta aynısı olanları atlar. `--dry-run` neyin gideceğini gösterir.
+R2 bilgilerini `.env.local` dosyasına yaz (`.env.example`'daki `R2_*` değişkenleri; dosya git'e girmez).
 Bucket CORS ayarında uygulamanın `https://PROJE.pages.dev` adresinden `GET` ve `HEAD` isteklerine izin ver;
 `AllowedHeaders` alanını `["*"]` olarak ayarla.
 
@@ -195,6 +206,7 @@ klasörünü elle yayınlıyorsan içindeki `models/` klasörünü Pages'e yükl
 
 ```bash
 npm run typecheck  # TypeScript kontrolü
+npm run test:whisper -- kayit.wav   # Whisper motorunu Node'da dener (16 bit WAV)
 npm run build      # üretim derlemesi
 npm run preview    # derlemeyi lokalinde önizle
 ```
@@ -236,6 +248,10 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 ## Lisanslar ve teşekkür
 
 - Konuşma tanıma modeli [atasoglu/seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1): Apache-2.0.
+- [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
+  sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
+  kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
+- [Silero VAD](https://github.com/snakers4/silero-vad) v5: MIT.
 - Dil modeli dosyaları (`rnnlm`, `2gram`): CC BY-SA 4.0 (Türkçe Vikipedi üzerinde eğitildi).
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.
 - [ONNX Runtime Web](https://onnxruntime.ai) (MIT), [mediabunny](https://mediabunny.dev) (MPL-2.0),

@@ -1,10 +1,11 @@
 import type { DecodeOptions, Word } from "../engine";
+import type { ModelId } from "../models";
 
 export type ProviderChoice = "auto" | "webgpu" | "wasm";
 
 export type ToWorker =
   /** Load the model. `reason`: why the page chose the CPU, shown once ready. */
-  | { type: "init"; provider: ProviderChoice; reason?: string }
+  | { type: "init"; model: ModelId; provider: ProviderChoice; reason?: string }
   | { type: "transcribe"; jobId: number; file: File; options: DecodeOptions }
   | {
       type: "transcribe-pcm";

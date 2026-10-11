@@ -10,19 +10,19 @@ import {
   type DecodeOptions,
   type EncoderProvider,
   type ModelConfig,
-  type Recognizer,
 } from "../engine";
+import type { SpeechEngine, SpeechStream } from "../engine/stream";
+import { modelFileUrl, modelInfo, MODELS_BASE, type ModelId, type ModelInfo } from "../models";
 import { Punctuator, type PunctConfig } from "../punct/punctuator";
 import type { SpmVocab } from "../punct/spm";
 import { finishTurkish } from "../punct/turkish";
 import { fetchAll } from "./modelStore";
 import { BandTracker } from "../render/aura";
+import { WhisperEngine, type WhisperConfig } from "../whisper";
 import { PEAK_STEP, type ErrorCode, type FromWorker, type ProviderChoice, type ToWorker } from "./protocol";
 
 declare const self: DedicatedWorkerGlobalScope;
 
-const MODELS_BASE = (import.meta.env.VITE_MODELS_BASE_URL || `${import.meta.env.BASE_URL}models`).replace(/\/+$/, "");
-const MODEL_BASE = `${MODELS_BASE}/seda-v0.1/`;
 /** Approximate; the real size is settled once the download finishes. */
 const ORT_WASM_SIZE = 26_800_000;
 const PROGRESS_INTERVAL_MS = 150;
@@ -38,22 +38,31 @@ class JobError extends Error {
   }
 }
 
-let enginePromise: Promise<Engine> | null = null;
-/** Set by `init`; a worker serves one provider for its whole life. */
+let enginePromise: Promise<SpeechEngine> | null = null;
+/** Set by `init`; a worker serves one model and provider for its whole life. */
+let modelChoice: ModelId = "seda";
 let providerChoice: ProviderChoice = "auto";
 let cpuReason: string | null = null;
 const cancelled = new Set<number>();
 
-async function pickProvider(choice: ProviderChoice): Promise<{ provider: EncoderProvider; gpu: string | null; reason: string | null }> {
-  if (choice === "wasm") return { provider: "wasm", gpu: null, reason: null };
+interface ProviderPick {
+  provider: EncoderProvider;
+  gpu: string | null;
+  reason: string | null;
+  /** 16-bit float shaders, which fp16 models need. */
+  f16: boolean;
+}
+
+async function pickProvider(choice: ProviderChoice): Promise<ProviderPick> {
+  if (choice === "wasm") return { provider: "wasm", gpu: null, reason: null, f16: false };
   if (!("gpu" in navigator) || !navigator.gpu) {
-    return { provider: "wasm", gpu: null, reason: "Bu tarayıcı WebGPU desteklemiyor." };
+    return { provider: "wasm", gpu: null, reason: "Bu tarayıcı WebGPU desteklemiyor.", f16: false };
   }
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-  if (!adapter) return { provider: "wasm", gpu: null, reason: "WebGPU açık ama uygun bir GPU bulunamadı." };
+  if (!adapter) return { provider: "wasm", gpu: null, reason: "WebGPU açık ama uygun bir GPU bulunamadı.", f16: false };
   const info = adapter.info;
   const gpu = [info?.vendor, info?.architecture || info?.description].filter(Boolean).join(" ") || "GPU";
-  return { provider: "webgpu", gpu, reason: null };
+  return { provider: "webgpu", gpu, reason: null, f16: adapter.features.has("shader-f16") };
 }
 
 /**
@@ -67,31 +76,52 @@ function wasmThreads(provider: EncoderProvider) {
   return Math.max(1, Math.min(4, Math.ceil((navigator.hardwareConcurrency || 2) / 2)));
 }
 
-async function loadEngine(choice: ProviderChoice): Promise<Engine> {
-  const cfgRes = await fetch(MODEL_BASE + "model.json", { cache: "no-cache" });
-  if (!cfgRes.ok) throw new JobError("model", "model.json bulunamadı. Önce `npm run models` çalıştırılmalı.");
-  const config: ModelConfig = await cfgRes.json();
-  const names = ["encoder.webgpu.onnx", "decoder.onnx", "joiner.int8.onnx", "rnnlm.int8.onnx", "lodr.bin", "tokens.txt"];
-  const files = await fetchAll(
-    [
-      ...names.map((n) => ({ url: MODEL_BASE + n, size: config.files[n] })),
-      { url: ortWasmUrl, size: ORT_WASM_SIZE },
-    ],
+async function readConfig<T>(m: ModelInfo): Promise<T> {
+  const res = await fetch(modelFileUrl(m, "model.json"), { cache: "no-cache" });
+  if (!res.ok) throw new JobError("model", "model.json bulunamadı. Önce `npm run models` çalıştırılmalı.");
+  return res.json();
+}
+
+/** Model files plus the wasm runtime, with progress posted to the page. */
+function download(m: ModelInfo, sizes: Record<string, number>) {
+  return fetchAll(
+    [...m.files.map((n) => ({ url: modelFileUrl(m, n), size: sizes[n] })), { url: ortWasmUrl, size: ORT_WASM_SIZE }],
     (loaded, total, fromCache) => post({ type: "download", loaded, total, fromCache }),
   );
-  const [encoder, decoder, joiner, lm, lodr, tokens, wasm] = files;
+}
 
-  post({ type: "compiling" });
-  const pick = await pickProvider(choice);
+/** Start the wasm runtime. Must happen once, before the first session. */
+function setupRuntime(wasm: Uint8Array, provider: EncoderProvider) {
   ort.env.wasm.wasmBinary = wasm.buffer as ArrayBuffer;
   // wasm threads load this script. Without it they load the bundle ORT is
   // built into, i.e. this worker in production, and never start. The dev
   // server already serves ORT as its own module.
   if (import.meta.env.PROD) ort.env.wasm.wasmPaths = { mjs: new URL(ortMjsUrl, self.location.href) };
-  ort.env.wasm.numThreads = wasmThreads(pick.provider);
+  ort.env.wasm.numThreads = wasmThreads(provider);
   ort.env.logLevel = "error";
+}
 
-  const modelFiles = {
+/**
+ * Create the sessions. A failure on the GPU is a driver or memory problem:
+ * the wasm runtime is already set up for the GPU (one thread), so the page
+ * restarts the worker on the CPU instead of falling back in place.
+ */
+async function createOnProvider<T>(pick: ProviderPick, create: () => Promise<T>): Promise<T> {
+  try {
+    return await create();
+  } catch (e) {
+    if (pick.provider !== "webgpu") throw e;
+    console.warn("WebGPU session failed", e);
+    throw new JobError("gpu", "WebGPU oturumu açılamadı.");
+  }
+}
+
+async function loadSeda(m: ModelInfo, pick: ProviderPick): Promise<SpeechEngine> {
+  const config = await readConfig<ModelConfig>(m);
+  const [encoder, decoder, joiner, lm, lodr, tokens, wasm] = await download(m, config.files);
+  post({ type: "compiling" });
+  setupRuntime(wasm, pick.provider);
+  const files = {
     config,
     encoder,
     decoder,
@@ -100,17 +130,30 @@ async function loadEngine(choice: ProviderChoice): Promise<Engine> {
     lodr: lodr.buffer.slice(lodr.byteOffset, lodr.byteOffset + lodr.byteLength) as ArrayBuffer,
     tokens: new TextDecoder().decode(tokens),
   };
+  return createOnProvider(pick, () => Engine.create(ort, files, pick.provider));
+}
 
-  let engine: Engine;
-  try {
-    engine = await Engine.create(ort, modelFiles, pick.provider);
-  } catch (e) {
-    if (pick.provider !== "webgpu") throw e;
-    // The wasm runtime is already set up for the GPU (one thread); the page
-    // restarts the worker on the CPU instead of falling back in place.
-    console.warn("WebGPU session failed", e);
-    throw new JobError("gpu", "WebGPU oturumu açılamadı.");
+async function loadWhisper(m: ModelInfo, pick: ProviderPick): Promise<SpeechEngine> {
+  // Checked before the large download: Whisper does not run on the CPU here.
+  if (pick.provider !== "webgpu") {
+    throw new JobError(
+      "model",
+      pick.reason ? `${m.name} ekran kartı gerektirir. ${pick.reason}` : `${m.name} işlemcide (WASM) çalışmaz, ekran kartı gerekir.`,
+    );
   }
+  if (m.needsF16 && !pick.f16) throw new JobError("model", `Bu ekran kartı ${m.name} için gereken 16 bit hesaplamayı (shader-f16) desteklemiyor.`);
+  const config = await readConfig<WhisperConfig>(m);
+  const [encoder, decoder, vocab, vad, wasm] = await download(m, config.files);
+  post({ type: "compiling" });
+  setupRuntime(wasm, pick.provider);
+  const files = { config, encoder, decoder, vocab: JSON.parse(new TextDecoder().decode(vocab)), vad };
+  return createOnProvider(pick, () => WhisperEngine.create(ort, files, pick.provider));
+}
+
+async function loadEngine(model: ModelId, choice: ProviderChoice): Promise<SpeechEngine> {
+  const m = modelInfo(model);
+  const pick = await pickProvider(choice);
+  const engine = await (m.engine === "whisper" ? loadWhisper(m, pick) : loadSeda(m, pick));
   post({
     type: "ready",
     provider: engine.provider === "webgpu" ? "webgpu" : "wasm",
@@ -122,7 +165,7 @@ async function loadEngine(choice: ProviderChoice): Promise<Engine> {
 
 function getEngine() {
   if (!enginePromise) {
-    enginePromise = loadEngine(providerChoice).catch((e) => {
+    enginePromise = loadEngine(modelChoice, providerChoice).catch((e) => {
       enginePromise = null;
       throw e;
     });
@@ -166,7 +209,7 @@ async function punctuate(id: number, words: string[]) {
 
 /** Feeds 16 kHz audio through the recognizer and reports progress. */
 class Job {
-  private rec: Recognizer;
+  private rec: SpeechStream;
   private resampler: Resampler | null = null;
   private peaks: number[] = [];
   private bands = new BandTracker();
@@ -179,7 +222,7 @@ class Job {
 
   constructor(
     readonly id: number,
-    engine: Engine,
+    engine: SpeechEngine,
     options: DecodeOptions,
   ) {
     this.onGpu = engine.provider === "webgpu";
@@ -393,6 +436,7 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
   const m = ev.data;
   switch (m.type) {
     case "init":
+      modelChoice = m.model;
       providerChoice = m.provider;
       cpuReason = m.reason ?? null;
       getEngine().catch((e) =>
