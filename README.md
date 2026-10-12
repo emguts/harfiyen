@@ -61,6 +61,11 @@ konuşurken de canlı çalışır.
 - Kelime düzeyinde zaman: bir kelimeye tıkla, kayıt o ana atlasın; çalarken konuşulan kelime vurgulanır.
 - Düzenleme: satıra çift tıkla ve düzelt, satırı sil, ⌘Z ile geri al. Değişmeyen kelimelerin zamanları
   korunur.
+- Bul ve değiştir (⌘F / Ctrl+F): yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte düzelt. Büyük/küçük
+  harfe bakmaz, istenirse yalnızca tam kelimeleri bulur.
+- SRT ve VTT açma: hazır altyazı açılıp stillendirilir ve videoya yazılır. Satırlar ve zamanlar korunur;
+  düzeltilen altyazı aynı satırlarla yeniden indirilebilir. UTF-8 dışında Windows-1254 kodlu dosyalar da
+  okunur.
 
 ### Altyazı
 

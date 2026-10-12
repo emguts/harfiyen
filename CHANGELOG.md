@@ -2,6 +2,19 @@
 
 Yeni sürümler en üstte.
 
+## v0.2.0 (12 Ekim 2026)
+
+- **Seslendirme:** Transkript, [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) ya da
+  [Antalia Mini](https://huggingface.co/cloud0day3/antalia-mini) ile yapay bir Türkçe sesle yeniden okunur.
+  Her satır kendi zamanında başlar. Oynatıcı ve altyazılı video yapay sesi kullanabilir, ses WAV olarak da
+  indirilebilir.
+- **Bul ve değiştir (⌘F / Ctrl+F):** Yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte tek seferde
+  düzelt. Büyük/küçük harfe bakmaz, Türkçe harfleri doğru eşler; istersen yalnızca tam kelimeleri bulur.
+  Değiştirme tek adımda geri alınır.
+- **SRT ve VTT açma:** Hazır altyazıyı aç, stilini seç, videoya yaz. Açık bir video varsa altyazı ona
+  bağlanır. Altyazının satırları ve zamanları korunur; düzeltip yeniden SRT ya da VTT olarak indirebilirsin.
+  Eski Windows araçlarıyla kaydedilmiş Türkçe dosyalar da doğru okunur.
+
 ## v0.1.0 (11 Ekim 2026)
 
 İlk herkese açık sürüm. Harfiyen, Türkçe konuşmayı tarayıcıda yazıya döker ve altyazıyı videonun içine
