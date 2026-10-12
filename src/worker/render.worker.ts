@@ -8,9 +8,13 @@
 // Audio files and recordings: the picture is the audio-reactive aura (the
 // same one the player shows), rendered at 1080p30; the audio is re-encoded
 // to AAC (or Opus) for the MP4.
+//
+// With a dub, the sound in either case is the synthetic voice instead of the
+// file's own audio.
 
 import {
   ALL_FORMATS,
+  AudioSample,
   AudioSampleSink,
   AudioSampleSource,
   BlobSource,
@@ -29,11 +33,20 @@ import { CaptionRenderer } from "../captions/renderer";
 import type { CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
 import { createCompositor } from "../render/compositor";
+import { DUB_RATE, dubSlice, type DubClip } from "../tts/dub";
 
 declare const self: DedicatedWorkerGlobalScope;
 
 export type ToRender =
-  | { type: "burn"; jobId: number; file: File; words: Word[]; settings: CaptionSettings; bands: Float32Array }
+  | {
+      type: "burn";
+      jobId: number;
+      file: File;
+      words: Word[];
+      settings: CaptionSettings;
+      bands: Float32Array;
+      dub: DubClip[] | null;
+    }
   | { type: "cancel"; jobId: number };
 
 export type FromRender =
@@ -47,13 +60,29 @@ const post = (m: FromRender) => self.postMessage(m);
 const running = new Map<number, { cancel(): Promise<void> }>();
 const cancelled = new Set<number>();
 
-async function burn(jobId: number, file: File, words: Word[], settings: CaptionSettings, bands: Float32Array) {
+const dubSample = (dub: DubClip[], timestamp: number, frames: number) =>
+  new AudioSample({
+    data: dubSlice(dub, timestamp, frames),
+    format: "f32",
+    numberOfChannels: 1,
+    sampleRate: DUB_RATE,
+    timestamp,
+  });
+
+async function burn(
+  jobId: number,
+  file: File,
+  words: Word[],
+  settings: CaptionSettings,
+  bands: Float32Array,
+  dub: DubClip[] | null,
+) {
   const started = performance.now();
   // The 2D canvas in a worker only sees fonts registered on the worker.
   await loadCaptionFont(settings.font, self.fonts);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
-  if (!track) return burnAudio(jobId, input, words, settings, bands, started);
+  if (!track) return burnAudio(jobId, input, words, settings, bands, dub, started);
   if (!(await track.canDecode())) throw new Error(`Video kodeki (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -93,6 +122,15 @@ async function burn(jobId: number, file: File, words: Word[], settings: CaptionS
         return canvas;
       },
     },
+    // The file's audio, resampled to the dub's rate, only sets the pace; each sample is replaced by the dub.
+    audio: dub
+      ? {
+          numberOfChannels: 1,
+          sampleRate: DUB_RATE,
+          forceTranscode: true,
+          process: (sample) => dubSample(dub, sample.timestamp, sample.numberOfFrames),
+        }
+      : undefined,
   });
   if (!conversion.isValid) {
     const why = conversion.discardedTracks.map((d) => d.reason).join(", ");
@@ -128,14 +166,15 @@ async function burnAudio(
   words: Word[],
   settings: CaptionSettings,
   bands: Float32Array,
+  dub: DubClip[] | null,
   started: number,
 ) {
   const audio = await input.getPrimaryAudioTrack();
   if (!audio) throw new Error("Bu dosyada ses yok.");
   if (!(await audio.canDecode())) throw new Error(`Ses kodeki (${audio.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
   const codec = await getFirstEncodableAudioCodec(["aac", "opus"], {
-    numberOfChannels: audio.numberOfChannels,
-    sampleRate: audio.sampleRate,
+    numberOfChannels: dub ? 1 : audio.numberOfChannels,
+    sampleRate: dub ? DUB_RATE : audio.sampleRate,
   });
   if (!codec) throw new Error("Bu tarayıcı MP4 için ses kodlayamıyor (AAC veya Opus gerekli).");
 
@@ -177,12 +216,22 @@ async function burnAudio(
   try {
     await output.start();
     // Interleave: draw the frames up to the end of each audio sample.
-    for await (const sample of new AudioSampleSink(audio).samples()) {
-      const end = sample.timestamp + sample.duration;
-      if (!stop) await sound.add(sample);
-      sample.close();
-      if (stop) break;
-      await renderUntil(end);
+    if (dub) {
+      // A second of dub at a time, over the file's length.
+      for (let t = 0; t < duration && !stop; t++) {
+        const sample = dubSample(dub, t, Math.round(Math.min(1, duration - t) * DUB_RATE));
+        await sound.add(sample);
+        sample.close();
+        await renderUntil(t + 1);
+      }
+    } else {
+      for await (const sample of new AudioSampleSink(audio).samples()) {
+        const end = sample.timestamp + sample.duration;
+        if (!stop) await sound.add(sample);
+        sample.close();
+        if (stop) break;
+        await renderUntil(end);
+      }
     }
     if (!stop) await renderUntil(Infinity);
     if (stop) {
@@ -207,7 +256,7 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
     void running.get(m.jobId)?.cancel();
     return;
   }
-  burn(m.jobId, m.file, m.words, m.settings, m.bands)
+  burn(m.jobId, m.file, m.words, m.settings, m.bands, m.dub)
     .catch((e) => {
       if (cancelled.has(m.jobId)) post({ type: "cancelled", jobId: m.jobId });
       else post({ type: "error", jobId: m.jobId, message: e instanceof Error ? e.message : String(e) });

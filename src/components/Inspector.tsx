@@ -1,16 +1,18 @@
 import { useState } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod } from "../engine";
+import type { DubState, PreviewState, Voice } from "../lib/useDubber";
 import type { EngineState, Job } from "../lib/useTranscriber";
 import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
+import { DubPanel } from "./DubPanel";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { Button, Hint, Pane, PaneBody, Row, RowLabel, Section, SectionActions, Switch } from "./ui";
 
 const TAB =
   "h-[26px] flex-1 rounded-[5px] border-0 bg-transparent text-[12px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-white aria-selected:shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)]";
 
-type Tab = "captions" | "transcribe";
+type Tab = "captions" | "transcribe" | "dub";
 
 export function Inspector({
   settings,
@@ -27,6 +29,18 @@ export function Inspector({
   onAutoPunct,
   onPunctuate,
   punctBusy,
+  dub,
+  dubStale,
+  canDub,
+  onDub,
+  onCancelDub,
+  dubOn,
+  onDubOn,
+  dubName,
+  voice,
+  onVoice,
+  preview,
+  onListen,
 }: {
   settings: CaptionSettings;
   onSettings: (s: CaptionSettings) => void;
@@ -42,6 +56,18 @@ export function Inspector({
   onAutoPunct: (on: boolean) => void;
   onPunctuate: () => void;
   punctBusy: boolean;
+  dub: DubState;
+  dubStale: boolean;
+  canDub: boolean;
+  onDub: () => void;
+  onCancelDub: () => void;
+  dubOn: boolean;
+  onDubOn: (on: boolean) => void;
+  dubName: string;
+  voice: Voice;
+  onVoice: (v: Voice) => void;
+  preview: PreviewState;
+  onListen: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("captions");
   const running = job?.status === "running";
@@ -66,10 +92,29 @@ export function Inspector({
         <button className={TAB} role="tab" aria-selected={tab === "transcribe"} onClick={() => setTab("transcribe")}>
           Yazıya döküm
         </button>
+        <button className={TAB} role="tab" aria-selected={tab === "dub"} onClick={() => setTab("dub")}>
+          Seslendirme
+        </button>
       </div>
       <PaneBody>
         {tab === "captions" ? (
           <CaptionStudio settings={settings} onChange={onSettings} disabled={burning} />
+        ) : tab === "dub" ? (
+          <DubPanel
+            state={dub}
+            stale={dubStale}
+            canDub={canDub}
+            busy={burning}
+            onDub={onDub}
+            onCancel={onCancelDub}
+            on={dubOn}
+            onOn={onDubOn}
+            fileName={dubName}
+            voice={voice}
+            onVoice={onVoice}
+            preview={preview}
+            onListen={onListen}
+          />
         ) : (
           <div className={STUDIO}>
             <Section title="Doğruluk">

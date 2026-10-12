@@ -79,6 +79,16 @@ konuşurken de canlı çalışır.
   görselleştirmesi. Bunlar da altyazılı 1080p MP4 olarak dışa aktarılabilir.
 - SRT, WebVTT, düz metin, kelime zamanlı JSON ve panoya kopyalama.
 
+### Seslendirme
+
+- Transkript, [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) ya da
+  [Antalia Mini](https://huggingface.co/cloud0day3/antalia-mini) ile yapay bir Türkçe sesle yeniden okunur. Her
+  altyazı satırı kendi zamanında başlar; yerine sığmayan satır en fazla 1,35 kat hızlı okunur.
+- Ses tonu yarım ton adımlarla kalınlaştırılıp inceltilebilir; satırların süresi değişmez. Seed aynı sesi farklı
+  bir vurguyla okutur. Ayarlar seslendirmeden önce ilk satırla dinlenebilir.
+- Açıkken oynatıcı ve altyazılı MP4 orijinal ses yerine yapay sesi kullanır. Ses ayrıca WAV olarak
+  indirilebilir. Modeller ilk kullanımda indirilir: EMA Lightning yaklaşık 36 MB, Antalia Mini 23 MB.
+
 ### Projeler
 
 - Otomatik kayıt: transkript, düzeltmeler, altyazı stili ve dalga formu tarayıcıda (IndexedDB) saklanır;
@@ -224,6 +234,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 
 - Altyazılı video şimdilik bellekte oluşturulup indiriliyor; çok uzun videolarda bellek yetmeyebilir.
 - Düzenleme metinle sınırlı; kelime zamanlarını elle kaydırmak yok.
+- Seslendirmede her modelin tek sesi var ve orijinal sesin tamamı (müzik, ortam sesi) kalkar. Konuşmacılar ayrılmaz,
+  dudak hareketleriyle eşleşmez. Seslendirme projeye kaydedilmez.
 - Ses dosyalarından üretilen MP4'te ses AAC ile kodlanır; tarayıcı AAC kodlayamıyorsa Opus kullanılır.
   Opus'lu MP4'ü QuickTime ve iPhone Fotoğraflar açmayabilir (Chrome, VLC ve sosyal platformlar açar).
 
@@ -252,6 +264,11 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
   kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
 - [Silero VAD](https://github.com/snakers4/silero-vad) v5: MIT.
+- Seslendirme modeli [canberkkkkkk/ema-lightning](https://huggingface.co/canberkkkkkk/ema-lightning):
+  Apache-2.0; metin normalleştirme [normalizer-tr](https://github.com/erdemtuna/normalizer-tr) (Apache-2.0).
+- İkinci seslendirme modeli Antalia-2 Mini, Patientdesk.ai,
+  [cloud0day3/antalia-mini](https://huggingface.co/cloud0day3/antalia-mini): Apache-2.0 (kod, metin işleme ve
+  ağırlıklar). `src/tts/antalia-mini/` altındaki iki dosya modelin Space'inden değiştirilmeden alındı.
 - Dil modeli dosyaları (`rnnlm`, `2gram`): CC BY-SA 4.0 (Türkçe Vikipedi üzerinde eğitildi).
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.
 - [ONNX Runtime Web](https://onnxruntime.ai) (MIT), [mediabunny](https://mediabunny.dev) (MPL-2.0),

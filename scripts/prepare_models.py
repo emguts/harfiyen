@@ -12,11 +12,14 @@ Outputs go to public/models/seda-v0.1/:
   model.json           model hyper-parameters read from the ONNX metadata,
                        plus file sizes for download progress
 
-and the punctuation / true-casing model to public/models/punct/:
+the punctuation / true-casing model to public/models/punct/:
 
   punct.int8.onnx      1-800-BAD-CODE/punct_cap_seg_47_language, dynamic int8
   spm.json             its SentencePiece unigram vocabulary (pieces + scores)
   punct.json           labels and windowing parameters
+
+Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the two text-to-speech models for
+dubbing: EMA Lightning to public/models/ema-lightning/ and Antalia Mini to public/models/antalia-mini/.
 
 Usage:  python scripts/prepare_models.py [--src DIR]
 """
@@ -499,13 +502,76 @@ def prepare_whisper() -> None:
     print(f"whisper: {sum(whisper['files'].values()) / 1e6:.0f} MB")
 
 
+EMA_URL = "https://ema-lightning-web.vercel.app/models"
+EMA_OUT = ROOT / "public" / "models" / "ema-lightning"
+# ONNX conversions of canberkkkkkk/ema-lightning (Apache-2.0) and normalizer-tr compiled to wasm, as served by
+# ema-lightning-web. All fp32: on WebGPU the fp16 text graph and decoder go wrong.
+# Not pinned: these come from the live ema-lightning-web demo, so a change to its models/ changes what a fresh
+# download gets. The app itself loads the copies on R2, never this address.
+EMA_FILES = ["text.onnx", "sound.onnx", "decoder.onnx", "normalizer.wasm"]
+
+
+def prepare_ema() -> None:
+    """EMA Lightning, the Turkish text-to-speech model for dubbing."""
+    EMA_OUT.mkdir(parents=True, exist_ok=True)
+    for f in [*EMA_FILES, "meta.json"]:
+        p = EMA_OUT / f
+        if not p.exists():
+            print("download", f"{EMA_URL}/{f}")
+            urllib.request.urlretrieve(f"{EMA_URL}/{f}", str(p) + ".part")
+            os.replace(str(p) + ".part", p)
+    ema = json.loads((EMA_OUT / "meta.json").read_text())
+    ema["name"] = "ema-lightning"
+    ema["files"] = {f: (EMA_OUT / f).stat().st_size for f in EMA_FILES}
+    (EMA_OUT / "model.json").write_text(json.dumps(ema, ensure_ascii=False, indent=2))
+    print(f"ema: {sum(ema['files'].values()) / 1e6:.0f} MB")
+
+
+MINI_URL = (
+    "https://huggingface.co/spaces/cloud0day3/antalia-mini/resolve/2c24b406fedada11bd731a2ec9f4535bfd354f03"
+)
+MINI_OUT = ROOT / "public" / "models" / "antalia-mini"
+# Antalia-2 Mini (cloud0day3/antalia-mini, Apache-2.0) from its Space, pinned to the commit
+# src/tts/antalia-mini/*.js were copied from. "mixed" precision, the release's default: fp32 acoustic
+# graphs, the vocoder from the fp16 weights.
+MINI_FILES = {
+    "text.onnx": "models/text.onnx",
+    "cond.onnx": "models/cond.onnx",
+    "flow.onnx": "models/flow.onnx",
+    "vocoder.fp16.onnx": "models/vocoder.fp16.onnx",
+    "frontend-data.json.gz": "assets/frontend-data.json.gz",
+}
+
+
+def prepare_mini() -> None:
+    """Antalia Mini, the second dubbing voice."""
+    MINI_OUT.mkdir(parents=True, exist_ok=True)
+    for f, src in [*MINI_FILES.items(), ("manifest.json", "models/manifest.json")]:
+        p = MINI_OUT / f
+        if not p.exists():
+            print("download", f"{MINI_URL}/{src}")
+            urllib.request.urlretrieve(f"{MINI_URL}/{src}", str(p) + ".part")
+            os.replace(str(p) + ".part", p)
+    mini = json.loads((MINI_OUT / "manifest.json").read_text())
+    mini["name"] = "antalia-mini"
+    # The manifest lists every precision's graphs; the app wants the sizes of the files it downloads.
+    mini["files"] = {f: (MINI_OUT / f).stat().st_size for f in MINI_FILES}
+    (MINI_OUT / "model.json").write_text(json.dumps(mini, ensure_ascii=False, indent=2))
+    print(f"antalia mini: {sum(mini['files'].values()) / 1e6:.0f} MB")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", type=Path, default=ROOT / ".cache" / "seda-v0.1")
     ap.add_argument("--whisper-only", action="store_true", help="only (re)build the Whisper files")
+    ap.add_argument("--tts-only", action="store_true", help="only download the dubbing voices")
     args = ap.parse_args()
     if args.whisper_only:
         prepare_whisper()
+        return
+    if args.tts_only:
+        prepare_ema()
+        prepare_mini()
         return
     args.src.mkdir(parents=True, exist_ok=True)
     download(args.src)
@@ -521,6 +587,8 @@ def main() -> None:
     write_config(args.src)
     prepare_punct(args.src.parent / "punct_cap_seg_47_language")
     prepare_whisper()
+    prepare_ema()
+    prepare_mini()
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ import { clock } from "./lib/format";
 import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { usePlayer } from "./lib/usePlayer";
+import { DEFAULT_VOICE, sameVoice, useDubber, useDubPlayback, type Voice } from "./lib/useDubber";
 import { useProjects } from "./lib/useProjects";
 import { modelIsCached, useTranscriber } from "./lib/useTranscriber";
 import { DEFAULT_MODEL, modelInfo } from "./models";
@@ -143,6 +144,20 @@ export function App() {
   const picker = useRef<HTMLInputElement>(null);
   const burner = useBurner();
   const player = usePlayer(job?.file ?? null);
+  const dubber = useDubber();
+  /** Play and export the dub instead of the original sound, once there is one. */
+  const [dubOn, setDubOn] = useState(true);
+  const dub = dubber.state.status === "done" ? dubber.state : null;
+  const dubbing = dub && dubOn ? dub : null;
+  useDubPlayback(player.el, dub?.url ?? null, !!dubbing);
+  const [voice, setVoice] = useState<Voice>(() => {
+    try {
+      return { ...DEFAULT_VOICE, ...JSON.parse(localStorage.getItem("harfiyen.voice") ?? "{}") };
+    } catch {
+      return DEFAULT_VOICE;
+    }
+  });
+  useEffect(() => localStorage.setItem("harfiyen.voice", JSON.stringify(voice)), [voice]);
   const {
     projects: saved,
     current,
@@ -177,6 +192,10 @@ export function App() {
   }, [prepare]);
 
   const resetBurn = burner.reset;
+  // A dub belongs to its job; an export made with or without it is out of date once that changes.
+  const resetDub = dubber.reset;
+  useEffect(() => resetDub(), [job?.id, resetDub]);
+  useEffect(() => resetBurn(), [dubbing, resetBurn]);
   const openProject = useCallback(
     async (id: string) => {
       try {
@@ -585,7 +604,8 @@ export function App() {
             canBurn={!!job.file}
             burn={burner.state}
             onBurn={() =>
-              job.file && burner.burn(job.file, words, settings, job.bands)
+              job.file &&
+              burner.burn(job.file, words, settings, job.bands, dubbing?.clips)
             }
             onCancelBurn={burner.cancel}
           />
@@ -824,6 +844,20 @@ export function App() {
           onPunctuate={applyPunct}
           punctBusy={punct.phase === "run" || punct.phase === "download"}
           onCancel={cancel}
+          dub={dubber.state}
+          dubStale={!!dub && (dub.words !== words || !sameVoice(dub.voice, voice))}
+          canDub={editable && !!job?.file}
+          onDub={() =>
+            dubber.dub(words, player.duration || job?.duration || 0, voice)
+          }
+          onCancelDub={dubber.cancel}
+          dubOn={dubOn}
+          onDubOn={setDubOn}
+          dubName={`${name}.seslendirme.wav`}
+          voice={voice}
+          onVoice={setVoice}
+          preview={dubber.preview}
+          onListen={() => dubber.listen(words, voice)}
         />
       </div>
 

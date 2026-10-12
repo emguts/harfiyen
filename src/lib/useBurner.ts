@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
+import type { DubClip } from "../tts/dub";
 import type { FromRender, ToRender } from "../worker/render.worker";
 
 export type BurnState =
@@ -47,10 +48,10 @@ export function useBurner() {
   useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
 
   const burn = useCallback(
-    (file: File, words: Word[], settings: CaptionSettings, bands: Float32Array) => {
+    (file: File, words: Word[], settings: CaptionSettings, bands: Float32Array, dub: DubClip[] | null = null) => {
       const id = ++jobId.current;
       setState({ status: "running", progress: 0, fps: 0 });
-      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, bands };
+      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, bands, dub };
       ensureWorker().postMessage(msg);
     },
     [ensureWorker],
