@@ -27,6 +27,8 @@ export interface Project {
   live: boolean;
   /** Missing in projects saved before there was a choice (seda). */
   model?: ModelId;
+  /** Made from this subtitle file, not transcribed. */
+  imported?: string;
   method: DecodingMethod;
   duration: number | null;
   elapsed: number | null;
@@ -205,12 +207,13 @@ export function projectToFile(p: Project): string {
     updatedAt: p.updatedAt,
     live: p.live,
     model: p.model,
+    imported: p.imported,
     method: p.method,
     duration: p.duration,
     elapsed: p.elapsed,
     media: p.media,
     settings: p.settings,
-    words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end) })),
+    words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
     peaks: toBase64(p.peaks),
     bands: toBase64(p.bands),
   });
@@ -230,7 +233,12 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
   const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : null);
   const words = (d.words as Record<string, unknown>[])
     .filter((w) => typeof w?.text === "string" && num(w.start) !== null && num(w.end) !== null)
-    .map((w) => ({ text: w.text as string, start: w.start as number, end: w.end as number }));
+    .map((w): Word => ({
+      text: w.text as string,
+      start: w.start as number,
+      end: w.end as number,
+      ...(w.cue === true && { cue: true }),
+    }));
   const media = d.media as MediaInfo | null;
   const now = Date.now();
   return {
@@ -240,6 +248,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     updatedAt: now,
     live: d.live === true,
     model: isModelId(d.model) ? d.model : DEFAULT_MODEL,
+    imported: typeof d.imported === "string" ? d.imported : undefined,
     method: (d.method as DecodingMethod) ?? "beam-lm",
     duration: num(d.duration),
     elapsed: num(d.elapsed),

@@ -84,7 +84,9 @@ function JobItem({ job, engine, liveWaiting }: { job: Job | null; engine: Engine
         <span className={ITEM}>
           {job.words.length} kelime
           <span className={DIM}>
-            {fmtDuration(job.duration ?? job.decoded)} kayıt, {fmtDuration(job.elapsed ?? 0)} içinde
+            {job.imported
+              ? `${job.imported} altyazısından`
+              : `${fmtDuration(job.duration ?? job.decoded)} kayıt, ${fmtDuration(job.elapsed ?? 0)} içinde`}
           </span>
         </span>
       );

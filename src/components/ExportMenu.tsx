@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Word } from "../engine";
-import { buildCues } from "../lib/cues";
+import { buildCues, importedCues } from "../lib/cues";
 import { download, toJson, toSrt, toText, toVtt } from "../lib/exporters";
 import { duration as fmtDuration, megabytes } from "../lib/format";
 import type { BurnState } from "../lib/useBurner";
@@ -40,7 +40,7 @@ export function ExportMenu({
   }, [burn.status]);
 
   const has = words.length > 0;
-  const cues = () => buildCues(words);
+  const cues = () => importedCues(words) ?? buildCues(words);
   const item = (label: string, note: string, onClick: () => void, enabled = has && complete) => (
     <MenuItem disabled={!enabled} onClick={onClick}>
       <span>{label}</span>

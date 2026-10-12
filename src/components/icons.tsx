@@ -113,6 +113,19 @@ export const IconUndo = (p: P) => (
   </Svg>
 );
 
+export const IconSearch = (p: P) => (
+  <Svg {...p}>
+    <circle cx="7" cy="7" r="4" />
+    <path d="M10 10l3.5 3.5" />
+  </Svg>
+);
+
+export const IconClose = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 4l8 8M12 4l-8 8" />
+  </Svg>
+);
+
 export const IconUpDown = (p: P) => (
   <Svg {...p}>
     <path d="M5 6l3-3 3 3M5 10l3 3 3-3" />

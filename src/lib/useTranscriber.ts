@@ -30,6 +30,8 @@ export interface Job {
   recording: boolean;
   /** The model that wrote the transcript. */
   model: ModelId;
+  /** Name of the subtitle file the words came from; then no model wrote them. */
+  imported?: string;
   options: DecodeOptions;
   status: JobStatus;
   duration: number | null;
@@ -313,7 +315,7 @@ export function useTranscriber() {
 
   /** Open a saved transcript as a finished job; `file` may come later (attach). */
   const load = useCallback(
-    (p: Pick<Job, "file" | "model" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands">) => {
+    (p: Pick<Job, "file" | "model" | "imported" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands">) => {
       const prev = jobRef.current;
       if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
       cancelLiveWait();

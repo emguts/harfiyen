@@ -252,8 +252,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
       tekrar uygulama ve geri alma akışı.
 - [ ] **Sayıları rakama çevirme seçeneği:** "bin dokuz yüz yirmi üç" → "1923";
       tarih, saat ve para ifadeleri için açılıp kapatılabilen dönüşüm.
-- [ ] **Transkriptte bul ve değiştir:** yanlış tanınan bir kelimeyi veya ismi bütün kayıtta düzeltme.
-- [ ] **SRT / VTT içe aktarma:** hazır altyazıyı açıp stillendirme ve videoya yazma.
+- [x] **Transkriptte bul ve değiştir:** yanlış tanınan bir kelimeyi veya ismi bütün kayıtta düzeltme.
+- [x] **SRT / VTT içe aktarma:** hazır altyazıyı açıp stillendirme ve videoya yazma.
 
 ---
 

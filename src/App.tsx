@@ -20,6 +20,7 @@ import {
   toolbarButton,
 } from "./components/ui";
 import { Dropzone } from "./components/Dropzone";
+import { FindBar, useFind } from "./components/FindBar";
 import {
   ProjectList,
   ProjectName,
@@ -33,6 +34,7 @@ import {
   IconPause,
   IconPlay,
   IconSound,
+  IconSearch,
   IconUndo,
 } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
@@ -47,6 +49,7 @@ import type { DecodeOptions, DecodingMethod, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
 import { plainWord } from "./punct/turkish";
+import { isSubtitle, parseSubtitles, readSubtitle, SUBTITLE_EXTS } from "./lib/subtitles";
 import { download } from "./lib/exporters";
 import { clock } from "./lib/format";
 import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
@@ -64,7 +67,7 @@ const TP_BTN =
 /** Welcome-screen buttons: long file names are cut; full width on phones. */
 const DROP_BTN =
   "min-w-0 max-w-full truncate max-[480px]:h-11 max-[480px]:w-full [&_svg]:mr-1.5";
-const ACCEPT = `audio/*,video/*,.mkv,.mov,.m4a,.flac,.ogg,.opus,${PROJECT_EXT}`;
+const ACCEPT = `audio/*,video/*,.mkv,.mov,.m4a,.flac,.ogg,.opus,${SUBTITLE_EXTS},${PROJECT_EXT}`;
 
 type PickerWindow = Window & {
   showOpenFilePicker?: (o: object) => Promise<FileSystemFileHandle[]>;
@@ -75,10 +78,12 @@ type HandleItem = DataTransferItem & {
 // Chromium's picker returns a handle, so a project can reopen the file later.
 const PICKER_TYPES = [
   {
-    description: "Video, ses veya Harfiyen projesi",
+    description: "Video, ses, altyazı veya Harfiyen projesi",
     accept: {
       "video/*": [".mp4", ".mov", ".mkv", ".webm", ".m4v"],
       "audio/*": [".mp3", ".m4a", ".wav", ".flac", ".ogg", ".opus", ".aac"],
+      "application/x-subrip": [".srt"],
+      "text/vtt": [".vtt"],
       "application/json": [PROJECT_EXT],
     },
   },
@@ -172,7 +177,8 @@ export function App() {
     exportText,
   } = useProjects(job, settings);
   /** A saved project opened without its media (not stored, or not found). */
-  const needsMedia = !!job && !job.file && !job.live && !!current;
+  const needsMedia =
+    !!job && !job.file && !job.live && (!!current || !!job.imported);
   /** The project's stored file handle, waiting for the user's permission. */
   const [pendingHandle, setPendingHandle] =
     useState<FileSystemFileHandle | null>(null);
@@ -217,6 +223,7 @@ export function App() {
           options: optionsFor(p.method),
           duration: p.duration,
           elapsed: p.elapsed,
+          imported: p.imported,
           words: p.words,
           peaks: p.peaks,
           bands: p.bands,
@@ -240,8 +247,46 @@ export function App() {
     },
     [importFile, openProject],
   );
+  // A subtitle file becomes a new project, with the open media if there is one.
+  // The transcript it replaces stays in its own project.
+  const openSubtitle = useCallback(
+    async (f: File) => {
+      if (job?.recording) {
+        setNotice("Kayıt sürerken altyazı açılamaz; önce kaydı durdur.");
+        return;
+      }
+      let subs: Word[];
+      try {
+        subs = parseSubtitles(await readSubtitle(f));
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : "Altyazı dosyası okunamadı.");
+        return;
+      }
+      const media = job?.file ? job : null;
+      setNotice(null);
+      setPendingHandle(null);
+      resetBurn();
+      const jobId = load({
+        file: media?.file ?? null,
+        model: job?.model ?? model,
+        imported: f.name,
+        options: optionsFor(method),
+        duration: media?.duration ?? null,
+        elapsed: null,
+        words: subs,
+        peaks: media?.peaks ?? new Float32Array(0),
+        bands: media?.bands ?? EMPTY_BANDS,
+      });
+      punctuated.current.add(jobId);
+    },
+    [job, model, method, load, resetBurn],
+  );
   const openFile = useCallback(
     (f: File, handle?: FileSystemFileHandle) => {
+      if (isSubtitle(f.name)) {
+        void openSubtitle(f);
+        return;
+      }
       if (f.name.toLowerCase().endsWith(PROJECT_EXT)) {
         projectHandle.current = handle ?? null;
         void importProject(f);
@@ -251,10 +296,9 @@ export function App() {
       // A project waiting for its media takes the file, if it is the one.
       if (
         needsMedia &&
-        current &&
-        (sameMedia(current.media, f) ||
+        (sameMedia(current?.media ?? null, f) ||
           confirm(
-            `“${f.name}”, bu projenin dosyasıyla (“${current.media?.name}”) aynı görünmüyor. ` +
+            `“${f.name}”, bu projenin dosyasıyla (“${current?.media?.name}”) aynı görünmüyor. ` +
               "Yine de projeye bağlansın mı? İptal dersen yeni bir döküm başlar.",
           ))
       ) {
@@ -271,6 +315,7 @@ export function App() {
       start,
       method,
       resetBurn,
+      openSubtitle,
       importProject,
       noteHandle,
       needsMedia,
@@ -391,15 +436,21 @@ export function App() {
   const history = useRef<{ jobId: number; words: Word[] }[]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const editable = !!job && job.status !== "running" && words.length > 0;
-  const onEdit = useCallback(
-    (first: number, count: number, text: string) => {
+  const commitWords = useCallback(
+    (next: Word[]) => {
       if (!job) return;
       history.current.push({ jobId: job.id, words: job.words });
       setCanUndo(true);
-      setWords(replaceRange(job.words, first, count, text));
+      setWords(next);
       if (burner.state.status === "done") resetBurn();
     },
     [job, setWords, burner.state.status, resetBurn],
+  );
+  const onEdit = useCallback(
+    (first: number, count: number, text: string) => {
+      if (job) commitWords(replaceRange(job.words, first, count, text));
+    },
+    [job, commitWords],
   );
   const undo = useCallback(() => {
     const h = history.current;
@@ -408,10 +459,17 @@ export function App() {
     if (prev) setWords(prev.words);
     setCanUndo(h.length > 0);
   }, [job?.id, setWords]);
+  const find = useFind(words);
+  const { close: closeFind, show: showFind } = find;
+  const found = useMemo(
+    () => (find.open && editable ? { matches: find.matches, current: find.current } : undefined),
+    [find.open, editable, find.matches, find.current],
+  );
   useEffect(() => {
     history.current = [];
     setCanUndo(false);
-  }, [job?.id]);
+    closeFind();
+  }, [job?.id, closeFind]);
 
   const chosen = modelInfo(model);
   // Why GPU-only models cannot run here, if they cannot.
@@ -470,6 +528,17 @@ export function App() {
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === "f" &&
+        editable
+      ) {
+        e.preventDefault();
+        showFind();
+        return;
+      }
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
         e.key.toLowerCase() === "z"
       ) {
         if (
@@ -484,7 +553,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, job?.recording, liveWaiting, stopLive]);
+  }, [undo, job?.recording, liveWaiting, stopLive, editable, showFind]);
 
   const changeSettings = (s: CaptionSettings) => {
     setSettings(s);
@@ -511,7 +580,11 @@ export function App() {
     : `Canlı kayıt ${chosen.name} ile yapılamaz; mikrofon için üst çubuktan ${modelInfo(DEFAULT_MODEL).name}'yı seç.`;
   // A finished transcript made with another model than the one chosen now.
   const otherModel =
-    job && job.status !== "running" && job.file && job.model !== model
+    job &&
+    job.status !== "running" &&
+    job.file &&
+    !job.imported &&
+    job.model !== model
       ? modelInfo(job.model)
       : null;
   const goLiveRef = useRef<() => Promise<void>>(async () => {});
@@ -653,17 +726,39 @@ export function App() {
             {job && liveWords.length > 0 && (
               <PaneMeta>{liveWords.length} kelime</PaneMeta>
             )}
-            {canUndo && (
-              <IconButton
-                className="-my-1 -mr-1 self-center"
-                onClick={undo}
-                title="Geri al (⌘Z)"
-                aria-label="Son düzenlemeyi geri al"
-              >
-                <IconUndo />
-              </IconButton>
+            {(canUndo || editable) && (
+              <span className="-my-1 -mr-1 flex gap-0.5 self-center">
+                {editable && (
+                  <IconButton
+                    className={found ? "bg-line text-fg" : ""}
+                    onClick={found ? closeFind : showFind}
+                    aria-pressed={!!found}
+                    title="Bul ve değiştir (⌘F)"
+                    aria-label="Bul ve değiştir"
+                  >
+                    <IconSearch />
+                  </IconButton>
+                )}
+                {canUndo && (
+                  <IconButton
+                    onClick={undo}
+                    title="Geri al (⌘Z)"
+                    aria-label="Son düzenlemeyi geri al"
+                  >
+                    <IconUndo />
+                  </IconButton>
+                )}
+              </span>
             )}
           </PaneHead>
+          {found && (
+            <FindBar
+              find={find}
+              words={words}
+              onReplace={commitWords}
+              onGo={(m) => player.seek(words[m.first].start)}
+            />
+          )}
           {otherModel && (
             <div className="flex flex-none items-center gap-2.5 border-b border-line-soft bg-cini-wash px-3.5 py-2 text-[12px] text-fg-2">
               <span className="min-w-0 flex-1">
@@ -694,6 +789,7 @@ export function App() {
                 playing={player.playing}
                 onSeek={player.seek}
                 onEdit={editable ? onEdit : undefined}
+                found={found}
               />
             ) : (
               <EmptyNote>
@@ -726,7 +822,9 @@ export function App() {
                 text={
                   pendingHandle
                     ? "Transkript ve stil geri yüklendi. Tarayıcı, kayıtlı dosyayı yeniden açmak için senin onayını istiyor."
-                    : "Transkript ve stil geri yüklendi. Oynatmak ve altyazılı video oluşturmak için dosyayı yeniden seç; kelime zamanları korunur."
+                    : current?.media
+                      ? "Transkript ve stil geri yüklendi. Oynatmak ve altyazılı video oluşturmak için dosyayı yeniden seç; kelime zamanları korunur."
+                      : "Altyazı yüklendi. Oynatmak ve altyazılı video oluşturmak için video ya da ses dosyasını seç."
                 }
                 actions={
                   pendingHandle ? (
@@ -750,9 +848,9 @@ export function App() {
                       size="lg"
                       className={DROP_BTN}
                       onClick={pickFile}
-                      title={current.media?.name}
+                      title={current?.media?.name}
                     >
-                      {current.media
+                      {current?.media
                         ? `“${current.media.name}” dosyasını seç`
                         : "Dosyayı seç"}
                     </Button>
@@ -801,7 +899,7 @@ export function App() {
                 fine={
                   <>
                     Dosyayı pencereye sürükleyebilirsin: MP4, MOV, MKV, WebM,
-                    MP3, M4A, WAV, FLAC, OGG. İlk kullanımda yaklaşık{" "}
+                    MP3, M4A, WAV, FLAC, OGG; altyazı için SRT ve VTT. İlk kullanımda yaklaşık{" "}
                     {chosen.size} model ({chosen.name}) indirilir ve
                     saklanır.
                     {engine.phase === "idle" && (

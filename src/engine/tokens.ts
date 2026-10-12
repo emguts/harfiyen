@@ -19,6 +19,8 @@ export interface Word {
   text: string;
   start: number;
   end: number;
+  /** Starts a line of an imported subtitle file; such lines are kept as they were. */
+  cue?: true;
 }
 
 /**

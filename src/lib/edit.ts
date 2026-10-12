@@ -42,7 +42,9 @@ export function replaceRange(words: Word[], first: number, count: number, text: 
   const spanEnd = old[old.length - 1].end;
   for (let j = 0; j < tokens.length; ) {
     if (match[j] >= 0) {
-      out.push({ ...old[match[j]], text: tokens[j] });
+      // A subtitle line start stays on the first word (below), not where its word moved.
+      const { cue, ...w } = old[match[j]];
+      out.push(cue && match[j] > 0 ? { ...w, cue, text: tokens[j] } : { ...w, text: tokens[j] });
       j++;
       continue;
     }
@@ -63,5 +65,6 @@ export function replaceRange(words: Word[], first: number, count: number, text: 
     }
     j = k;
   }
+  if (old[0].cue) out[0] = { ...out[0], cue: true };
   return [...before, ...out, ...after];
 }

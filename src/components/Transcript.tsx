@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Word } from "../engine";
-import { buildCues, READING_RULES, type Cue } from "../lib/cues";
+import { buildCues, importedCues, READING_RULES, type Cue } from "../lib/cues";
+import type { Match } from "../lib/find";
 import { clock } from "../lib/format";
 import { IconEdit, IconTrash } from "./icons";
 import { EmptyNote, IconButton } from "./ui";
@@ -16,6 +17,8 @@ interface Props {
   onSeek: (t: number) => void;
   /** Present when the transcript can be edited (decoding finished). */
   onEdit?: (first: number, count: number, text: string) => void;
+  /** Find hits to mark, and which one is current. */
+  found?: { matches: Match[]; current: number };
 }
 
 /** Index of the word being spoken at time t, or -1. */
@@ -73,6 +76,7 @@ const CueRow = memo(function CueRow({
   cue,
   active,
   tentativeFrom,
+  marks,
   onSeek,
   onEdit,
 }: {
@@ -81,6 +85,8 @@ const CueRow = memo(function CueRow({
   active: number;
   /** Words from this index on are still being decoded. */
   tentativeFrom: number;
+  /** Per word: "1" inside a find hit, "2" inside the current one, else "0". Empty if none. */
+  marks: string;
   onSeek: (t: number) => void;
   onEdit?: (first: number, count: number, text: string) => void;
 }) {
@@ -118,7 +124,11 @@ const CueRow = memo(function CueRow({
                 className={`-mx-px inline-block rounded-[4px] px-[3px] py-px transition-[background,color] duration-150 ease-[ease] hover:bg-raised motion-reduce:transition-none ${
                   i === active
                     ? "bg-cini font-[550] text-white shadow-[0_1px_4px_rgba(71,109,230,0.4)]"
-                    : i >= tentativeFrom
+                    : marks[i] === "2"
+                      ? "bg-[#e8b54a] text-[#1a1408]"
+                      : marks[i] === "1"
+                        ? "bg-[rgba(232,181,74,0.22)]"
+                        : i >= tentativeFrom
                       ? "text-firuze"
                       : ""
                 }`}
@@ -147,15 +157,26 @@ const CueRow = memo(function CueRow({
 (a, b) =>
   a.active === b.active &&
   a.tentativeFrom === b.tentativeFrom &&
+  a.marks === b.marks &&
   a.onSeek === b.onSeek &&
   a.onEdit === b.onEdit &&
   a.cue.first === b.cue.first &&
   a.cue.words.length === b.cue.words.length &&
   a.cue.words.every((w, i) => w === b.cue.words[i]));
 
-export function Transcript({ words, tentative, running, waiting, time, playing, onSeek, onEdit }: Props) {
+export function Transcript({ words, tentative, running, waiting, time, playing, onSeek, onEdit, found }: Props) {
   const all = useMemo(() => (tentative.length ? words.concat(tentative) : words), [words, tentative]);
-  const cues = useMemo(() => buildCues(all, READING_RULES), [all]);
+  const cues = useMemo(() => importedCues(all) ?? buildCues(all, READING_RULES), [all]);
+  // Per cue, a string of find marks (see CueRow); "" where nothing is marked.
+  const marks = useMemo(() => {
+    if (!found?.matches.length) return null;
+    const m = new Uint8Array(all.length);
+    found.matches.forEach((h, k) => m.fill(k === found.current ? 2 : 1, h.first, h.last + 1));
+    return cues.map((c) => {
+      const part = m.subarray(c.first, c.first + c.words.length);
+      return part.some(Boolean) ? part.join("") : "";
+    });
+  }, [all, cues, found]);
   const active = playing || time > 0 ? activeIndex(all, time) : -1;
   const list = useRef<HTMLOListElement>(null);
   const userScrolledAt = useRef(0);
@@ -166,6 +187,13 @@ export function Transcript({ words, tentative, running, waiting, time, playing, 
     if (activeCue < 0 || !playing || Date.now() - userScrolledAt.current < 4000) return;
     list.current?.children[activeCue]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [activeCue, playing]);
+
+  // Bring the current find hit into view.
+  const hit = found?.matches[found.current]?.first ?? -1;
+  const hitCue = hit < 0 ? -1 : cues.findIndex((c) => hit < c.first + c.words.length);
+  useEffect(() => {
+    if (hitCue >= 0) list.current?.children[hitCue]?.scrollIntoView({ block: "nearest" });
+  }, [hitCue, hit]);
 
   // While decoding, keep the newest line in view if the reader is at the end.
   // The list scrolls inside its panel (the nearest scrollable ancestor).
@@ -206,7 +234,7 @@ export function Transcript({ words, tentative, running, waiting, time, playing, 
 
   return (
     <ol className="m-0 list-none p-0 pb-6" ref={list}>
-      {cues.map((c) => {
+      {cues.map((c, i) => {
         const end = c.first + c.words.length;
         return (
           <CueRow
@@ -214,6 +242,7 @@ export function Transcript({ words, tentative, running, waiting, time, playing, 
             cue={c}
             active={active >= c.first && active < end ? active - c.first : -1}
             tentativeFrom={Math.min(c.words.length, Math.max(0, words.length - c.first))}
+            marks={marks?.[i] ?? ""}
             onSeek={onSeek}
             onEdit={onEdit}
           />

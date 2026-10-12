@@ -74,7 +74,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
       const now = Date.now();
       p = {
         id: crypto.randomUUID(),
-        name: job.file ? stripExt(job.file.name) : LIVE_NAME,
+        name: stripExt(job.imported ?? job.file?.name ?? LIVE_NAME),
         createdAt: now,
         updatedAt: now,
         live: job.live,
@@ -96,6 +96,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
     Object.assign(p, {
       updatedAt: Date.now(),
       model: job.model,
+      imported: job.imported,
       method: job.options.method,
       duration: job.duration ?? job.decoded,
       elapsed: job.elapsed,

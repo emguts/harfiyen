@@ -48,4 +48,23 @@ export function buildCues(words: Word[], rules: CueRules = SUBTITLE_RULES): Cue[
   return cues;
 }
 
+/**
+ * The lines of an imported subtitle file (words marked `cue`), or null when
+ * the words were transcribed. Subtitle exports and the transcript keep them;
+ * caption styles still group words their own way.
+ */
+export function importedCues(words: Word[]): Cue[] | null {
+  if (!words.some((w) => w.cue)) return null;
+  const cues: Cue[] = [];
+  words.forEach((w, i) => {
+    const cur = cues[cues.length - 1];
+    if (w.cue || !cur) cues.push({ start: w.start, end: w.end, first: i, words: [w] });
+    else {
+      cur.words.push(w);
+      cur.end = w.end;
+    }
+  });
+  return cues;
+}
+
 export const cueText = (c: Cue) => c.words.map((w) => w.text).join(" ");
