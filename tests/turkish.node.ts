@@ -45,6 +45,10 @@ check("özel ad eki", "Atatürkün evi.", "Atatürk'ün evi.");
 // Places from the list are fixed even when the model missed the capital.
 check("küçük harfli yer", "bugün istanbulda hava güzel.", "Bugün İstanbul'da hava güzel.");
 check("küçük harfli yer", "başkent ankara.", "Başkent Ankara.");
+check("küçük harfli yer", "babası selanikte doğdu.", "Babası Selanik'te doğdu.");
+check("küçük harfli yer", "yazın kuşadasına gittik.", "Yazın Kuşadası'na gittik.");
+check("belirsiz kelime", "masada bir şamdan vardı.", "Masada bir şamdan vardı.");
+check("belirsiz kelime", "bebek uyuyor.", "Bebek uyuyor.");
 // The longest stem wins.
 check("en uzun kök", "Afyonkarahisarda kar var.", "Afyonkarahisar'da kar var.");
 // All caps from the model are kept.

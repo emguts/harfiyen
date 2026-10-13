@@ -44,13 +44,34 @@ polonya hollanda belçika avusturya isviçre isveç norveç danimarka finlandiya
 avustralya pakistan afganistan katar kıbrıs portekiz macaristan romanya sırbistan bosna arnavutluk makedonya
 kazakistan özbekistan türkmenistan kırgızistan endonezya malezya tayland vietnam nijerya cezayir tunus libya
 avrupa asya afrika anadolu trakya karadeniz akdeniz marmara londra paris berlin madrid moskova tokyo
-pekin brüksel viyana atina amsterdam atatürk`
+pekin brüksel viyana atina amsterdam atatürk
+arnavutköy bahçelievler başakşehir bayrampaşa çekmeköy esenler eyüpsultan fatih gaziosmanpaşa güngören kağıthane
+sancaktepe sultanbeyli sultangazi şile nişantaşı cihangir galata karaköy eminönü sultanahmet ortaköy etiler
+mecidiyeköy florya yeşilköy ataköy tarabya emirgan çengelköy kuzguncuk beylerbeyi boğaziçi altındağ etimesgut
+mamak sincan polatlı kızılay beypazarı buca çiğli gaziemir karabağlar bayraklı urla seferihisar torbalı ödemiş
+bergama foça aliağa kuşadası didim ayvalık alaçatı assos bozcaada gökçeada datça göcek olimpos belek manavgat
+akyaka uludağ erciyes palandöken pamukkale efes truva ürgüp avanos uçhisar safranbolu amasra uzungöl ayder
+sümela hasankeyf halfeti harran göbeklitepe ihlara iskenderun tarsus ereğli inegöl gebze çorlu lüleburgaz
+akhisar nazilli siverek cizre nusaybin doğubayazıt kızıltepe viranşehir elbistan ünye fatsa bafra turhal
+merzifon edremit gemlik mudanya iznik bozüyük tosya dicle fırat kızılırmak yeşilırmak toros kaçkar munzur
+çukurova mezopotamya balkanlar kafkasya sibirya iskandinavya antarktika okyanusya ortadoğu arabistan suudi
+kolombiya venezuela ekvador bolivya paraguay uruguay peru şili küba jamaika haiti panama kosova karadağ
+hırvatistan slovenya slovakya çekya litvanya letonya estonya belarus moldova irlanda izlanda lüksemburg andorra
+monako malta moğolistan tacikistan bangladeş myanmar kamboçya filipinler singapur nepal tayvan laos kenya somali
+ruanda angola zambiya uganda tanzanya etiyopya eritre madagaskar mozambik zimbabve namibya kamerun senegal
+liberya kongo gabon ürdün lübnan kuveyt bahreyn umman iskoçya galler hersek zelanda selanik halep bağdat tahran
+kahire iskenderiye kudüs beyrut bakü tiflis erivan taşkent semerkant buhara delhi şanghay seul sidney toronto
+meksiko havana lizbon barselona milano napoli venedik floransa münih hamburg frankfurt köln zürih cenevre
+marsilya prag budapeşte varşova bükreş sofya belgrad zagreb saraybosna üsküp kiev riga stockholm oslo kopenhag
+helsinki dublin lahey dubai doha riyad mekke medine lefkoşa girne magosa gazze girit rodos`
   .split(/\s+/)
   .filter(Boolean);
 
 /** Also place names, but common words too ("ordu" = army): only when the model capitalised them. */
 const AMBIGUOUS = `van muş ordu batman tokat aydın bolu kars rize kilis uşak adalar konak kaş fas çin mısır ege
-kore ağrı kartal tuzla bodrum çeşme avcılar roma bey hanım paşa hoca efendi`
+kore ağrı kartal tuzla bodrum çeşme avcılar roma bey hanım paşa hoca efendi
+bebek moda ulus tire dikili kemer kalkan dalyan ani kazan tuna mali sudan yemen benin midilli sakız menemen
+gölbaşı çarşamba kabil tiran kırım gine pazar bandırma göreme haliç nemrut taksim şam`
   .split(/\s+/)
   .filter(Boolean);
 
@@ -59,6 +80,16 @@ const COMMON = new Set(["kilise", "vana"]);
 
 const SAFE = new Set(PLACES);
 const ALL_STEMS = [...PLACES, ...AMBIGUOUS];
+
+/** Suffixes after a possessive at the end of a multi-word name: "Bölgesi'nde", "Gölü'nün", "Camii'dir". */
+const AFTER_POSSESSIVE = `nın nin nun nün na ne nu nü nı ni nda nde ndan nden ndaki ndeki yla yle dır dir dur dür`
+  .split(" ")
+  .sort((a, b) => b.length - a.length);
+
+/** Place names that end in a possessive themselves: "Kuşadası'na", "Beyoğlu'nda". */
+const POSSESSIVE_PLACES = new Set(
+  "kuşadası eminönü boğaziçi beylerbeyi beypazarı gölbaşı kocaeli zeytinburnu beylikdüzü nişantaşı beyoğlu".split(" "),
+);
 
 const SOFTEN: Record<string, string> = { k: "ğ", t: "d", p: "b", ç: "c" };
 const VOWEL = /[aeıioöuü]/;
@@ -80,27 +111,24 @@ function splitProper(word: string, stems: Iterable<string>): { stem: string; suf
       best = { stem, suffix: "" };
       continue;
     }
-    if (word.startsWith(stem) && SUFFIXES.has(word.slice(stem.length)) && fits(stem, word.slice(stem.length))) {
-      best = { stem, suffix: word.slice(stem.length) };
+    const rest = word.slice(stem.length);
+    const ok = POSSESSIVE_PLACES.has(stem) ? AFTER_POSSESSIVE.includes(rest) : SUFFIXES.has(rest) && fits(stem, rest);
+    if (word.startsWith(stem) && ok) {
+      best = { stem, suffix: rest };
       continue;
     }
     // Consonant softening before a vowel: "pamuğun" = Pamuk + 'un.
     const soft = SOFTEN[stem[stem.length - 1]];
     if (soft) {
       const softened = stem.slice(0, -1) + soft;
-      const rest = word.slice(softened.length);
-      if (word.startsWith(softened) && SUFFIXES.has(rest) && /^[aeıioöuü]/.test(rest)) {
-        best = { stem, suffix: rest };
+      const after = word.slice(softened.length);
+      if (word.startsWith(softened) && SUFFIXES.has(after) && /^[aeıioöuü]/.test(after)) {
+        best = { stem, suffix: after };
       }
     }
   }
   return best;
 }
-
-/** Suffixes after a possessive at the end of a multi-word name: "Bölgesi'nde", "Gölü'nün", "Camii'dir". */
-const AFTER_POSSESSIVE = `nın nin nun nün na ne nu nü nı ni nda nde ndan nden ndaki ndeki yla yle dır dir dur dür`
-  .split(" ")
-  .sort((a, b) => b.length - a.length);
 
 /**
  * Last words of place, building, state and event names, which take an

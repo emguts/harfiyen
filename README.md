@@ -57,7 +57,8 @@ konuşurken de canlı çalışır.
     parçalar hâlinde işler. Sessiz bölümlerde metin uydurmaması için ses etkinliği algılayıcı (Silero VAD)
     kullanır.
 - Otomatik noktalama ve büyük harf: döküm bitince nokta, virgül ve soru işareti eklenir; cümle başları
-  ve özel adlar büyük harfle yazılır. Türkçe özel ad ekleri için kesme işareti eklenir ("İstanbul'da").
+  ve özel adlar büyük harfle yazılır. Türkçe özel ad ekleri için kesme işareti eklenir ("İstanbul'da",
+  "Van Gölü'nün"); yapım ve çokluk ekleri TDK'ya göre ayrılmaz ("İstanbullu", "Ahmetler").
   Kelime zamanları korunur; işlem ⌘Z / Ctrl+Z ile geri alınabilir.
 - Kelime düzeyinde zaman: bir kelimeye tıkla, kayıt o ana atlasın; çalarken konuşulan kelime vurgulanır.
 - Düzenleme: satıra çift tıkla ve düzelt, satırı sil, ⌘Z ile geri al. Değişmeyen kelimelerin zamanları
@@ -195,7 +196,7 @@ kurulabilir.
 npm run typecheck  # TypeScript kontrolü
 npm run test:whisper -- kayit.wav   # Whisper motorunu Node'da dener (16 bit WAV)
 npm run test:turkish                # Türkçe yazım kurallarını dener (model gerekmez)
-npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir)
+npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run build      # üretim derlemesi
 npm run preview    # derlemeyi lokalinde önizle
 ```
@@ -227,8 +228,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [ ] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
       tüm altyazıya toplu zaman kaydırma.
 - [ ] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
-- [ ] **Noktalama için Türkçe testleri:** özel ad ekleri, kısaltmalar, soru cümleleri ve uzun metinler;
-      tekrar uygulama ve geri alma akışı.
+- [x] **Noktalama için Türkçe testleri:** özel ad ekleri, birleşik adlar, soru cümleleri ve tekrar uygulama;
+      Vikipedi metniyle kesme işareti, büyük harf ve noktalama ölçümü.
 - [ ] **Sayıları rakama çevirme seçeneği:** "bin dokuz yüz yirmi üç" → "1923";
       tarih, saat ve para ifadeleri için açılıp kapatılabilen dönüşüm.
 - [x] **Transkriptte bul ve değiştir:** yanlış tanınan bir kelimeyi veya ismi bütün kayıtta düzeltme.
@@ -249,6 +250,7 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   [cloud0day3/antalia-mini](https://huggingface.co/cloud0day3/antalia-mini): Apache-2.0 (kod, metin işleme ve
   ağırlıklar). `src/tts/antalia-mini/` altındaki iki dosya modelin Space'inden değiştirilmeden alındı.
 - Dil modeli dosyaları (`rnnlm`, `2gram`): CC BY-SA 4.0 (Türkçe Vikipedi üzerinde eğitildi).
+- Noktalama ölçüm metinleri (`tests/data/`): Türkçe Vikipedi, CC BY-SA 4.0; kaynak makaleler dosyalarda.
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.
 - [ONNX Runtime Web](https://onnxruntime.ai) (MIT), [mediabunny](https://mediabunny.dev) (MPL-2.0),
   [React](https://react.dev) (MIT), [Tailwind CSS](https://tailwindcss.com) (MIT).
