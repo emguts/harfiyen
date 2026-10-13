@@ -1,18 +1,27 @@
 import { useState } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod } from "../engine";
+import type { NumberMode } from "../lib/numbers";
 import type { DubState, PreviewState, Voice } from "../lib/useDubber";
 import type { EngineState, Job } from "../lib/useTranscriber";
 import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { MethodPicker, methodTitle } from "./MethodPicker";
+import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import { Button, Hint, Pane, PaneBody, Row, RowLabel, Section, SectionActions, Switch } from "./ui";
 
 const TAB =
   "h-[26px] flex-1 rounded-[5px] border-0 bg-transparent text-[12px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-white aria-selected:shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)]";
 
 type Tab = "captions" | "transcribe" | "dub";
+
+// Each option shows its result rather than its rule.
+const NUMBER_MODES: { value: NumberMode; label: string; sample: string }[] = [
+  { value: "rule", label: "Kurala göre", sample: "Saat 15.30'da 15 kişi geldi, üç kişi kaldı." },
+  { value: "all", label: "Hepsi rakamla", sample: "Saat 15.30'da 15 kişi geldi, 3 kişi kaldı." },
+  { value: "keep", label: "Dokunma", sample: "Model nasıl yazdıysa öyle kalır." },
+];
 
 export function Inspector({
   settings,
@@ -29,6 +38,9 @@ export function Inspector({
   onAutoPunct,
   onPunctuate,
   punctBusy,
+  numberMode,
+  onNumberMode,
+  onNumbers,
   dub,
   dubStale,
   canDub,
@@ -56,6 +68,9 @@ export function Inspector({
   onAutoPunct: (on: boolean) => void;
   onPunctuate: () => void;
   punctBusy: boolean;
+  numberMode: NumberMode;
+  onNumberMode: (m: NumberMode) => void;
+  onNumbers: () => void;
   dub: DubState;
   dubStale: boolean;
   canDub: boolean;
@@ -154,6 +169,33 @@ export function Inspector({
                 <SectionActions>
                   <Button disabled={running || punctBusy || !job.words.length} onClick={onPunctuate}>
                     {punctBusy ? "Ekleniyor…" : "Şimdi uygula"}
+                  </Button>
+                </SectionActions>
+              )}
+            </Section>
+            <Section title="Sayı yazımı">
+              <Select<NumberMode>
+                label="Sayı yazımı"
+                value={numberMode}
+                options={NUMBER_MODES}
+                onChange={onNumberMode}
+                render={(o, inList) => (
+                  <span className={OPT}>
+                    <span className={OPT_TEXT}>
+                      <span className={OPT_TITLE}>{o.label}</span>
+                      {inList && <span className={OPT_NOTE}>{NUMBER_MODES.find((m) => m.value === o.value)!.sample}</span>}
+                    </span>
+                  </span>
+                )}
+              />
+              <Hint>
+                {NUMBER_MODES.find((m) => m.value === numberMode)!.sample} Döküm bitince her modelde uygulanır;
+                tarih ve saat hep rakamla yazılır ("23 Nisan", "saat 15.30"). ⌘Z ile geri alınır.
+              </Hint>
+              {job && (
+                <SectionActions>
+                  <Button disabled={running || numberMode === "keep" || !job.words.length} onClick={onNumbers}>
+                    Şimdi uygula
                   </Button>
                 </SectionActions>
               )}

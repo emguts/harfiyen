@@ -13,6 +13,8 @@ output records each article's source.
 import argparse
 import json
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -54,8 +56,14 @@ def fetch(title: str) -> str:
         {"action": "query", "prop": "extracts", "explaintext": 1, "format": "json", "redirects": 1, "titles": title}
     )
     req = urllib.request.Request(f"{API}?{q}", headers={"User-Agent": "harfiyen-tests/0.1 (punctuation eval)"})
-    pages = json.load(urllib.request.urlopen(req, timeout=30))["query"]["pages"]
-    return next(iter(pages.values()))["extract"]
+    for attempt in range(5):
+        try:
+            pages = json.load(urllib.request.urlopen(req, timeout=30))["query"]["pages"]
+            return next(iter(pages.values()))["extract"]
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 4:
+                raise
+            time.sleep(10 * (attempt + 1))  # rate limited: wait and try again
 
 
 def usable(sentence: str) -> bool:

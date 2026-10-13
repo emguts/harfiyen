@@ -14,7 +14,9 @@
     "test:whisper": "tsx tests/whisper.node.ts",
     "test:punct": "tsx tests/punct.node.ts",
     "test:turkish": "tsx tests/turkish.node.ts",
-    "eval:punct": "tsx tests/punct-eval.node.ts"
+    "eval:punct": "tsx tests/punct-eval.node.ts",
+    "test:numbers": "tsx tests/numbers.node.ts",
+    "eval:numbers": "tsx tests/numbers-eval.node.ts"
   },
   "dependencies": {
     "@fontsource-variable/google-sans-flex": "^5.3.1",

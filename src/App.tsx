@@ -48,6 +48,7 @@ import { Viewer } from "./components/Viewer";
 import type { DecodeOptions, DecodingMethod, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
+import { writeNumbers, type NumberMode } from "./lib/numbers";
 import { plainWord } from "./punct/turkish";
 import { isSubtitle, parseSubtitles, readSubtitle, SUBTITLE_EXTS } from "./lib/subtitles";
 import { download } from "./lib/exporters";
@@ -142,6 +143,11 @@ export function App() {
     () => localStorage.setItem("harfiyen.punct", autoPunct ? "on" : "off"),
     [autoPunct],
   );
+  const [numberMode, setNumberMode] = useState<NumberMode>(() => {
+    const saved = localStorage.getItem("harfiyen.numbers");
+    return saved === "all" || saved === "keep" ? saved : "rule";
+  });
+  useEffect(() => localStorage.setItem("harfiyen.numbers", numberMode), [numberMode]);
   const [notice, setNotice] = useState<string | null>(null);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
   const [settings, setSettings] = useState<CaptionSettings>(loadSettings);
@@ -184,7 +190,7 @@ export function App() {
     useState<FileSystemFileHandle | null>(null);
   /** The last project file opened: picking its media starts in that folder. */
   const projectHandle = useRef<FileSystemFileHandle | null>(null);
-  // Jobs already punctuated (or opened from a project): not punctuated again.
+  // Jobs already punctuated or given digits (or opened from a project): not done again.
   const punctuated = useRef(new Set<number>());
 
   useEffect(
@@ -482,7 +488,9 @@ export function App() {
           ? (engine.fallbackReason ?? "Ekran kartı kullanılamıyor.")
           : null;
 
-  // Punctuation and capitals, once per finished transcript (undo restores the plain text).
+  const withDigits = useCallback((list: Word[]) => writeNumbers(list, numberMode), [numberMode]);
+  // Punctuation and capitals, then numbers in digits, once per finished
+  // transcript (one undo restores the plain text).
   const applyPunct = useCallback(async () => {
     if (!job || job.status !== "done" || !job.words.length) return;
     punctuated.current.add(job.id);
@@ -491,23 +499,32 @@ export function App() {
       const written = await punctuate(
         source.map((w) => plainWord(w.text) || w.text),
       );
+      // Words already in digits ("1923'te") keep their writing; only the punctuation after them changes.
+      const keep = (old: string, now: string) =>
+        /\d/.test(old) ? old.replace(/[.,;:!?…]+$/, "") + (/[.,;:!?…]+$/.exec(now)?.[0] ?? "") : now;
       history.current.push({ jobId: job.id, words: source });
       setCanUndo(true);
-      setWords(source.map((w, i) => ({ ...w, text: written[i] })));
+      setWords(withDigits(source.map((w, i) => ({ ...w, text: keep(w.text, written[i]) }))));
     } catch {
       // Shown in the status bar; the transcript stays as it was.
     }
-  }, [job, punctuate, setWords]);
+  }, [job, punctuate, setWords, withDigits]);
+  // Numbers on their own: for Whisper, with punctuation off, or from the button.
+  const applyNumbers = useCallback(() => {
+    if (!job || job.status !== "done" || !job.words.length || numberMode === "keep") return;
+    punctuated.current.add(job.id);
+    const next = withDigits(job.words);
+    if (next.every((w, i) => w === job.words[i])) return;
+    history.current.push({ jobId: job.id, words: job.words });
+    setCanUndo(true);
+    setWords(next);
+  }, [job, numberMode, setWords, withDigits]);
+  // Whisper punctuates by itself; numbers are written the chosen way for every model.
   useEffect(() => {
-    if (
-      autoPunct &&
-      job?.status === "done" &&
-      job.words.length &&
-      !modelInfo(job.model).punctuates &&
-      !punctuated.current.has(job.id)
-    )
-      void applyPunct();
-  }, [autoPunct, job?.status, job?.id, job?.model, job?.words.length, applyPunct]);
+    if (job?.status !== "done" || !job.words.length || punctuated.current.has(job.id)) return;
+    if (autoPunct && !modelInfo(job.model).punctuates) void applyPunct();
+    else if (numberMode !== "keep") applyNumbers();
+  }, [autoPunct, numberMode, job?.status, job?.id, job?.model, job?.words.length, applyPunct, applyNumbers]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const inField = !!(e.target as HTMLElement).closest(
@@ -940,6 +957,9 @@ export function App() {
           autoPunct={autoPunct}
           onAutoPunct={setAutoPunct}
           onPunctuate={applyPunct}
+          numberMode={numberMode}
+          onNumberMode={setNumberMode}
+          onNumbers={applyNumbers}
           punctBusy={punct.phase === "run" || punct.phase === "download"}
           onCancel={cancel}
           dub={dubber.state}
