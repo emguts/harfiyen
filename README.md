@@ -194,6 +194,8 @@ kurulabilir.
 ```bash
 npm run typecheck  # TypeScript kontrolü
 npm run test:whisper -- kayit.wav   # Whisper motorunu Node'da dener (16 bit WAV)
+npm run test:turkish                # Türkçe yazım kurallarını dener (model gerekmez)
+npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir)
 npm run build      # üretim derlemesi
 npm run preview    # derlemeyi lokalinde önizle
 ```

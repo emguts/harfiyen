@@ -11,7 +11,10 @@
     "models": "python3 scripts/prepare_models.py",
     "upload-models": "python3 scripts/upload_models.py",
     "test:engine": "tsx tests/engine.node.ts",
-    "test:whisper": "tsx tests/whisper.node.ts"
+    "test:whisper": "tsx tests/whisper.node.ts",
+    "test:punct": "tsx tests/punct.node.ts",
+    "test:turkish": "tsx tests/turkish.node.ts",
+    "eval:punct": "tsx tests/punct-eval.node.ts"
   },
   "dependencies": {
     "@fontsource-variable/google-sans-flex": "^5.3.1",
