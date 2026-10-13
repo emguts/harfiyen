@@ -32,30 +32,68 @@ export function ProjectList({
   limit?: number;
   className?: string;
 }) {
+  // The project whose delete button was pressed; its row asks to confirm.
+  const [confirming, setConfirming] = useState<string | null>(null);
+
   return (
     <ul className={`m-0 grid list-none p-0 ${className}`}>
-      {projects.slice(0, limit).map((p) => (
-        <li key={p.id} className="group flex items-center gap-1 rounded-ui-sm pr-1 hover:bg-line">
-          <button
-            className="grid min-w-0 flex-1 cursor-pointer gap-px border-0 bg-transparent px-2 py-1.5 text-left text-[12.5px] text-fg"
-            onClick={() => onOpen(p.id)}
-            title={p.name}
-          >
-            <span className={`truncate ${p.id === currentId ? "text-firuze" : ""}`}>{projectTitle(p)}</span>
-            <MenuNote>{note(p)}</MenuNote>
-          </button>
-          <IconButton
-            className="flex-none opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
-            onClick={() => {
-              if (confirm(`“${projectTitle(p)}” projesi silinsin mi? Medya dosyan diskte kalır.`)) onDelete(p.id);
+      {projects.slice(0, limit).map((p) =>
+        p.id === confirming ? (
+          <li
+            key={p.id}
+            className="flex items-center gap-2 rounded-ui-sm bg-mercan/10 py-1 pr-1 pl-2 shadow-[inset_0_0_0_1px_rgba(239,100,78,0.35)]"
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget)) setConfirming(null);
             }}
-            title="Projeyi sil"
-            aria-label={`${projectTitle(p)} projesini sil`}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              // Cancel only the question, not the menu around it.
+              e.nativeEvent.stopPropagation();
+              setConfirming(null);
+            }}
           >
-            <IconTrash />
-          </IconButton>
-        </li>
-      ))}
+            <span className="grid min-w-0 flex-1 gap-px text-[12.5px]">
+              <span className="truncate text-fg">“{projectTitle(p)}” silinsin mi?</span>
+              <MenuNote>Medya dosyan diskte kalır.</MenuNote>
+            </span>
+            <button
+              className="h-[24px] flex-none cursor-pointer rounded-ui-sm border-0 bg-transparent px-2 text-[12px] text-fg-2 hover:bg-line hover:text-fg"
+              onClick={() => setConfirming(null)}
+            >
+              Vazgeç
+            </button>
+            <button
+              className="h-[24px] flex-none cursor-pointer rounded-ui-sm border-0 bg-mercan px-2.5 text-[12px] font-medium text-white hover:brightness-110"
+              autoFocus
+              onClick={() => {
+                setConfirming(null);
+                onDelete(p.id);
+              }}
+            >
+              Sil
+            </button>
+          </li>
+        ) : (
+          <li key={p.id} className="group flex items-center gap-1 rounded-ui-sm pr-1 hover:bg-line">
+            <button
+              className="grid min-w-0 flex-1 cursor-pointer gap-px border-0 bg-transparent px-2 py-1.5 text-left text-[12.5px] text-fg"
+              onClick={() => onOpen(p.id)}
+              title={p.name}
+            >
+              <span className={`truncate ${p.id === currentId ? "text-firuze" : ""}`}>{projectTitle(p)}</span>
+              <MenuNote>{note(p)}</MenuNote>
+            </button>
+            <IconButton
+              className="flex-none opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
+              onClick={() => setConfirming(p.id)}
+              title="Projeyi sil"
+              aria-label={`${projectTitle(p)} projesini sil`}
+            >
+              <IconTrash />
+            </IconButton>
+          </li>
+        ),
+      )}
     </ul>
   );
 }
