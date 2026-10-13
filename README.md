@@ -20,6 +20,7 @@
 </p>
 
 <p align="center">
+  <a href="https://harfiyen.dev"><strong>harfiyen.dev</strong></a> ·
   <a href="#hızlı-başlangıç">Hızlı başlangıç</a> ·
   <a href="#neler-yapabilir">Özellikler</a> ·
   <a href="#kullanım">Kullanım</a> ·
@@ -182,40 +183,11 @@ Model kartındaki doğruluk değerleri (WER, düşük olan iyi):
 
 ## Yayına alma
 
-`npm run build` sonrası `dist/` herhangi bir statik sunucudan yayınlanabilir; model dosyaları `dist/models/`
-altında uygulamayla birlikte gider. Sunucunun şu iki başlığı göndermesi gerekir (geliştirme sunucusu zaten
-gönderiyor):
-
-```http
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
+`npm run build` sonrası `dist/` herhangi bir statik sunucudan yayınlanabilir. Gerekli başlıklar ve Cloudflare
+Pages + R2 kurulumu için [docs/DEPLOY.md](docs/DEPLOY.md).
 
 Uygulama bir web manifest'i ile gelir; Chrome ve Edge'de adres çubuğundan masaüstü uygulaması olarak
 kurulabilir.
-
-### Cloudflare Pages ve R2
-
-Pages'te build komutu `npm run build`, çıktı klasörü `dist` olmalıdır. `public/_headers` gerekli başlıkları
-derlemeye ekler. Pages'in dosya boyutu sınırı nedeniyle modeller ve büyük ONNX Runtime WASM dosyası R2'de
-barındırılır. Build ortamına şu değişkenleri ekle (adresleri kendi R2 adresinle değiştir):
-
-```text
-VITE_MODELS_BASE_URL=https://YOUR-R2-PUBLIC-HOST/models
-VITE_ORT_WASM_URL=https://YOUR-R2-PUBLIC-HOST/runtime/ort-wasm-simd-threaded.asyncify.wasm
-```
-
-R2'ye `public/models/` içeriğini `models/` altında, kullanılan ONNX Runtime sürümüne ait
-`node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm` dosyasını `runtime/` altında yükle.
-Bunu `npm run upload-models` yapar (`boto3` gerekir): yalnızca uygulamanın indirdiği dosyaları gönderir,
-büyük dosyaları parça parça yükler, bucket'ta aynısı olanları atlar. `--dry-run` neyin gideceğini gösterir.
-R2 bilgilerini `.env.local` dosyasına yaz (`.env.example`'daki `R2_*` değişkenleri; dosya git'e girmez).
-Bucket CORS ayarında uygulamanın `https://PROJE.pages.dev` adresinden `GET` ve `HEAD` isteklerine izin ver;
-`AllowedHeaders` alanını `["*"]` olarak ayarla.
-
-`VITE_ORT_WASM_URL` tanımlandığında büyük WASM dosyası Pages çıktısına eklenmez. Değişkenler tanımlanmazsa
-yerel dosyalar kullanılır. GitHub'dan build alırken modeller zaten repo dışında kalır; yerel `dist/`
-klasörünü elle yayınlıyorsan içindeki `models/` klasörünü Pages'e yükleme.
 
 ## Geliştirme
 
