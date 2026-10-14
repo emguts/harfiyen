@@ -11,11 +11,11 @@ export interface Match {
   to: number;
 }
 
-// Turkish-aware lower case that never changes the length, so offsets in the
-// folded text are offsets in the original.
-const fold = (s: string) =>
+// Lower case in the text's language (Turkish: I -> ı) that never changes the
+// length, so offsets in the folded text are offsets in the original.
+const fold = (s: string, lang: string) =>
   Array.from(s, (c) => {
-    const l = c.toLocaleLowerCase("tr-TR");
+    const l = c.toLocaleLowerCase(lang);
     return l.length === c.length ? l : c;
   }).join("");
 
@@ -40,10 +40,10 @@ function offsets(words: Word[]): number[] {
  * span several words. With `wholeWord`, hits must not touch a letter or
  * digit on either side (so "Ali" finds "Ali'nin" but not "Alim").
  */
-export function findMatches(words: Word[], query: string, wholeWord = false): Match[] {
-  const q = fold(squash(query));
+export function findMatches(words: Word[], query: string, wholeWord = false, lang = "tr"): Match[] {
+  const q = fold(squash(query), lang);
   if (!q || !words.length) return [];
-  const text = fold(words.map((w) => w.text).join(" "));
+  const text = fold(words.map((w) => w.text).join(" "), lang);
   const starts = offsets(words);
   const out: Match[] = [];
   let w = 0;
@@ -63,18 +63,18 @@ export function findMatches(words: Word[], query: string, wholeWord = false): Ma
 }
 
 /** Capitalise the replacement when the text it replaces started with a capital. */
-function keepCapital(found: string, replacement: string): string {
+function keepCapital(found: string, replacement: string, lang: string): string {
   const a = found[0];
   const b = replacement[0];
-  if (!a || !b || fold(a) === a || fold(b) !== b) return replacement;
-  return b.toLocaleUpperCase("tr-TR") + replacement.slice(1);
+  if (!a || !b || fold(a, lang) === a || fold(b, lang) !== b) return replacement;
+  return b.toLocaleUpperCase(lang) + replacement.slice(1);
 }
 
 /**
  * Replace the given hits (from findMatches on the same words) with
  * `replacement`. Words left untouched keep their timing; see replaceRange.
  */
-export function replaceMatches(words: Word[], matches: Match[], replacement: string): Word[] {
+export function replaceMatches(words: Word[], matches: Match[], replacement: string, lang = "tr"): Word[] {
   if (!matches.length) return words;
   const text = words.map((w) => w.text).join(" ");
   const starts = offsets(words);
@@ -97,7 +97,7 @@ export function replaceMatches(words: Word[], matches: Match[], replacement: str
     let at = starts[first];
     let next = "";
     for (const m of g) {
-      next += text.slice(at, m.from) + keepCapital(text.slice(m.from, m.to), rep);
+      next += text.slice(at, m.from) + keepCapital(text.slice(m.from, m.to), rep, lang);
       at = m.to;
     }
     next += text.slice(at, starts[last] + words[last].text.length);

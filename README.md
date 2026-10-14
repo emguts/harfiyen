@@ -100,6 +100,15 @@ konuşurken de canlı çalışır.
 - Açıkken oynatıcı ve altyazılı MP4 orijinal ses yerine yapay sesi kullanır. Ses ayrıca WAV olarak
   indirilebilir. Modeller ilk kullanımda indirilir: EMA Lightning yaklaşık 36 MB, Antalia Mini 23 MB.
 
+### İngilizce çeviri
+
+- Transkript, [opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en) ile cümle cümle
+  İngilizceye çevrilir. Her cümle Türkçesinin zamanında görünür; kelimeleri o süreyi uzunluklarına göre paylaşır.
+- Transkriptin üstündeki **TR / EN** ile gösterilen dil seçilir: altyazı, zaman çizelgesi, SRT/VTT/metin ve
+  altyazılı MP4 o dilde olur (dosya adına `.en` eklenir). Çeviri de düzenlenebilir, bulup değiştirilebilir.
+- Çeviri projeyle birlikte kaydedilir. Transkript sonradan değişirse çevirinin eskidiği söylenir.
+  Model ilk kullanımda yaklaşık 360 MB indirir ve işlemcide (WASM) çalışır.
+
 ### Projeler
 
 - Otomatik kayıt: transkript, düzeltmeler, altyazı stili ve dalga formu tarayıcıda (IndexedDB) saklanır;
@@ -123,12 +132,12 @@ tarayıcı (masaüstü Chrome veya Edge önerilir).
 ```bash
 npm install
 python3 -m pip install -r scripts/requirements.txt
-npm run models     # konuşma tanıma ve noktalama modellerini indirir ve tarayıcı için dönüştürür (bir kez, Whisper dahil ~2 GB)
+npm run models     # konuşma tanıma, noktalama ve çeviri modellerini indirir ve tarayıcı için dönüştürür (bir kez, Whisper dahil ~3 GB)
 npm run dev        # http://localhost:5173
 ```
 
 İlk açılışta tarayıcı yaklaşık 105 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
-önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB) indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB indirilir ve
+önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB) indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB, İngilizce çeviri yaklaşık 360 MB indirilir ve
 önbelleğe alınır. Ses ve metin işlenmek için sunucuya gönderilmez.
 
 ### Telefondan veya ağdaki başka bir cihazdan açmak
@@ -203,6 +212,7 @@ npm run test:turkish                # Türkçe yazım kurallarını dener (model
 npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
+npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
 npm run build      # üretim derlemesi
 npm run preview    # derlemeyi lokalinde önizle
 ```
@@ -224,6 +234,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - Düzenleme metinle sınırlı; kelime zamanlarını elle kaydırmak yok.
 - Seslendirmede her modelin tek sesi var ve orijinal sesin tamamı (müzik, ortam sesi) kalkar. Konuşmacılar ayrılmaz,
   dudak hareketleriyle eşleşmez. Seslendirme projeye kaydedilmez.
+- Çeviri yalnızca İngilizceye. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
+  çalışmaz. Yemek adları, özel adlar ve argo yanlış çevrilebilir. Seslendirme her zaman Türkçe transkripti okur.
 - Ses dosyalarından üretilen MP4'te ses AAC ile kodlanır; tarayıcı AAC kodlayamıyorsa Opus kullanılır.
   Opus'lu MP4'ü QuickTime ve iPhone Fotoğraflar açmayabilir (Chrome, VLC ve sosyal platformlar açar).
 
@@ -252,6 +264,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
   kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
 - [Silero VAD](https://github.com/snakers4/silero-vad) v5: MIT.
+- Çeviri modeli [Helsinki-NLP/opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en)
+  (OPUS-MT, Tatoeba Challenge): CC-BY 4.0. ONNX'e `scripts/prepare_models.py` ile dönüştürülür.
 - Seslendirme modeli [canberkkkkkk/ema-lightning](https://huggingface.co/canberkkkkkk/ema-lightning):
   Apache-2.0; metin normalleştirme [normalizer-tr](https://github.com/erdemtuna/normalizer-tr) (Apache-2.0).
 - İkinci seslendirme modeli Antalia-2 Mini, Patientdesk.ai,

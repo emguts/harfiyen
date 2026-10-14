@@ -6,6 +6,7 @@ import type { FromWorker, ProviderChoice, ToWorker } from "../worker/protocol";
 import { decodeWithAudioContext } from "./decodeFallback";
 import { LiveMeter, type AuraLevels } from "../render/aura";
 import { MicError, startMicrophone, type Microphone } from "./microphone";
+import type { Translation } from "./translation";
 
 export type EngineState =
   | { phase: "idle" }
@@ -46,6 +47,7 @@ export interface Job {
   speed: number;
   elapsed: number | null;
   error: string | null;
+  translation?: Translation;
 }
 
 const PROVIDER_KEY = "harfiyen.provider";
@@ -320,7 +322,12 @@ export function useTranscriber() {
 
   /** Open a saved transcript as a finished job; `file` may come later (attach). */
   const load = useCallback(
-    (p: Pick<Job, "file" | "model" | "imported" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands" | "loudness">) => {
+    (
+      p: Pick<
+        Job,
+        "file" | "model" | "imported" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands" | "loudness" | "translation"
+      >,
+    ) => {
       const prev = jobRef.current;
       if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
       cancelLiveWait();
@@ -461,6 +468,15 @@ export function useTranscriber() {
     [update],
   );
 
+  /** Set, edit or drop the translation of a job, if it is still open. */
+  const setTranslation = useCallback(
+    (jobId: number, translation: Translation | undefined) => {
+      const j = jobRef.current;
+      if (j && j.status !== "running") update(jobId, (x) => ({ ...x, translation }));
+    },
+    [update],
+  );
+
   // WebGPU failed (loading or mid-file): go on with the CPU. A file starts
   // over there; a recording stops, since its audio so far went to the old worker.
   onGpuFailure.current = () => {
@@ -527,7 +543,7 @@ export function useTranscriber() {
     [restartWorker, prepare, provider],
   );
 
-  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, start, load, attach, startLive, stopLive, cancel, clear, setWords, liveLevels, liveMeter, punctuate, punct };
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, start, load, attach, startLive, stopLive, cancel, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct };
 }
 
 export { MicError };

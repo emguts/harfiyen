@@ -19,6 +19,8 @@ interface Props {
   onEdit?: (first: number, count: number, text: string) => void;
   /** Find hits to mark, and which one is current. */
   found?: { matches: Match[]; current: number };
+  /** Language of the words, for the spelling check while editing. */
+  lang: string;
 }
 
 /** Index of the word being spoken at time t, or -1. */
@@ -55,7 +57,6 @@ function CueEditor({ initial, onDone }: { initial: string; onDone: (text: string
       className="-my-[3px] block w-full resize-none overflow-hidden rounded-ui-sm border border-cini bg-bg px-1.5 py-0.5 text-[15px] leading-[1.6] font-[560] text-fg outline-none [font-family:inherit]"
       value={value}
       spellCheck
-      lang="tr"
       aria-label="Satırı düzenle"
       onChange={(e) => setValue(e.target.value.replace(/\n/g, " "))}
       onBlur={() => onDone(value)}
@@ -164,7 +165,7 @@ const CueRow = memo(function CueRow({
   a.cue.words.length === b.cue.words.length &&
   a.cue.words.every((w, i) => w === b.cue.words[i]));
 
-export function Transcript({ words, tentative, running, waiting, time, playing, onSeek, onEdit, found }: Props) {
+export function Transcript({ words, tentative, running, waiting, time, playing, onSeek, onEdit, found, lang }: Props) {
   const all = useMemo(() => (tentative.length ? words.concat(tentative) : words), [words, tentative]);
   const cues = useMemo(() => importedCues(all) ?? buildCues(all, READING_RULES), [all]);
   // Per cue, a string of find marks (see CueRow); "" where nothing is marked.
@@ -233,7 +234,7 @@ export function Transcript({ words, tentative, running, waiting, time, playing, 
   }
 
   return (
-    <ol className="m-0 list-none p-0 pb-6" ref={list}>
+    <ol className="m-0 list-none p-0 pb-6" ref={list} lang={lang}>
       {cues.map((c, i) => {
         const end = c.first + c.words.length;
         return (

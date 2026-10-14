@@ -10,6 +10,7 @@ import type { UserFont } from "../captions/fonts";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod, Word } from "../engine";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
+import type { Translation } from "./translation";
 
 export interface MediaInfo {
   name: string;
@@ -39,6 +40,7 @@ export interface Project {
   bands: Float32Array;
   /** Missing in projects saved before "Sesle vurgula". */
   loudness?: Float32Array;
+  translation?: Translation;
   settings: CaptionSettings;
   media: MediaInfo | null;
   storage: MediaStorage;
@@ -239,6 +241,13 @@ export function projectToFile(p: Project): string {
     media: p.media,
     settings: p.settings,
     words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
+    ...(p.translation && {
+      translation: {
+        lang: p.translation.lang,
+        source: p.translation.source,
+        words: p.translation.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end) })),
+      },
+    }),
     peaks: toBase64(p.peaks),
     bands: toBase64(p.bands),
     ...(p.loudness?.length && { loudness: toBase64(p.loudness) }),
@@ -257,14 +266,19 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
   if (typeof d.version !== "number" || d.version > 1)
     throw new Error("Bu proje dosyası daha yeni bir Harfiyen sürümüyle kaydedilmiş.");
   const num = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : null);
-  const words = (d.words as Record<string, unknown>[])
-    .filter((w) => typeof w?.text === "string" && num(w.start) !== null && num(w.end) !== null)
-    .map((w): Word => ({
-      text: w.text as string,
-      start: w.start as number,
-      end: w.end as number,
-      ...(w.cue === true && { cue: true }),
-    }));
+  const readWords = (list: unknown) =>
+    (Array.isArray(list) ? (list as Record<string, unknown>[]) : [])
+      .filter((w) => typeof w?.text === "string" && num(w.start) !== null && num(w.end) !== null)
+      .map((w): Word => ({
+        text: w.text as string,
+        start: w.start as number,
+        end: w.end as number,
+        ...(w.cue === true && { cue: true }),
+      }));
+  const words = readWords(d.words);
+  const t = d.translation as Record<string, unknown> | undefined;
+  const translation: Translation | undefined =
+    t?.lang === "en" && typeof t.source === "string" ? { lang: "en", source: t.source, words: readWords(t.words) } : undefined;
   const media = d.media as MediaInfo | null;
   const now = Date.now();
   return {
@@ -282,6 +296,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     peaks: fromBase64(d.peaks),
     bands: fromBase64(d.bands),
     loudness: fromBase64(d.loudness),
+    translation,
     settings: { ...defaults, ...(d.settings as Partial<CaptionSettings>) },
     media: media && typeof media.name === "string" && typeof media.size === "number" ? media : null,
     storage: "none",

@@ -69,12 +69,18 @@ import { usePlayer } from "./lib/usePlayer";
 import { DEFAULT_VOICE, sameVoice, useDubber, useDubPlayback, type Voice } from "./lib/useDubber";
 import { useProjects } from "./lib/useProjects";
 import { modelIsCached, useTranscriber } from "./lib/useTranscriber";
+import { useTranslator } from "./lib/useTranslator";
+import { sourceKey } from "./lib/translation";
+import { TRANSCRIPT_LANG } from "./lib/lang";
 import { DEFAULT_MODEL, modelInfo } from "./models";
 
 const EMPTY_BANDS = new Float32Array(0);
 /** Play and mute in the transport bar. */
 const TP_BTN =
   "grid size-8 flex-none place-items-center rounded-ui border-0 bg-transparent text-fg transition-all duration-150 ease-[ease] hover:not-disabled:bg-raised hover:not-disabled:text-white disabled:opacity-35 max-[860px]:size-10";
+/** TR / EN in the transcript pane's head. */
+const LANG_BTN =
+  "h-5 rounded-[4px] border-0 bg-transparent px-1.5 text-[10.5px] font-semibold tracking-[0.02em] text-fg-3 hover:not-disabled:text-fg aria-pressed:bg-raised aria-pressed:text-white disabled:opacity-45";
 /** Welcome-screen buttons: long file names are cut; full width on phones. */
 const DROP_BTN =
   "min-w-0 max-w-full truncate max-[480px]:h-11 max-[480px]:w-full [&_svg]:mr-1.5";
@@ -141,6 +147,7 @@ export function App() {
     stopLive,
     cancel,
     setWords,
+    setTranslation,
     liveLevels,
     liveMeter,
     punctuate,
@@ -167,6 +174,9 @@ export function App() {
   const [videoOutput, setVideoOutput] = useState<VideoOutput>(loadOutput);
   const player = usePlayer(job?.file ?? null);
   const dubber = useDubber();
+  const translator = useTranslator();
+  /** Show the English translation instead of the transcript, once there is one. */
+  const [showEn, setShowEn] = useState(false);
   /** Play and export the dub instead of the original sound, once there is one. */
   const [dubOn, setDubOn] = useState(true);
   const dub = dubber.state.status === "done" ? dubber.state : null;
@@ -245,6 +255,7 @@ export function App() {
           peaks: p.peaks,
           bands: p.bands,
           loudness: p.loudness ?? EMPTY_BANDS,
+          translation: p.translation,
         });
         punctuated.current.add(jobId);
         bind(jobId, p, file);
@@ -437,48 +448,84 @@ export function App() {
     };
   }, [openFile]);
 
+  /** The transcript as spoken; dubbing, punctuation and numbers always work on it. */
   const words = job?.words ?? [];
+  const translation = job?.translation;
+  const english = showEn && !!translation;
+  const lang = english ? "en" : TRANSCRIPT_LANG;
+  /** What the transcript pane, the player and the exports show: the transcript or its translation. */
+  const shown = english ? translation.words : words;
   const liveWords = useMemo(
     () =>
-      job?.tentative.length
-        ? (job.words ?? []).concat(job.tentative)
-        : (job?.words ?? []),
-    [job?.words, job?.tentative],
+      english
+        ? translation.words
+        : job?.tentative.length
+          ? (job.words ?? []).concat(job.tentative)
+          : (job?.words ?? []),
+    [english, translation, job?.words, job?.tentative],
   );
   // Timeline blocks follow the grouping of the chosen caption style.
   const groups = useMemo(
     () => buildCues(liveWords, presetById(settings.preset).grouping),
     [liveWords, settings.preset],
   );
+  const translationStale = useMemo(
+    () => !!translation && translation.source !== sourceKey(words),
+    [translation, words],
+  );
+  // A translation belongs to its job.
+  const cancelTranslation = translator.cancel;
+  useEffect(() => cancelTranslation(), [job?.id, cancelTranslation]);
+  // A video made in the other language is out of date.
+  useEffect(() => resetBurn(), [lang, resetBurn]);
 
-  // Transcript edits, with undo (⌘Z / Ctrl+Z outside text fields).
-  const history = useRef<{ jobId: number; words: Word[] }[]>([]);
+  // Transcript edits, with undo (⌘Z / Ctrl+Z outside text fields). `en`: the edit was to the translation.
+  const history = useRef<{ jobId: number; en: boolean; words: Word[] }[]>([]);
   const [canUndo, setCanUndo] = useState(false);
-  const editable = !!job && job.status !== "running" && words.length > 0;
+  const editable = !!job && job.status !== "running" && shown.length > 0;
   const commitWords = useCallback(
     (next: Word[]) => {
       if (!job) return;
-      history.current.push({ jobId: job.id, words: job.words });
+      history.current.push({ jobId: job.id, en: english, words: shown });
       setCanUndo(true);
-      setWords(next);
+      if (english) setTranslation(job.id, { ...translation, words: next });
+      else setWords(next);
       if (burner.state.status === "done") resetBurn();
     },
-    [job, setWords, burner.state.status, resetBurn],
+    [job, english, shown, translation, setWords, setTranslation, burner.state.status, resetBurn],
   );
   const onEdit = useCallback(
-    (first: number, count: number, text: string) => {
-      if (job) commitWords(replaceRange(job.words, first, count, text));
-    },
-    [job, commitWords],
+    (first: number, count: number, text: string) => commitWords(replaceRange(shown, first, count, text)),
+    [shown, commitWords],
   );
   const undo = useCallback(() => {
     const h = history.current;
     while (h.length && h[h.length - 1].jobId !== job?.id) h.pop();
     const prev = h.pop();
-    if (prev) setWords(prev.words);
+    if (prev?.en && job?.translation) {
+      setTranslation(job.id, { ...job.translation, words: prev.words });
+      setShowEn(true);
+    } else if (prev && !prev.en) {
+      setWords(prev.words);
+      setShowEn(false);
+    }
     setCanUndo(h.length > 0);
-  }, [job?.id, setWords]);
-  const find = useFind(words);
+  }, [job?.id, job?.translation, setWords, setTranslation]);
+  const translate = () => {
+    if (!job) return;
+    const id = job.id;
+    const before = job.translation;
+    translator.translate(words, (t) => {
+      // A new translation replaces any edits to the old one; ⌘Z brings them back.
+      if (before) {
+        history.current.push({ jobId: id, en: true, words: before.words });
+        setCanUndo(true);
+      }
+      setTranslation(id, t);
+      setShowEn(true);
+    });
+  };
+  const find = useFind(shown, lang);
   const { close: closeFind, show: showFind } = find;
   const found = useMemo(
     () => (find.open && editable ? { matches: find.matches, current: find.current } : undefined),
@@ -515,7 +562,7 @@ export function App() {
       // Words already in digits ("1923'te") keep their writing; only the punctuation after them changes.
       const keep = (old: string, now: string) =>
         /\d/.test(old) ? old.replace(/[.,;:!?…]+$/, "") + (/[.,;:!?…]+$/.exec(now)?.[0] ?? "") : now;
-      history.current.push({ jobId: job.id, words: source });
+      history.current.push({ jobId: job.id, en: false, words: source });
       setCanUndo(true);
       setWords(withDigits(source.map((w, i) => ({ ...w, text: keep(w.text, written[i]) }))));
     } catch {
@@ -528,7 +575,7 @@ export function App() {
     punctuated.current.add(job.id);
     const next = withDigits(job.words);
     if (next.every((w, i) => w === job.words[i])) return;
-    history.current.push({ jobId: job.id, words: job.words });
+    history.current.push({ jobId: job.id, en: false, words: job.words });
     setCanUndo(true);
     setWords(next);
   }, [job, numberMode, setWords, withDigits]);
@@ -604,7 +651,9 @@ export function App() {
       encoder: resolution?.encoders[out.codec] ?? null,
       size: resolution && { width: resolution.width, height: resolution.height },
     };
-    void burner.burn(job.file, words, settings, job.bands, job.loudness, encode, dubbing?.clips ?? null, `${name}.altyazili.mp4`);
+    // Translated words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
+    const loudness = english ? EMPTY_BANDS : job.loudness;
+    void burner.burn(job.file, shown, settings, job.bands, loudness, lang, encode, dubbing?.clips ?? null, `${exportName}.altyazili.mp4`);
   };
 
   const changeSettings = (s: CaptionSettings) => {
@@ -621,6 +670,8 @@ export function App() {
     : job?.file
       ? baseName(job.file.name)
       : "canli-kayit";
+  /** Exports of the translation say so in their name. */
+  const exportName = english ? `${name}.en` : name;
   const exportProject = () => {
     const text = exportText();
     if (text) download(`${name}${PROJECT_EXT}`, text, "application/json");
@@ -717,8 +768,8 @@ export function App() {
         />
         {job && (
           <ExportMenu
-            words={words}
-            baseName={name}
+            words={shown}
+            baseName={exportName}
             meta={{
               file: title,
               model: modelInfo(job.model).spec,
@@ -776,6 +827,29 @@ export function App() {
         <Pane side="left" label="Transkript">
           <PaneHead>
             <PaneTitle>Transkript</PaneTitle>
+            {translation && (
+              <span
+                className="mr-auto -my-1 flex gap-0.5 rounded-md border border-line-soft bg-[#101316] p-0.5"
+                role="group"
+                aria-label="Gösterilen dil"
+              >
+                {[
+                  { en: false, label: "TR", title: "Türkçe transkript" },
+                  { en: true, label: "EN", title: "İngilizce çeviri" },
+                ].map((o) => (
+                  <button
+                    key={o.label}
+                    className={LANG_BTN}
+                    aria-pressed={english === o.en}
+                    title={o.title}
+                    disabled={job?.status === "running"}
+                    onClick={() => setShowEn(o.en)}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </span>
+            )}
             {job && liveWords.length > 0 && (
               <PaneMeta>{liveWords.length} kelime</PaneMeta>
             )}
@@ -807,9 +881,9 @@ export function App() {
           {found && (
             <FindBar
               find={find}
-              words={words}
+              words={shown}
               onReplace={commitWords}
-              onGo={(m) => player.seek(words[m.first].start)}
+              onGo={(m) => player.seek(shown[m.first].start)}
             />
           )}
           {otherModel && (
@@ -829,8 +903,9 @@ export function App() {
           <PaneBody>
             {job ? (
               <Transcript
-                words={words}
-                tentative={job.tentative}
+                words={shown}
+                tentative={english ? [] : job.tentative}
+                lang={lang}
                 running={job.status === "running"}
                 waiting={
                   job.status === "running" &&
@@ -861,7 +936,8 @@ export function App() {
             settings={settings}
             liveTime={job?.live && !job.file ? job.decoded : null}
             bands={job?.bands ?? EMPTY_BANDS}
-            loudness={job?.loudness ?? EMPTY_BANDS}
+            loudness={(!english && job?.loudness) || EMPTY_BANDS}
+            lang={lang}
             liveLevels={liveLevels}
             notice={
               badCodec &&
@@ -1017,6 +1093,12 @@ export function App() {
           onVoice={setVoice}
           preview={dubber.preview}
           onListen={() => dubber.listen(words, voice)}
+          translate={translator.state}
+          translation={!!translation}
+          translationStale={translationStale}
+          canTranslate={!!job && job.status !== "running" && words.length > 0}
+          onTranslate={translate}
+          onCancelTranslate={translator.cancel}
         />
       </div>
 

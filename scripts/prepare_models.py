@@ -19,7 +19,8 @@ the punctuation / true-casing model to public/models/punct/:
   punct.json           labels and windowing parameters
 
 Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the two text-to-speech models for
-dubbing: EMA Lightning to public/models/ema-lightning/ and Antalia Mini to public/models/antalia-mini/.
+dubbing: EMA Lightning to public/models/ema-lightning/ and Antalia Mini to public/models/antalia-mini/,
+and the Turkish -> English translation model to public/models/opus-mt-tc-big-tr-en/.
 
 Usage:  python scripts/prepare_models.py [--src DIR]
 """
@@ -384,11 +385,33 @@ PUNCT_REPO = "1-800-BAD-CODE/punct_cap_seg_47_language"
 PUNCT_OUT = ROOT / "public" / "models" / "punct"
 
 
+def spm_vocab(path: Path, normalizer: str) -> dict:
+    """A SentencePiece unigram model as src/punct/spm.ts reads it."""
+    from sentencepiece import sentencepiece_model_pb2 as pb
+
+    m = pb.ModelProto()
+    m.ParseFromString(path.read_bytes())
+    assert m.trainer_spec.model_type == 1, "expected a unigram model"
+    assert m.normalizer_spec.name == normalizer, m.normalizer_spec.name
+    assert not m.trainer_spec.byte_fallback
+    types = sorted({p.type for p in m.pieces})
+    assert set(types) <= {1, 2, 3}, f"unsupported piece types {types}"
+    return {
+        "pieces": [p.piece for p in m.pieces],
+        "scores": [round(p.score, 5) for p in m.pieces],
+        # 1 normal, 2 unknown, 3 control
+        "types": [p.type for p in m.pieces],
+        "unkId": next(i for i, p in enumerate(m.pieces) if p.type == 2),
+        "bosId": m.trainer_spec.bos_id,
+        "eosId": m.trainer_spec.eos_id,
+        "padId": m.trainer_spec.pad_id,
+    }
+
+
 def prepare_punct(cache: Path) -> None:
     """Punctuation, true-casing and sentence boundaries (47 languages, incl. Turkish)."""
     import yaml
     from onnxruntime.quantization import QuantType, quantize_dynamic
-    from sentencepiece import sentencepiece_model_pb2 as pb
 
     files = ["punct_cap_seg_47lang.onnx", "spe_unigram_64k_lowercase_47lang.model", "config.yaml"]
     for f in files:
@@ -412,22 +435,7 @@ def prepare_punct(cache: Path) -> None:
         per_channel=True,
     )
 
-    m = pb.ModelProto()
-    m.ParseFromString((cache / files[1]).read_bytes())
-    assert m.trainer_spec.model_type == 1, "expected a unigram model"
-    assert m.normalizer_spec.name == "identity"
-    types = sorted({p.type for p in m.pieces})
-    assert set(types) <= {1, 2, 3}, f"unsupported piece types {types}"
-    spm = {
-        "pieces": [p.piece for p in m.pieces],
-        "scores": [round(p.score, 5) for p in m.pieces],
-        # 1 normal, 2 unknown, 3 control
-        "types": [p.type for p in m.pieces],
-        "unkId": next(i for i, p in enumerate(m.pieces) if p.type == 2),
-        "bosId": m.trainer_spec.bos_id,
-        "eosId": m.trainer_spec.eos_id,
-        "padId": m.trainer_spec.pad_id,
-    }
+    spm = spm_vocab(cache / files[1], "identity")
     (PUNCT_OUT / "spm.json").write_text(json.dumps(spm, ensure_ascii=False, separators=(",", ":")))
 
     cfg = yaml.safe_load((cache / files[2]).read_text())
@@ -502,6 +510,59 @@ def prepare_whisper() -> None:
     print(f"whisper: {sum(whisper['files'].values()) / 1e6:.0f} MB")
 
 
+MT_REPO = "Helsinki-NLP/opus-mt-tc-big-tr-en"
+MT_OUT = ROOT / "public" / "models" / "opus-mt-tc-big-tr-en"
+MT_FILES = ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"]
+
+
+def prepare_mt(cache: Path) -> None:
+    """Turkish -> English translation (Marian, CC-BY-4.0), exported here: the published ONNX conversions
+    (Xenova/, onnx-community/) of this model put out repeated junk ("connectconnect...") at every precision."""
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+    from optimum.exporters.onnx import main_export
+
+    if not (cache / "decoder_model_merged.onnx").exists():
+        print("export", MT_REPO)
+        main_export(MT_REPO, output=cache, task="text2text-generation-with-past")
+    MT_OUT.mkdir(parents=True, exist_ok=True)
+    # MatMul weights and the embedding tables to int8, per tensor (per channel was no better on our Turkish
+    # sentences). EnableSubgraph reaches into the merged decoder's two branches (first step, with past):
+    # without it the decoder stays at 875 MB.
+    for src, dst in [("encoder_model.onnx", "encoder.int8.onnx"), ("decoder_model_merged.onnx", "decoder.int8.onnx")]:
+        quantize_dynamic(
+            str(cache / src),
+            str(MT_OUT / dst),
+            weight_type=QuantType.QInt8,
+            op_types_to_quantize=["MatMul", "Gather"],
+            extra_options={"EnableSubgraph": True},
+        )
+
+    # Text is cut into pieces with the source SentencePiece model, then each piece is looked up in the shared
+    # vocabulary (encoder and decoder ids alike); pieces missing from it become <unk>, as in MarianTokenizer.
+    spm = spm_vocab(cache / "source.spm", "nmt_nfkc")
+    vocab = json.loads((cache / "vocab.json").read_text())
+    ids = sorted(vocab.values())
+    assert ids == list(range(len(ids))), "vocabulary ids are not 0..n-1"
+    spm["vocab"] = [p for p, _ in sorted(vocab.items(), key=lambda kv: kv[1])]
+    (MT_OUT / "spm.json").write_text(json.dumps(spm, ensure_ascii=False, separators=(",", ":")))
+
+    cfg = json.loads((cache / "config.json").read_text())
+    mt = {
+        "name": "opus-mt-tc-big-tr-en",
+        "decoderLayers": cfg["decoder_layers"],
+        "heads": cfg["decoder_attention_heads"],
+        "headDim": cfg["d_model"] // cfg["decoder_attention_heads"],
+        "maxLength": cfg["max_position_embeddings"],
+        "decoderStart": cfg["decoder_start_token_id"],
+        "eos": cfg["eos_token_id"],
+        "pad": cfg["pad_token_id"],
+        "unk": vocab["<unk>"],
+        "files": {f: (MT_OUT / f).stat().st_size for f in MT_FILES},
+    }
+    (MT_OUT / "model.json").write_text(json.dumps(mt, indent=2))
+    print(f"translation: {sum(mt['files'].values()) / 1e6:.0f} MB")
+
+
 EMA_URL = "https://ema-lightning-web.vercel.app/models"
 EMA_OUT = ROOT / "public" / "models" / "ema-lightning"
 # ONNX conversions of canberkkkkkk/ema-lightning (Apache-2.0) and normalizer-tr compiled to wasm, as served by
@@ -565,13 +626,18 @@ def main() -> None:
     ap.add_argument("--src", type=Path, default=ROOT / ".cache" / "seda-v0.1")
     ap.add_argument("--whisper-only", action="store_true", help="only (re)build the Whisper files")
     ap.add_argument("--tts-only", action="store_true", help="only download the dubbing voices")
+    ap.add_argument("--mt-only", action="store_true", help="only (re)build the translation model")
     args = ap.parse_args()
+    mt_cache = args.src.parent / "opus-mt-tc-big-tr-en"
     if args.whisper_only:
         prepare_whisper()
         return
     if args.tts_only:
         prepare_ema()
         prepare_mini()
+        return
+    if args.mt_only:
+        prepare_mt(mt_cache)
         return
     args.src.mkdir(parents=True, exist_ok=True)
     download(args.src)
@@ -589,6 +655,7 @@ def main() -> None:
     prepare_whisper()
     prepare_ema()
     prepare_mini()
+    prepare_mt(mt_cache)
 
 
 if __name__ == "__main__":

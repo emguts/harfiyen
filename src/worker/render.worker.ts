@@ -55,6 +55,8 @@ export type ToRender =
       bands: Float32Array;
       /** Speech loudness, for "Sesle vurgula". */
       loudness: Float32Array;
+      /** Language of the words; decides how they are uppercased. */
+      lang: string;
       dub: DubClip[] | null;
       encode: Encode;
       /** The file the user picked to save into; null renders to the private disk (or memory). */
@@ -122,6 +124,7 @@ async function burn(
   settings: CaptionSettings,
   bands: Float32Array,
   loudness: Float32Array,
+  lang: string,
   dub: DubClip[] | null,
   encode: Encode,
   sink: Sink,
@@ -132,7 +135,7 @@ async function burn(
   await loadCaptionFont(settings.font, self.fonts);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
-  if (!track) return burnAudio(jobId, input, words, settings, bands, loudness, dub, encode, sink, handle, started);
+  if (!track) return burnAudio(jobId, input, words, settings, bands, loudness, lang, dub, encode, sink, handle, started);
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -142,7 +145,7 @@ async function burn(
   const height = encode.size?.height ?? track.displayHeight & ~1;
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas, false);
-  const captions = new CaptionRenderer(words, settings, width, height, loudness);
+  const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
   let frames = 0;
@@ -215,6 +218,7 @@ async function burnAudio(
   settings: CaptionSettings,
   bands: Float32Array,
   loudness: Float32Array,
+  lang: string,
   dub: DubClip[] | null,
   encode: Encode,
   sink: Sink,
@@ -234,7 +238,7 @@ async function burnAudio(
   const { fps } = AUDIO_VIDEO;
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas, false);
-  const captions = new CaptionRenderer(words, settings, width, height, loudness);
+  const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
   const palette = paletteById(settings.aura).colors;
   const duration = await input.computeDuration();
 
@@ -322,7 +326,7 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
     sinks.set(m.jobId, sink);
     if (cancelled.has(m.jobId)) sink.cancel();
     if (m.userFont) addUserFont(m.userFont);
-    await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.loudness, m.dub, m.encode, sink, m.handle);
+    await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.loudness, m.lang, m.dub, m.encode, sink, m.handle);
   };
   run()
     .catch(async (e) => {

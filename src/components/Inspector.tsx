@@ -4,9 +4,11 @@ import type { DecodingMethod } from "../engine";
 import { writeNumbers, type NumberMode } from "../lib/numbers";
 import type { DubState, PreviewState, Voice } from "../lib/useDubber";
 import type { EngineState, Job } from "../lib/useTranscriber";
+import type { TranslateState } from "../lib/useTranslator";
 import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
+import { Meter } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import {
@@ -75,6 +77,12 @@ export function Inspector({
   onVoice,
   preview,
   onListen,
+  translate,
+  translation,
+  translationStale,
+  canTranslate,
+  onTranslate,
+  onCancelTranslate,
 }: {
   settings: CaptionSettings;
   onSettings: (s: CaptionSettings) => void;
@@ -105,6 +113,14 @@ export function Inspector({
   onVoice: (v: Voice) => void;
   preview: PreviewState;
   onListen: () => void;
+  translate: TranslateState;
+  /** The job has a translation. */
+  translation: boolean;
+  /** The transcript changed after it was translated. */
+  translationStale: boolean;
+  canTranslate: boolean;
+  onTranslate: () => void;
+  onCancelTranslate: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("captions");
   const running = job?.status === "running";
@@ -280,6 +296,62 @@ export function Inspector({
                   </Button>
                 </SectionActions>
               )}
+            </Section>
+            <Section title="İngilizce çeviri">
+              <Hint>
+                Transkript cümle cümle İngilizceye çevrilir; her cümle Türkçesinin
+                zamanında görünür. Transkriptin üstündeki TR / EN ile altyazı,
+                dışa aktarma ve video için dil seçilir; çeviri de düzenlenebilir.
+                İlk kullanımda yaklaşık 360 MB model indirilir.
+              </Hint>
+              {translate.status === "download" && (
+                <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
+                  <span className="flex-1">
+                    Model indiriliyor %
+                    {Math.floor((translate.loaded / (translate.total || 1)) * 100)}
+                  </span>
+                  <Meter value={translate.loaded / (translate.total || 1)} />
+                </div>
+              )}
+              {translate.status === "running" && (
+                <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
+                  <span className="flex-1">
+                    {translate.done
+                      ? `Çevriliyor ${translate.done} / ${translate.total}`
+                      : "Model hazırlanıyor"}
+                  </span>
+                  <Meter value={translate.total ? translate.done / translate.total : 0} />
+                </div>
+              )}
+              {translate.status === "error" && (
+                <Hint>Çevrilemedi: {translate.message}</Hint>
+              )}
+              {translation && translationStale && translate.status === "idle" && (
+                <Hint>
+                  Transkript çeviriden sonra değişti. Yeniden çevirirsen
+                  çeviride yaptığın düzeltmeler gider (⌘Z ile geri gelir).
+                </Hint>
+              )}
+              <SectionActions>
+                {translate.status === "download" || translate.status === "running" ? (
+                  <Button onClick={onCancelTranslate}>Durdur</Button>
+                ) : (
+                  <Button
+                    variant={translation && !translationStale ? "default" : "primary"}
+                    disabled={!canTranslate || running}
+                    onClick={onTranslate}
+                  >
+                    {translation ? "Yeniden çevir" : "İngilizceye çevir"}
+                  </Button>
+                )}
+              </SectionActions>
+              <Hint>
+                <a href="https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en">
+                  opus-mt-tc-big-tr-en
+                </a>{" "}
+                (Helsinki-NLP, CC-BY 4.0), bu bilgisayarda çalışır. Yemek adları,
+                özel adlar ve argo yanlış çevrilebilir; paylaşmadan önce göz at.
+              </Hint>
             </Section>
             <Section title="Model">
               <dl className="m-0 grid grid-cols-[88px_1fr] gap-x-2.5 gap-y-1.5 text-[12.5px] [&_dd]:m-0 [&_dt]:text-fg-3">

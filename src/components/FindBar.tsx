@@ -7,7 +7,7 @@ import { Button, IconButton } from "./ui";
 export type Find = ReturnType<typeof useFind>;
 
 /** Find and replace state for the transcript. */
-export function useFind(words: Word[]) {
+export function useFind(words: Word[], lang: string) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [replacement, setReplacement] = useState("");
@@ -19,8 +19,8 @@ export function useFind(words: Word[]) {
   const [focusTick, setFocusTick] = useState(0);
 
   const matches = useMemo(
-    () => (open ? findMatches(words, query, wholeWord) : []),
-    [open, words, query, wholeWord],
+    () => (open ? findMatches(words, query, wholeWord, lang) : []),
+    [open, words, query, wholeWord, lang],
   );
   const current = matches.length ? Math.max(0, matches.findIndex((m) => m.from >= anchor)) : -1;
 
@@ -36,7 +36,7 @@ export function useFind(words: Word[]) {
   return {
     open, show, close, focusTick,
     query, setQuery, replacement, setReplacement, wholeWord, setWholeWord,
-    matches, current, setAnchor,
+    matches, current, setAnchor, lang,
   };
 }
 
@@ -72,13 +72,13 @@ export function FindBar({
   const replaceOne = () => {
     const m = matches[current];
     if (!m) return;
-    onReplace(replaceMatches(words, [m], find.replacement));
+    onReplace(replaceMatches(words, [m], find.replacement, find.lang));
     // Carry on after the inserted text, so a replacement holding the query is not found again.
     setAnchor(m.from + squash(find.replacement).length);
   };
   const replaceAll = () => {
     if (!matches.length) return;
-    onReplace(replaceMatches(words, matches, find.replacement));
+    onReplace(replaceMatches(words, matches, find.replacement, find.lang));
     setAnchor(0);
   };
   const keys = (onEnter: (shift: boolean) => void) => (e: React.KeyboardEvent) => {
@@ -102,7 +102,7 @@ export function FindBar({
           placeholder="Bul"
           aria-label="Transkriptte bul"
           spellCheck={false}
-          lang="tr"
+          lang={find.lang}
           onChange={(e) => find.setQuery(e.target.value)}
           onKeyDown={keys((shift) => go(shift ? -1 : 1))}
         />
@@ -142,7 +142,7 @@ export function FindBar({
           placeholder="Değiştir"
           aria-label="Yerine yazılacak"
           spellCheck
-          lang="tr"
+          lang={find.lang}
           onChange={(e) => find.setReplacement(e.target.value)}
           onKeyDown={keys(replaceOne)}
         />

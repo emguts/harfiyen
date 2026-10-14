@@ -105,6 +105,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
       peaks: job.peaks,
       bands: job.bands,
       loudness: job.loudness,
+      translation: job.translation,
       settings,
     });
     const project = p;

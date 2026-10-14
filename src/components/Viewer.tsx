@@ -33,6 +33,7 @@ export function Viewer({
   loudness,
   children,
   notice,
+  lang,
 }: {
   /** Raw microphone levels while recording (updated in place). */
   liveLevels?: React.RefObject<AuraLevels | null>;
@@ -49,6 +50,8 @@ export function Viewer({
   children?: React.ReactNode;
   /** Shown over the picture when it cannot be shown (a codec this browser cannot decode). */
   notice?: React.ReactNode;
+  /** Language of the words; decides how they are uppercased. */
+  lang: string;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -105,10 +108,12 @@ export function Viewer({
 
   const captions = useMemo(
     () =>
-      words.length ? new CaptionRenderer(words, settings, frame.w, frame.h, settings.voiceEmphasis ? loudness : null) : null,
+      words.length
+        ? new CaptionRenderer(words, settings, frame.w, frame.h, settings.voiceEmphasis ? loudness : null, lang)
+        : null,
     // fontTick: lay out again once the font file has loaded. Loudness only matters with voiceEmphasis.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null],
+    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null, lang],
   );
 
   // The loop reads these through refs, so new words (every progress update)

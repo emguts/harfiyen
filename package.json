@@ -14,6 +14,7 @@
     "test:whisper": "tsx tests/whisper.node.ts",
     "test:punct": "tsx tests/punct.node.ts",
     "test:turkish": "tsx tests/turkish.node.ts",
+    "test:translate": "tsx tests/translate.node.ts",
     "eval:punct": "tsx tests/punct-eval.node.ts",
     "test:numbers": "tsx tests/numbers.node.ts",
     "eval:numbers": "tsx tests/numbers-eval.node.ts"
