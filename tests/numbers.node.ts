@@ -33,6 +33,9 @@ check("sayı", "Bir milyon kişi.", "1 milyon kişi.");
 check("sayı", "On beş milyonun üzerinde albüm.", "15 milyonun üzerinde albüm.");
 check("sayı", "Bir milyon yedi yüz on yedi bin dokuz yüz kırk iki turist.", "1.717.942 turist.");
 check("sayı", "Bin bir gece masalları.", "1001 gece masalları.");
+// Already in digits (Whisper): the scale word alone stays.
+check("sayı", "20 milyon kişi, 3 milyar dolar.", "20 milyon kişi, 3 milyar dolar.", 1);
+check("sayı", "Milyonların önünde.", "Milyonların önünde.", 1);
 
 // Suffixes, with an apostrophe.
 check("ek", "Bin dokuz yüz yirmi üçte kuruldu.", "1923'te kuruldu.");

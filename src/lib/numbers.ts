@@ -184,7 +184,8 @@ export function digitize(words: string[], min = 10): { text: string; count: numb
       !n ||
       n.value < min ||
       (single && !n.last.ordinal && AMBIGUOUS.has(n.last.base)) ||
-      (single && n.last.base === "on" && !!n.last.suffix); // "onu", "ona", "onun": the pronoun
+      (single && n.last.base === "on" && !!n.last.suffix) || // "onu", "ona", "onun": the pronoun
+      (single && n.last.kind === "scale"); // "20 milyon", "milyonlarca": not "1 milyon" on its own
     if (skip) {
       out.push({ text: words[i], count: 1 });
       i++;

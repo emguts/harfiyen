@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod } from "../engine";
-import type { NumberMode } from "../lib/numbers";
+import { writeNumbers, type NumberMode } from "../lib/numbers";
 import type { DubState, PreviewState, Voice } from "../lib/useDubber";
 import type { EngineState, Job } from "../lib/useTranscriber";
 import { modelInfo, type ModelId } from "../models";
@@ -20,7 +20,7 @@ type Tab = "captions" | "transcribe" | "dub";
 const NUMBER_MODES: { value: NumberMode; label: string; sample: string }[] = [
   { value: "rule", label: "Kurala göre", sample: "Saat 15.30'da 15 kişi geldi, üç kişi kaldı." },
   { value: "all", label: "Hepsi rakamla", sample: "Saat 15.30'da 15 kişi geldi, 3 kişi kaldı." },
-  { value: "keep", label: "Dokunma", sample: "Model nasıl yazdıysa öyle kalır." },
+  { value: "keep", label: "Dokunma", sample: "Sayılara dokunulmaz. Önceki düzenleme ⌘Z ile geri alınır." },
 ];
 
 export function Inspector({
@@ -87,6 +87,15 @@ export function Inspector({
   const [tab, setTab] = useState<Tab>("captions");
   const running = job?.status === "running";
   const info = modelInfo(model);
+  // Whisper punctuates by itself: the section is for Seda, or for a Seda transcript that is open.
+  const sedaJob = !!job && !modelInfo(job.model).punctuates;
+  const showPunct = !info.punctuates || sedaJob;
+  // A dry run on the open transcript: how many words "Şimdi uygula" would change.
+  const numberChanges = useMemo(() => {
+    if (!job || job.status !== "done" || numberMode === "keep") return 0;
+    const before = new Set(job.words);
+    return writeNumbers(job.words, numberMode).filter((w) => !before.has(w)).length;
+  }, [job, numberMode]);
   // What a new run would change: the model, or (seda only) the method.
   const differs = job && (model !== job.model || (model === "seda" && method !== job.options.method));
   const restartLabel = !differs
@@ -153,26 +162,26 @@ export function Inspector({
                 </SectionActions>
               )}
             </Section>
-            <Section title="Noktalama ve büyük harf">
-              <Row>
-                <RowLabel wide>Otomatik ekle</RowLabel>
-                <Switch checked={autoPunct} onChange={(e) => onAutoPunct(e.target.checked)} />
-              </Row>
-              <Hint>
-                {info.punctuates
-                  ? `${info.name} noktalamayı ve büyük harfleri kendisi yazar; bu ayar Seda dökümleri için. `
-                  : ""}
-                Yazıya döküm bitince nokta, virgül ve soru işareti eklenir; cümle başları ve özel adlar büyük harfle
-                yazılır ("İstanbul'da"). ⌘Z ile geri alınır. İlk kullanımda yaklaşık 60 MB model indirilir.
-              </Hint>
-              {job && (
-                <SectionActions>
-                  <Button disabled={running || punctBusy || !job.words.length} onClick={onPunctuate}>
-                    {punctBusy ? "Ekleniyor…" : "Şimdi uygula"}
-                  </Button>
-                </SectionActions>
-              )}
-            </Section>
+            {showPunct && (
+              <Section title="Noktalama ve büyük harf">
+                <Row>
+                  <RowLabel wide>Otomatik ekle</RowLabel>
+                  <Switch checked={autoPunct} onChange={(e) => onAutoPunct(e.target.checked)} />
+                </Row>
+                <Hint>
+                  Döküm bitince nokta, virgül ve soru işareti eklenir; cümle başları ve özel adlar büyük harfle yazılır
+                  ("İstanbul'da"). ⌘Z ile geri alınır. İlk kullanımda yaklaşık 60 MB model indirilir.
+                </Hint>
+                {/* Not on a Whisper transcript: it would replace Whisper's own punctuation with a weaker one. */}
+                {sedaJob && (
+                  <SectionActions>
+                    <Button disabled={running || punctBusy || !job.words.length} onClick={onPunctuate}>
+                      {punctBusy ? "Ekleniyor…" : "Şimdi uygula"}
+                    </Button>
+                  </SectionActions>
+                )}
+              </Section>
+            )}
             <Section title="Sayı yazımı">
               <Select<NumberMode>
                 label="Sayı yazımı"
@@ -189,13 +198,14 @@ export function Inspector({
                 )}
               />
               <Hint>
-                {NUMBER_MODES.find((m) => m.value === numberMode)!.sample} Döküm bitince her modelde uygulanır;
-                tarih ve saat hep rakamla yazılır ("23 Nisan", "saat 15.30"). ⌘Z ile geri alınır.
+                {NUMBER_MODES.find((m) => m.value === numberMode)!.sample}
+                {numberMode !== "keep" &&
+                  ' Döküm bitince her modelde uygulanır; tarih ve saat hep rakamla yazılır ("23 Nisan", "saat 15.30"). ⌘Z ile geri alınır.'}
               </Hint>
-              {job && (
+              {job && numberMode !== "keep" && (
                 <SectionActions>
-                  <Button disabled={running || numberMode === "keep" || !job.words.length} onClick={onNumbers}>
-                    Şimdi uygula
+                  <Button disabled={running || !numberChanges} onClick={onNumbers}>
+                    {running ? "Şimdi uygula" : numberChanges ? `${numberChanges} sayıyı düzenle` : "Değişecek sayı yok"}
                   </Button>
                 </SectionActions>
               )}
