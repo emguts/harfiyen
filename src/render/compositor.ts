@@ -1,5 +1,6 @@
 import type { CaptionImage } from "../captions/renderer";
 import { AURA_SHADER, auraUniforms, type AuraFrame } from "./aura";
+import { GlassBlur } from "./glass";
 
 // Draws a video picture with its caption on top. The same code renders the
 // on-screen player (HTMLVideoElement -> <canvas>) and the burn-in encoder
@@ -9,7 +10,9 @@ import { AURA_SHADER, auraUniforms, type AuraFrame } from "./aura";
 // WebGPU path: the picture is imported as an external texture (zero-copy on
 // most platforms) and drawn full screen; the caption image is uploaded only
 // when its pixels change and blended on top, with placement and pop-in scale
-// as a uniform. A 2D-canvas path covers browsers without WebGPU.
+// as a uniform. With a glass caption the frame is blurred under the caption
+// (glass.ts) before the text goes on. A 2D-canvas path covers browsers
+// without WebGPU.
 
 export type Picture = VideoFrame | HTMLVideoElement | AuraFrame | null;
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
@@ -91,6 +94,10 @@ const pictureReady = (p: Picture): p is VideoFrame | HTMLVideoElement =>
 class GpuCompositor implements Compositor {
   readonly kind = "webgpu" as const;
   private ctx: GPUCanvasContext;
+  private format: GPUTextureFormat;
+  private glass: GlassBlur | null = null;
+  /** Where the caption sits now: clip-space rect and size in canvas pixels. */
+  private placed = { rect: new Float32Array(4), w: 0, h: 0 };
   private videoPipeline: GPURenderPipeline;
   private overlayPipeline: GPURenderPipeline;
   private sampler: GPUSampler;
@@ -105,8 +112,14 @@ class GpuCompositor implements Compositor {
     readonly canvas: AnyCanvas,
   ) {
     this.ctx = canvas.getContext("webgpu") as GPUCanvasContext;
-    const format = navigator.gpu.getPreferredCanvasFormat();
-    this.ctx.configure({ device, format, alphaMode: "opaque" });
+    const format = (this.format = navigator.gpu.getPreferredCanvasFormat());
+    // Sampled too: the glass blurs the frame drawn so far.
+    this.ctx.configure({
+      device,
+      format,
+      alphaMode: "opaque",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
 
     const module = device.createShaderModule({ code: SHADER });
     this.videoPipeline = device.createRenderPipeline({
@@ -155,11 +168,11 @@ class GpuCompositor implements Compositor {
   render(picture: Picture, caption: CaptionImage | null) {
     const d = this.device;
     const overlayBind = caption ? this.prepareOverlay(caption) : null;
+    const glass = caption?.panel ? (this.glass ??= new GlassBlur(d, this.format)) : null;
+    const view = this.ctx.getCurrentTexture().createView();
     const enc = d.createCommandEncoder();
-    const pass = enc.beginRenderPass({
-      colorAttachments: [
-        { view: this.ctx.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] },
-      ],
+    let pass = enc.beginRenderPass({
+      colorAttachments: [{ view, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] }],
     });
     if (isAura(picture)) {
       d.queue.writeBuffer(this.auraBuffer, 0, auraUniforms(picture, this.canvas.width, this.canvas.height));
@@ -189,6 +202,16 @@ class GpuCompositor implements Compositor {
         );
         pass.draw(3);
       }
+    }
+    if (glass && caption?.panel) {
+      // The picture is done: blur it, lay the panel on, then go on drawing the text.
+      pass.end();
+      const { rect, w, h } = this.placed;
+      const sx = this.canvas.width / caption.frameW;
+      const sy = this.canvas.height / caption.frameH;
+      const radius = caption.panel.radius * caption.scale * Math.min(sx, sy);
+      glass.draw(enc, view, this.canvas.width, this.canvas.height, rect, w, h, Math.min(radius, w / 2, h / 2));
+      pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
     }
     if (overlayBind) {
       pass.setPipeline(this.overlayPipeline);
@@ -243,6 +266,7 @@ class GpuCompositor implements Compositor {
       1 - ((cy - hh) / H) * 2,
     ]);
     this.device.queue.writeBuffer(this.rectBuffer, 0, rect);
+    this.placed = { rect, w: hw * 2, h: hh * 2 };
     return this.overlay!.bind;
   }
 
@@ -250,6 +274,7 @@ class GpuCompositor implements Compositor {
     this.overlay?.texture.destroy();
     this.rectBuffer.destroy();
     this.auraBuffer.destroy();
+    this.glass?.destroy();
     this.ctx.unconfigure();
   }
 }
@@ -279,8 +304,31 @@ class CanvasCompositor implements Compositor {
       const sy = H / c.frameH;
       const w = c.w * c.scale * sx;
       const h = c.h * c.scale * sy;
-      this.g.drawImage(c.source, (c.x + c.w / 2) * sx - w / 2, (c.y + c.h / 2) * sy - h / 2, w, h);
+      const x = (c.x + c.w / 2) * sx - w / 2;
+      const y = (c.y + c.h / 2) * sy - h / 2;
+      if (c.panel) this.drawGlass(picture, x, y, w, h, c.panel.radius * c.scale * Math.min(sx, sy));
+      this.g.drawImage(c.source, x, y, w, h);
     }
+  }
+
+  /** Glass without WebGPU: the picture blurred by the canvas filter where there is one, darker. */
+  private drawGlass(picture: Picture, x: number, y: number, w: number, h: number, radius: number) {
+    const g = this.g;
+    const { width: W, height: H } = this.canvas;
+    g.save();
+    g.beginPath();
+    g.roundRect(x, y, w, h, Math.min(radius, w / 2, h / 2));
+    g.clip();
+    const blurs = "filter" in g && pictureReady(picture);
+    if (blurs) {
+      g.filter = `blur(${Math.round(Math.min(W, H) * 0.03)}px)`;
+      g.drawImage(picture, 0, 0, W, H);
+      g.filter = "none";
+    }
+    // Without the blur the panel is a plain dark box; a bit darker so text still reads.
+    g.fillStyle = blurs ? "rgba(0, 0, 0, 0.3)" : "rgba(10, 16, 22, 0.6)";
+    g.fillRect(x, y, w, h);
+    g.restore();
   }
 
   /** Simplified aura: soft colour fields and one gentle wave line. */

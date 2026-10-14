@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { loadCaptionFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
-import { PRESETS, settingsFor, type CaptionSettings, type PresetId } from "../captions/style";
+import { FAMILIES, PRESETS, presetById, settingsFor, type CaptionSettings, type PresetFamily, type PresetId } from "../captions/style";
 import type { Word } from "../engine";
 import { paletteById } from "../render/aura";
 import { IconCheck } from "./icons";
@@ -17,6 +17,18 @@ const SAMPLE: Word[] = [
 // look stays legible at thumbnail scale.
 const FRAME = { w: 320, h: 180 };
 const BOOST = 2.1;
+
+const TAB =
+  "relative h-6 flex-1 rounded-[5px] border-0 bg-transparent text-[11.5px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-white aria-selected:shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)]";
+
+/** Glass panel on a card, in CSS pixels of the card. */
+interface CardPanel {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  radius: number;
+}
 
 /** A preset rendered with the real caption renderer. */
 function StyleCard({
@@ -35,6 +47,7 @@ function StyleCard({
   const canvas = useRef<HTMLCanvasElement>(null);
   const s = settingsFor(id, settings);
   const [fontTick, setFontTick] = useState(0);
+  const [panel, setPanel] = useState<CardPanel | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -57,6 +70,13 @@ function StyleCard({
     if (!img) return;
     const k = c.width / FRAME.w;
     g.drawImage(img.source, img.x * k, img.y * k, img.w * k, img.h * k);
+    // The glass itself is the browser's backdrop blur over the card background.
+    const css = c.clientWidth / FRAME.w;
+    setPanel(
+      img.panel
+        ? { left: img.x * css, top: img.y * css, width: img.w * css, height: img.h * css, radius: img.panel.radius * css }
+        : null,
+    );
     // Only depends on the preset and font readiness.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, fontTick]);
@@ -79,6 +99,13 @@ function StyleCard({
           background: `radial-gradient(120% 90% at 15% 20%, ${a}cc, transparent 60%), radial-gradient(110% 90% at 85% 30%, ${b}aa, transparent 60%), radial-gradient(120% 100% at 50% 100%, ${c}99, transparent 65%), #0b0e13`,
         }}
       >
+        {panel && (
+          <span
+            className="absolute bg-black/25 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)] backdrop-blur-[6px] backdrop-saturate-[1.2]"
+            style={{ ...panel, borderRadius: panel.radius }}
+            aria-hidden
+          />
+        )}
         <canvas ref={canvas} className="absolute inset-0 size-full" aria-hidden />
         {selected && (
           <span
@@ -103,18 +130,40 @@ export function StylePicker({
   settings: CaptionSettings;
   onChange: (s: CaptionSettings) => void;
 }) {
+  // Opens on the family of the chosen style, and follows it when it changes
+  // from elsewhere (a project opened, say).
+  const family = presetById(settings.preset).family;
+  const [tab, setTab] = useState<PresetFamily>(family);
+  useEffect(() => setTab(family), [family]);
+
   return (
-    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Altyazı stili">
-      {PRESETS.map((p) => (
-        <StyleCard
-          key={p.id}
-          id={p.id}
-          label={p.label}
-          selected={settings.preset === p.id}
-          settings={settings}
-          onPick={() => onChange(settingsFor(p.id, settings))}
-        />
-      ))}
+    <div className="grid gap-2">
+      <div className="flex gap-0.5 rounded-lg border border-line-soft bg-[#101316] p-0.75" role="tablist" aria-label="Stil ailesi">
+        {FAMILIES.map((f) => (
+          <button key={f.id} type="button" className={TAB} role="tab" aria-selected={tab === f.id} onClick={() => setTab(f.id)}>
+            {f.label}
+            {/* The chosen style is in another family. */}
+            {f.id === family && tab !== family && (
+              <>
+                <span className="absolute top-1 right-1.5 size-[5px] rounded-full bg-cini" aria-hidden />
+                <span className="sr-only"> (seçili stil burada)</span>
+              </>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Altyazı stili">
+        {PRESETS.filter((p) => p.family === tab).map((p) => (
+          <StyleCard
+            key={p.id}
+            id={p.id}
+            label={p.label}
+            selected={settings.preset === p.id}
+            settings={settings}
+            onPick={() => onChange(settingsFor(p.id, settings))}
+          />
+        ))}
+      </div>
     </div>
   );
 }

@@ -18,6 +18,7 @@ const BG_LOOK = {
   box: "shadow-[inset_0_0_0_5px_rgba(10,16,22,0.75)]",
   outline: "[-webkit-text-stroke:1px_#000] [paint-order:stroke_fill]",
   shadow: "[text-shadow:0_1px_4px_rgba(0,0,0,0.9)]",
+  glass: "shadow-[inset_0_0_0_5px_rgba(255,255,255,0.25)] [text-shadow:0_1px_2px_rgba(0,0,0,0.5)]",
 };
 
 /** Inspector body: no border or padding of its own; dims while disabled. */
@@ -74,6 +75,7 @@ const BACKGROUNDS = [
   { value: "box" as const, label: "Kutu", note: "Yazının arkasında koyu kutu" },
   { value: "outline" as const, label: "Kontur", note: "Harflerin çevresinde siyah çizgi" },
   { value: "shadow" as const, label: "Gölge", note: "Yumuşak gölge, kutusuz" },
+  { value: "glass" as const, label: "Buzlu cam", note: "Arkasındaki video bulanıklaşır" },
 ];
 
 export function CaptionStudio({
@@ -126,6 +128,30 @@ export function CaptionStudio({
       <Section title="Stil">
         <StylePicker settings={settings} onChange={onChange} />
         <Hint>{preset.note}</Hint>
+        <RowGroup>
+          <RowLabel>Zemin</RowLabel>
+          <Select
+            label="Zemin"
+            value={settings.background}
+            options={BACKGROUNDS}
+            onChange={(background) => set({ background })}
+            disabled={disabled}
+            render={(o, inList) => (
+              <span className={OPT}>
+                <span
+                  className={`${TILE} bg-[linear-gradient(160deg,#6f8796,#2b3640)] text-[13px] font-extrabold text-white ${BG_LOOK[o.value]}`}
+                  aria-hidden
+                >
+                  Aa
+                </span>
+                <span className={OPT_TEXT}>
+                  <span className={OPT_TITLE}>{o.label}</span>
+                  {inList && <span className={OPT_NOTE}>{BACKGROUNDS.find((b) => b.value === o.value)!.note}</span>}
+                </span>
+              </span>
+            )}
+          />
+        </RowGroup>
       </Section>
 
       <Section title="Yazı">
@@ -223,30 +249,6 @@ export function CaptionStudio({
                   <span className={`absolute inset-x-1.5 h-[3px] rounded-[2px] bg-fg-2 ${BAR_AT[o.value]}`} />
                 </span>
                 <span className={OPT_TITLE}>{o.label}</span>
-              </span>
-            )}
-          />
-        </RowGroup>
-        <RowGroup>
-          <RowLabel>Zemin</RowLabel>
-          <Select
-            label="Zemin"
-            value={settings.background}
-            options={BACKGROUNDS}
-            onChange={(background) => set({ background })}
-            disabled={disabled}
-            render={(o, inList) => (
-              <span className={OPT}>
-                <span
-                  className={`${TILE} bg-[linear-gradient(160deg,#6f8796,#2b3640)] text-[13px] font-extrabold text-white ${BG_LOOK[o.value]}`}
-                  aria-hidden
-                >
-                  Aa
-                </span>
-                <span className={OPT_TEXT}>
-                  <span className={OPT_TITLE}>{o.label}</span>
-                  {inList && <span className={OPT_NOTE}>{BACKGROUNDS.find((b) => b.value === o.value)!.note}</span>}
-                </span>
               </span>
             )}
           />

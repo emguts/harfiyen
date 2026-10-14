@@ -18,6 +18,8 @@ export interface CaptionImage {
   w: number;
   h: number;
   scale: number;
+  /** Frosted glass behind the whole image: corner radius in caption pixels. */
+  panel: { radius: number } | null;
   /** Frame size the caption was laid out for. */
   frameW: number;
   frameH: number;
@@ -27,6 +29,10 @@ const POP_IN = 0.16;
 /** A word grows in over WORD_IN seconds (wordIn presets), redrawn in WORD_STEPS steps. */
 const WORD_IN = 0.15;
 const WORD_STEPS = 12;
+/** A word comes into focus over FOCUS_IN seconds ("focus" presets), redrawn every frame meanwhile. */
+const FOCUS_IN = 0.3;
+/** Redraws per second while focusing: above any frame rate, so every frame differs. */
+const FOCUS_RATE = 240;
 const easeOutBack = (x: number) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
 
 /** Readable text on top of an accent colour. */
@@ -66,12 +72,18 @@ export class CaptionRenderer {
     let active = -1;
     for (let i = 0; i < g.words.length && g.words[i].start <= t; i++) active = i;
     // Only the growing word changes between frames, in fixed steps.
-    const step = this.preset.wordIn
-      ? Math.min(WORD_STEPS, Math.floor(((t - g.words[active].start) / WORD_IN) * WORD_STEPS))
-      : WORD_STEPS;
+    const step =
+      this.preset.wordIn === "grow"
+        ? Math.min(WORD_STEPS, Math.floor(((t - g.words[active].start) / WORD_IN) * WORD_STEPS))
+        : WORD_STEPS;
+    // Focusing words (several when speech is quick) change on every frame.
+    const focusing =
+      this.preset.wordIn === "focus" && g.words.some((w) => t >= w.start && t - w.start < FOCUS_IN)
+        ? Math.floor(t * FOCUS_RATE)
+        : -1;
     // Effects without per-word state draw the same pixels for the whole group.
-    const key = `${this.id}|${gi}|${this.preset.effect === "none" ? 0 : active}|${step}`;
-    if (this.cached?.key !== key) this.cached = this.draw(g, active, step / WORD_STEPS, key);
+    const key = `${this.id}|${gi}|${this.preset.effect === "none" ? 0 : active}|${step}|${focusing}`;
+    if (this.cached?.key !== key) this.cached = this.draw(g, active, step / WORD_STEPS, t, key);
     const since = t - g.start;
     const scale = this.preset.pop && since < POP_IN ? 0.78 + 0.22 * easeOutBack(Math.max(0, since) / POP_IN) : 1;
     return { ...this.cached, scale };
@@ -95,8 +107,8 @@ export class CaptionRenderer {
     return t < until ? i : -1;
   }
 
-  /** grow: how far the active word has grown in, 0..1 (1 without wordIn). */
-  private draw(g: Cue, active: number, grow: number, key: string): CaptionImage {
+  /** grow: how far the active word has grown in, 0..1 (1 without wordIn); t: the time, for focusing words. */
+  private draw(g: Cue, active: number, grow: number, t: number, key: string): CaptionImage {
     const { s, W, H, preset } = this;
     const font = fontById(s.font);
     const upper = s.uppercase || (font.capsOnly && hasDottedI(this.lang));
@@ -110,7 +122,7 @@ export class CaptionRenderer {
     const longest = Math.max(...texts.map((t) => ctx.measureText(t).width));
     // Both sides' padX, stroke and word box, in units of px (see below).
     const pads =
-      (s.background === "box" ? 1 : 0.7) +
+      (s.background === "box" ? 1 : s.background === "glass" ? 1.2 : 0.7) +
       (s.background === "outline" ? 0.24 : 0) +
       (preset.effect === "box" ? 0.64 : 0);
     const need = longest + px * pads;
@@ -122,8 +134,8 @@ export class CaptionRenderer {
     const space = ctx.measureText(" ").width;
     const stroke = s.background === "outline" ? Math.max(2, px * 0.12) : 0;
     const wordPad = preset.effect === "box" ? px * 0.16 : 0;
-    const padX = s.background === "box" ? px * 0.5 : stroke + px * 0.35 + wordPad;
-    const padY = s.background === "box" ? px * 0.24 : stroke + px * 0.25;
+    const padX = s.background === "box" ? px * 0.5 : s.background === "glass" ? px * 0.6 : stroke + px * 0.35 + wordPad;
+    const padY = s.background === "box" ? px * 0.24 : s.background === "glass" ? px * 0.3 : stroke + px * 0.25;
     const lineH = Math.round(px * 1.24);
 
     // Greedy wrap into lines no wider than 86% of the frame.
@@ -179,6 +191,17 @@ export class CaptionRenderer {
           ctx.scale(k, k);
           ctx.translate(-cx, -cy);
         }
+        if (preset.wordIn === "focus") {
+          // Blurred, faint and a little low at first; sharp in place after FOCUS_IN.
+          const p = Math.min(1, Math.max(0, (t - g.words[i].start) / FOCUS_IN));
+          if (p < 1) {
+            const e = 1 - Math.pow(1 - p, 3);
+            ctx.globalAlpha *= e;
+            ctx.translate(0, (1 - e) * px * 0.3);
+            const blur = (1 - e) * px * 0.35;
+            if (blur > 0.05) ctx.filter = `blur(${blur.toFixed(2)}px)`;
+          }
+        }
 
         if (preset.effect === "box" && isActive) {
           ctx.fillStyle = s.accentColor;
@@ -201,6 +224,11 @@ export class CaptionRenderer {
           ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
           ctx.shadowBlur = px * 0.3;
           ctx.shadowOffsetY = px * 0.05;
+        } else if (s.background === "glass" && !boxed) {
+          // Just enough to lift the text off bright glass.
+          ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+          ctx.shadowBlur = px * 0.12;
+          ctx.shadowOffsetY = px * 0.03;
         }
         ctx.fillStyle = color;
         ctx.fillText(texts[i], tx, cy);
@@ -212,6 +240,17 @@ export class CaptionRenderer {
 
     const margin = H > W ? 0.16 : 0.08; // keep clear of phone UI on vertical video
     const y = s.position === "top" ? H * margin : s.position === "middle" ? (H - h) / 2 : H * (1 - margin) - h;
-    return { source: this.canvas, key, x: (W - w) / 2, y, w, h, scale: 1, frameW: W, frameH: H };
+    return {
+      source: this.canvas,
+      key,
+      x: (W - w) / 2,
+      y,
+      w,
+      h,
+      scale: 1,
+      panel: s.background === "glass" ? { radius: px * 0.32 } : null,
+      frameW: W,
+      frameH: H,
+    };
   }
 }
