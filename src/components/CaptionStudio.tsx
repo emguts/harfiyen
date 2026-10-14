@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { captionStack, FONTS, fontById, isUserFont, loadCaptionFont, type FontId } from "../captions/fonts";
-import { ACCENT_COLORS, presetById, TEXT_COLORS, type CaptionSettings } from "../captions/style";
+import {
+  ACCENT_COLORS,
+  presetById,
+  settingsFor,
+  TEXT_COLORS,
+  withOverrides,
+  type CaptionSettings,
+} from "../captions/style";
 import { addFontFile, removeFont, useUserFonts } from "../captions/userFonts";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
 import { AURA_PALETTES, paletteById, type AuraPaletteId } from "../render/aura";
@@ -97,7 +104,9 @@ export function CaptionStudio({
     for (const f of [...FONTS, ...userFonts.fonts]) void loadCaptionFont(f.id, document.fonts);
   }, [userFonts.fonts]);
 
-  const set = (patch: Partial<CaptionSettings>) => onChange({ ...settings, ...patch });
+  const set = (patch: Partial<CaptionSettings>) => onChange(withOverrides(settings, patch));
+  /** Back to the preset's own look. */
+  const resetLook = () => onChange(settingsFor(settings.preset, { ...settings, overrides: [] }));
   const preset = presetById(settings.preset);
   const font = fontById(settings.font);
   const capsOnly = !!font.capsOnly && hasDottedI(TRANSCRIPT_LANG);
@@ -128,6 +137,11 @@ export function CaptionStudio({
       <Section title="Stil">
         <StylePicker settings={settings} onChange={onChange} />
         <Hint>{preset.note}</Hint>
+        {!!settings.overrides?.length && (
+          <LinkButton type="button" className="justify-self-start" onClick={resetLook}>
+            Stilin varsayılanlarına dön
+          </LinkButton>
+        )}
         <RowGroup>
           <RowLabel>Zemin</RowLabel>
           <Select
@@ -153,7 +167,7 @@ export function CaptionStudio({
           />
         </RowGroup>
         <Row>
-          <RowLabel>Sesle vurgula</RowLabel>
+          <RowLabel wide>Sesle vurgula</RowLabel>
           <Switch checked={settings.voiceEmphasis} onChange={(e) => set({ voiceEmphasis: e.target.checked })} />
         </Row>
         {settings.voiceEmphasis && (
@@ -171,7 +185,13 @@ export function CaptionStudio({
           canRemove={isUserFont}
           onRemove={(id) => {
             if (!isUserFont(id)) return;
-            if (id === settings.font) set({ font: preset.defaults.font });
+            // The preset's font again, and no longer the user's choice.
+            if (id === settings.font)
+              onChange({
+                ...settings,
+                font: preset.defaults.font,
+                overrides: settings.overrides?.filter((k) => k !== "font"),
+              });
             void removeFont(id);
           }}
           render={(o, inList) => {

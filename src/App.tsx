@@ -117,14 +117,17 @@ const optionsFor = (method: DecodingMethod): DecodeOptions => ({
 
 function loadSettings(): CaptionSettings {
   try {
-    return {
+    return noEmphasis({
       ...DEFAULT_SETTINGS,
       ...JSON.parse(localStorage.getItem("harfiyen.captions") ?? "{}"),
-    };
+    });
   } catch {
     return DEFAULT_SETTINGS;
   }
 }
+
+// A new project starts without "Sesle vurgula"; the rest of the look carries over.
+const noEmphasis = (s: CaptionSettings) => (s.voiceEmphasis ? { ...s, voiceEmphasis: false } : s);
 
 function baseName(name: string) {
   const i = name.lastIndexOf(".");
@@ -297,6 +300,7 @@ export function App() {
       const media = job?.file ? job : null;
       setNotice(null);
       setPendingHandle(null);
+      setSettings(noEmphasis);
       resetBurn();
       const jobId = load({
         file: media?.file ?? null,
@@ -341,6 +345,7 @@ export function App() {
         return;
       }
       setPendingHandle(null);
+      setSettings(noEmphasis);
       resetBurn();
       start(f, optionsFor(method));
     },
@@ -389,6 +394,7 @@ export function App() {
   const newProject = () => {
     setNotice(null);
     setPendingHandle(null);
+    setSettings(noEmphasis);
     resetBurn();
     clear();
   };
@@ -700,6 +706,7 @@ export function App() {
     setNotice(null);
     resetBurn();
     if (micBlocked) return;
+    setSettings(noEmphasis);
     try {
       await startLive(optionsFor(method));
     } catch (e) {

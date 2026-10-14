@@ -188,7 +188,11 @@ export class CaptionRenderer {
     this.canvas.height = h + bleedY * 2;
     ctx.translate(bleedX, bleedY);
     ctx.font = fontCss; // resizing resets the context
-    ctx.textBaseline = "middle";
+    // "middle" centres the font's em box, which leaves capitals sitting low
+    // (the room below is for descenders). Centre the capital height instead,
+    // measured from the font itself so it holds for any font.
+    ctx.textBaseline = "alphabetic";
+    const capH = ctx.measureText("H").actualBoundingBoxAscent;
     ctx.lineJoin = "round";
 
     if (s.background === "box") {
@@ -254,11 +258,12 @@ export class CaptionRenderer {
         }
 
         const tx = x + wordPad;
+        const ty = cy + (capH * size[i]) / 2;
         const boxed = preset.effect === "box" && isActive;
         if (s.background === "outline" && !boxed) {
           ctx.strokeStyle = "rgba(0, 0, 0, 0.92)";
           ctx.lineWidth = stroke * 2 * size[i];
-          ctx.strokeText(texts[i], tx, cy);
+          ctx.strokeText(texts[i], tx, ty);
         }
         if (s.background === "shadow") {
           ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
@@ -271,7 +276,7 @@ export class CaptionRenderer {
           ctx.shadowOffsetY = px * 0.03;
         }
         ctx.fillStyle = color;
-        ctx.fillText(texts[i], tx, cy);
+        ctx.fillText(texts[i], tx, ty);
         if (preset.effect === "fill" && i <= active) {
           // The accent fills the word left to right while it is spoken.
           const wd = g.words[i];
@@ -283,7 +288,7 @@ export class CaptionRenderer {
             ctx.clip();
             ctx.shadowColor = "transparent"; // the white pass already cast it
             ctx.fillStyle = s.accentColor;
-            ctx.fillText(texts[i], tx, cy);
+            ctx.fillText(texts[i], tx, ty);
             ctx.restore();
           }
         }

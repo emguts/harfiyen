@@ -281,6 +281,10 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 
 ## Lisanslar ve teşekkür
 
+Harfiyen [MIT](LICENSE) lisanslıdır; dilediğin gibi kullanabilir, değiştirebilir ve dağıtabilirsin. Bir yerde kullanırsan ya da işine yararsa haber vermen ya da adını anman beni çok sevindirir, ama zorunlu değil.
+
+Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphaneler kendi lisanslarıyla gelir:
+
 - Konuşma tanıma modeli [atasoglu/seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1): Apache-2.0.
 - [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);

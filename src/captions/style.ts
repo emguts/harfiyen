@@ -44,7 +44,12 @@ export interface CaptionSettings {
   aura: AuraPaletteId;
   /** "Sesle vurgula": words said louder than those around them are larger and in the accent colour. */
   voiceEmphasis: boolean;
+  /** Settings the user changed by hand: switching preset keeps them. Missing before there was this. */
+  overrides?: StyleKey[];
 }
+
+/** The settings a preset brings with it. */
+export type StyleKey = keyof Preset["defaults"];
 
 export interface Preset {
   id: PresetId;
@@ -59,7 +64,7 @@ export interface Preset {
   pop: boolean;
   /** How each word comes in as it is spoken: fade and grow, or out of blur (rising, or shrinking into place). */
   wordIn?: "grow" | "focus" | "sharpen";
-  defaults: Omit<CaptionSettings, "preset" | "aura" | "voiceEmphasis">;
+  defaults: Omit<CaptionSettings, "preset" | "aura" | "voiceEmphasis" | "overrides">;
 }
 
 export const PRESETS: Preset[] = [
@@ -279,13 +284,24 @@ export const PRESETS: Preset[] = [
 
 export const presetById = (id: PresetId) => PRESETS.find((p) => p.id === id)!;
 
-/** Switch preset, keeping choices that are not part of a preset look. */
-export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettings => ({
-  preset: id,
-  aura: prev?.aura ?? "cini",
-  voiceEmphasis: prev?.voiceEmphasis ?? false,
-  ...presetById(id).defaults,
-});
+/** Switch preset: its look, except what the user changed by hand and choices that are not part of a look. */
+export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettings => {
+  const overrides = prev?.overrides ?? [];
+  return {
+    preset: id,
+    aura: prev?.aura ?? "cini",
+    voiceEmphasis: prev?.voiceEmphasis ?? false,
+    ...presetById(id).defaults,
+    ...Object.fromEntries(overrides.map((k) => [k, prev![k]])),
+    overrides,
+  };
+};
+
+/** Mark the preset settings in `patch` as the user's own. */
+export const withOverrides = (s: CaptionSettings, patch: Partial<CaptionSettings>): CaptionSettings => {
+  const touched = Object.keys(patch).filter((k): k is StyleKey => k in presetById(s.preset).defaults);
+  return { ...s, ...patch, overrides: [...new Set([...(s.overrides ?? []), ...touched])] };
+};
 
 export const DEFAULT_SETTINGS = settingsFor("karaoke");
 

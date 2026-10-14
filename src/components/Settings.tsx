@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { About } from "./About";
 import { IconClose } from "./icons";
 import { ModelSettings } from "./ModelSettings";
 import { IconButton } from "./ui";
@@ -6,9 +7,12 @@ import { IconButton } from "./ui";
 // The settings window: sections on the left, the chosen one on the right.
 // It stays mounted while closed, so a model download keeps going.
 
-type SectionId = "models";
+type SectionId = "models" | "about";
 
-const SECTIONS: { id: SectionId; label: string }[] = [{ id: "models", label: "Modeller" }];
+const SECTIONS: { id: SectionId; label: string }[] = [
+  { id: "models", label: "Modeller" },
+  { id: "about", label: "Hakkında" },
+];
 
 export function Settings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -23,6 +27,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
 
   const content: Record<SectionId, ReactNode> = {
     models: <ModelSettings active={open} />,
+    about: <About />,
   };
 
   return (
