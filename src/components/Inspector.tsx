@@ -9,7 +9,17 @@ import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
-import { Button, Hint, Pane, PaneBody, Row, RowLabel, Section, SectionActions, Switch } from "./ui";
+import {
+  Button,
+  Hint,
+  Pane,
+  PaneBody,
+  Row,
+  RowLabel,
+  Section,
+  SectionActions,
+  Switch,
+} from "./ui";
 
 const TAB =
   "h-[26px] flex-1 rounded-[5px] border-0 bg-transparent text-[12px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-white aria-selected:shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)]";
@@ -18,9 +28,21 @@ type Tab = "captions" | "transcribe" | "dub";
 
 // Each option shows its result rather than its rule.
 const NUMBER_MODES: { value: NumberMode; label: string; sample: string }[] = [
-  { value: "rule", label: "Kurala göre", sample: "Saat 15.30'da 15 kişi geldi, üç kişi kaldı." },
-  { value: "all", label: "Hepsi rakamla", sample: "Saat 15.30'da 15 kişi geldi, 3 kişi kaldı." },
-  { value: "keep", label: "Dokunma", sample: "Sayılara dokunulmaz. Önceki düzenleme ⌘Z ile geri alınır." },
+  {
+    value: "rule",
+    label: "Kurala göre",
+    sample: "Saat 15.30'da 15 kişi geldi, üç kişi kaldı.",
+  },
+  {
+    value: "all",
+    label: "Hepsi rakamla",
+    sample: "Saat 15.30'da 15 kişi geldi, 3 kişi kaldı.",
+  },
+  {
+    value: "keep",
+    label: "Dokunma",
+    sample: "Sayılara dokunulmaz. Önceki düzenleme ⌘Z ile geri alınır.",
+  },
 ];
 
 export function Inspector({
@@ -94,10 +116,14 @@ export function Inspector({
   const numberChanges = useMemo(() => {
     if (!job || job.status !== "done" || numberMode === "keep") return 0;
     const before = new Set(job.words);
-    return writeNumbers(job.words, numberMode).filter((w) => !before.has(w)).length;
+    return writeNumbers(job.words, numberMode).filter((w) => !before.has(w))
+      .length;
   }, [job, numberMode]);
   // What a new run would change: the model, or (seda only) the method.
-  const differs = job && (model !== job.model || (model === "seda" && method !== job.options.method));
+  const differs =
+    job &&
+    (model !== job.model ||
+      (model === "seda" && method !== job.options.method));
   const restartLabel = !differs
     ? "Yeniden yazıya dök"
     : model !== job.model
@@ -107,22 +133,41 @@ export function Inspector({
   return (
     <Pane side="right">
       <div
-        className="mx-3 mt-2.5 mb-1.5 flex gap-0.5 rounded-lg border border-line-soft bg-[#101316] p-[3px]"
+        className="mx-3 mt-2.5 mb-1.5 flex gap-0.5 rounded-lg border border-line-soft bg-[#101316] p-0.75"
         role="tablist"
       >
-        <button className={TAB} role="tab" aria-selected={tab === "captions"} onClick={() => setTab("captions")}>
+        <button
+          className={TAB}
+          role="tab"
+          aria-selected={tab === "captions"}
+          onClick={() => setTab("captions")}
+        >
           Altyazı
         </button>
-        <button className={TAB} role="tab" aria-selected={tab === "transcribe"} onClick={() => setTab("transcribe")}>
+        <button
+          className={TAB}
+          role="tab"
+          aria-selected={tab === "transcribe"}
+          onClick={() => setTab("transcribe")}
+        >
           Yazıya döküm
         </button>
-        <button className={TAB} role="tab" aria-selected={tab === "dub"} onClick={() => setTab("dub")}>
+        <button
+          className={TAB}
+          role="tab"
+          aria-selected={tab === "dub"}
+          onClick={() => setTab("dub")}
+        >
           Seslendirme
         </button>
       </div>
       <PaneBody>
         {tab === "captions" ? (
-          <CaptionStudio settings={settings} onChange={onSettings} disabled={burning} />
+          <CaptionStudio
+            settings={settings}
+            onChange={onSettings}
+            disabled={burning}
+          />
         ) : tab === "dub" ? (
           <DubPanel
             state={dub}
@@ -143,11 +188,15 @@ export function Inspector({
           <div className={STUDIO}>
             <Section title="Doğruluk">
               {info.id === "seda" ? (
-                <MethodPicker value={method} onChange={onMethod} disabled={running} />
+                <MethodPicker
+                  value={method}
+                  onChange={onMethod}
+                  disabled={running}
+                />
               ) : (
                 <Hint>
-                  {info.name} sesi 30 saniyelik parçalar hâlinde işler; kelimeler her parça bitince gelir. Model
-                  seçimi üst çubukta.
+                  {info.name} sesi 30 saniyelik parçalar hâlinde işler;
+                  kelimeler her parça bitince gelir. Model seçimi üst çubukta.
                 </Hint>
               )}
               {job && (
@@ -166,16 +215,24 @@ export function Inspector({
               <Section title="Noktalama ve büyük harf">
                 <Row>
                   <RowLabel wide>Otomatik ekle</RowLabel>
-                  <Switch checked={autoPunct} onChange={(e) => onAutoPunct(e.target.checked)} />
+                  <Switch
+                    checked={autoPunct}
+                    onChange={(e) => onAutoPunct(e.target.checked)}
+                  />
                 </Row>
                 <Hint>
-                  Döküm bitince nokta, virgül ve soru işareti eklenir; cümle başları ve özel adlar büyük harfle yazılır
-                  ("İstanbul'da"). ⌘Z ile geri alınır. İlk kullanımda yaklaşık 60 MB model indirilir.
+                  Döküm bitince nokta, virgül ve soru işareti eklenir; cümle
+                  başları ve özel adlar büyük harfle yazılır ("İstanbul'da"). ⌘Z
+                  ile geri alınır. İlk kullanımda yaklaşık 60 MB model
+                  indirilir.
                 </Hint>
                 {/* Not on a Whisper transcript: it would replace Whisper's own punctuation with a weaker one. */}
                 {sedaJob && (
                   <SectionActions>
-                    <Button disabled={running || punctBusy || !job.words.length} onClick={onPunctuate}>
+                    <Button
+                      disabled={running || punctBusy || !job.words.length}
+                      onClick={onPunctuate}
+                    >
                       {punctBusy ? "Ekleniyor…" : "Şimdi uygula"}
                     </Button>
                   </SectionActions>
@@ -192,7 +249,14 @@ export function Inspector({
                   <span className={OPT}>
                     <span className={OPT_TEXT}>
                       <span className={OPT_TITLE}>{o.label}</span>
-                      {inList && <span className={OPT_NOTE}>{NUMBER_MODES.find((m) => m.value === o.value)!.sample}</span>}
+                      {inList && (
+                        <span className={OPT_NOTE}>
+                          {
+                            NUMBER_MODES.find((m) => m.value === o.value)!
+                              .sample
+                          }
+                        </span>
+                      )}
                     </span>
                   </span>
                 )}
@@ -204,8 +268,15 @@ export function Inspector({
               </Hint>
               {job && numberMode !== "keep" && (
                 <SectionActions>
-                  <Button disabled={running || !numberChanges} onClick={onNumbers}>
-                    {running ? "Şimdi uygula" : numberChanges ? `${numberChanges} sayıyı düzenle` : "Değişecek sayı yok"}
+                  <Button
+                    disabled={running || !numberChanges}
+                    onClick={onNumbers}
+                  >
+                    {running
+                      ? "Şimdi uygula"
+                      : numberChanges
+                        ? `${numberChanges} sayıyı düzenle`
+                        : "Değişecek sayı yok"}
                   </Button>
                 </SectionActions>
               )}
@@ -215,7 +286,9 @@ export function Inspector({
                 <dt>Model</dt>
                 <dd>
                   <a href={info.link}>{info.spec}</a>
-                  {info.engine === "seda" ? ", Türkçe" : ", çok dilli (Türkçe seçili)"}
+                  {info.engine === "seda"
+                    ? ", Türkçe"
+                    : ", çok dilli (Türkçe seçili)"}
                 </dd>
                 <dt>Çalıştığı yer</dt>
                 <dd>
@@ -229,7 +302,8 @@ export function Inspector({
                 <dd>Ses ve video bu bilgisayardan çıkmaz.</dd>
               </dl>
               <Hint>
-                {info.id === "seda" && 'Sayılar yazıyla gelir ("bin dokuz yüz yirmi üç"). '}
+                {info.id === "seda" &&
+                  'Sayılar yazıyla gelir ("bin dokuz yüz yirmi üç"). '}
                 Bir kelimeye tıklayınca kayıt o ana atlar.
               </Hint>
             </Section>

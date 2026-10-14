@@ -82,6 +82,27 @@ export class SileroVad {
     this.speech.push(this.speaking ? 1 : 0);
   }
 
+  /**
+   * The part of [start, end] that holds speech, widened by `pad` seconds but
+   * never past the original range; the range itself when none of it does.
+   */
+  speechSpan(start: number, end: number, pad = 0.05): { start: number; end: number } {
+    const a = Math.max(0, Math.floor(start / VAD_FRAME_SEC));
+    const b = Math.min(this.speech.length, Math.ceil(end / VAD_FRAME_SEC));
+    let first = -1;
+    let last = -1;
+    for (let k = a; k < b; k++) {
+      if (!this.speech[k]) continue;
+      if (first < 0) first = k;
+      last = k;
+    }
+    if (first < 0) return { start, end };
+    return {
+      start: Math.max(start, first * VAD_FRAME_SEC - pad),
+      end: Math.min(end, (last + 1) * VAD_FRAME_SEC + pad),
+    };
+  }
+
   /** True if there is speech between the two times, widened by `pad` seconds. */
   hasSpeech(start: number, end: number, pad = 0.2): boolean {
     const a = Math.max(0, Math.floor((start - pad) / VAD_FRAME_SEC));

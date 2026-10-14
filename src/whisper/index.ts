@@ -164,6 +164,9 @@ class WhisperRecognizer implements SpeechStream {
           );
           for (const w of alignWords(this.tok, seg.text, frames, from)) {
             if (!this.vad.hasSpeech(w.start, w.end)) continue;
+            // Words at a pause soak up the silence next to them (half a
+            // second at sentence starts); keep them to the speech.
+            Object.assign(w, this.vad.speechSpan(w.start, w.end));
             // Windows overlap a little where a segment was decoded again.
             w.start = Math.max(w.start, this.lastEnd);
             w.end = Math.max(w.end, w.start);

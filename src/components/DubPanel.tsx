@@ -1,9 +1,29 @@
-import { DEFAULT_VOICE, type DubState, type PreviewState, type Voice, type VoiceModel } from "../lib/useDubber";
+import {
+  DEFAULT_VOICE,
+  type DubState,
+  type PreviewState,
+  type Voice,
+  type VoiceModel,
+} from "../lib/useDubber";
 import { STUDIO } from "./CaptionStudio";
 import { Meter } from "./Indicators";
-import { Button, Hint, Range, Row, RowGroup, RowLabel, RowValue, Section, SectionActions, Switch } from "./ui";
+import {
+  Button,
+  Hint,
+  Range,
+  Row,
+  RowGroup,
+  RowLabel,
+  RowValue,
+  Section,
+  SectionActions,
+  Switch,
+} from "./ui";
 
-const MODELS: Record<VoiceModel, { name: string; size: string; link: string; note: string }> = {
+const MODELS: Record<
+  VoiceModel,
+  { name: string; size: string; link: string; note: string }
+> = {
   ema: {
     name: "EMA Lightning",
     size: "36 MB",
@@ -28,7 +48,8 @@ const PRESET =
   "h-[26px] flex-1 rounded-ui border border-line bg-raised text-[12px] text-fg-2 hover:not-disabled:text-fg aria-pressed:border-cini aria-pressed:text-white disabled:opacity-45";
 
 function previewLabel(p: PreviewState) {
-  if (p.status === "download") return `Model %${Math.floor((p.loaded / (p.total || 1)) * 100)}`;
+  if (p.status === "download")
+    return `Model %${Math.floor((p.loaded / (p.total || 1)) * 100)}`;
   if (p.status === "running") return "Hazırlanıyor";
   if (p.status === "playing") return "Durdur";
   return "Dinle";
@@ -73,31 +94,45 @@ export function DubPanel({
     <div className={STUDIO}>
       <Section title="Yapay sesle seslendirme">
         <Hint>
-          Transkript yapay bir sesle yeniden okunur. Her altyazı satırı kendi zamanında başlar; yerine sığmayan satırlar
-          biraz hızlı okunur. Seçili ses ilk kullanımda yaklaşık {model.size} indirir.
+          Transkript yapay bir sesle yeniden okunur. Her altyazı satırı kendi
+          zamanında başlar; yerine sığmayan satırlar biraz hızlı okunur. Seçili
+          ses ilk kullanımda yaklaşık {model.size} indirir.
         </Hint>
         {state.status === "download" && (
           <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
-            <span className="flex-1">Model indiriliyor %{Math.floor((state.loaded / (state.total || 1)) * 100)}</span>
+            <span className="flex-1">
+              Model indiriliyor %
+              {Math.floor((state.loaded / (state.total || 1)) * 100)}
+            </span>
             <Meter value={state.loaded / (state.total || 1)} />
           </div>
         )}
         {state.status === "running" && (
           <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
             <span className="flex-1">
-              {state.total ? `Seslendiriliyor ${state.done} / ${state.total}` : "Model hazırlanıyor"}
+              {state.total
+                ? `Seslendiriliyor ${state.done} / ${state.total}`
+                : "Model hazırlanıyor"}
             </span>
             <Meter value={state.total ? state.done / state.total : 0} />
           </div>
         )}
-        {state.status === "error" && <Hint>Seslendirilemedi: {state.message}</Hint>}
-        {state.status === "done" && stale && <Hint>Transkript ya da ses ayarları seslendirmeden sonra değişti.</Hint>}
+        {state.status === "error" && (
+          <Hint>Seslendirilemedi: {state.message}</Hint>
+        )}
+        {state.status === "done" && stale && (
+          <Hint>
+            Transkript ya da ses ayarları seslendirmeden sonra değişti.
+          </Hint>
+        )}
         <SectionActions>
           {working ? (
             <Button onClick={onCancel}>Durdur</Button>
           ) : (
             <Button
-              variant={state.status === "done" && !stale ? "default" : "primary"}
+              variant={
+                state.status === "done" && !stale ? "default" : "primary"
+              }
               disabled={!canDub || busy}
               onClick={onDub}
             >
@@ -106,7 +141,7 @@ export function DubPanel({
           )}
           {state.status === "done" && (
             <a
-              className="inline-flex h-[29px] items-center rounded-ui border border-line bg-raised px-3 text-[12.5px] font-medium text-fg no-underline hover:border-[#3f4752] hover:bg-raised-hover hover:text-white"
+              className="inline-flex h-7.25 items-center rounded-ui border border-line bg-raised px-3 text-[12.5px] font-medium text-fg no-underline hover:border-[#3f4752] hover:bg-raised-hover hover:text-white"
               href={state.url}
               download={fileName}
             >
@@ -114,7 +149,9 @@ export function DubPanel({
             </a>
           )}
         </SectionActions>
-        {!canDub && state.status === "idle" && <Hint>Önce bir dosyayı yazıya dök.</Hint>}
+        {!canDub && state.status === "idle" && (
+          <Hint>Önce bir dosyayı yazıya dök.</Hint>
+        )}
       </Section>
       <Section title="Ses">
         <RowGroup role="radiogroup" aria-label="Ses modeli">
@@ -160,25 +197,42 @@ export function DubPanel({
             onChange={(e) => setVoice({ pitch: Number(e.target.value) })}
             onDoubleClick={() => setVoice({ pitch: DEFAULT_VOICE.pitch })}
           />
-          <RowValue>{voice.pitch > 0 ? `+${voice.pitch}` : voice.pitch}</RowValue>
+          <RowValue>
+            {voice.pitch > 0 ? `+${voice.pitch}` : voice.pitch}
+          </RowValue>
         </Row>
-        <Hint>Sesin perdesi değişir, hızı ve satırların zamanlaması aynı kalır. ±3'ün ötesi yapay duyulur.</Hint>
+        <Hint>
+          Sesin perdesi değişir, hızı ve satırların zamanlaması aynı kalır.
+          ±3'ün ötesi yapay duyulur.
+        </Hint>
         <RowGroup>
           <RowLabel>Seed</RowLabel>
           <input
             type="number"
             min={0}
-            className="h-[26px] w-0 min-w-0 flex-1 rounded-ui border border-line bg-bg px-2 text-[12.5px] text-fg tabular-nums"
+            className="h-6.5 w-0 min-w-0 flex-1 rounded-ui border border-line bg-bg px-2 text-[12.5px] text-fg tabular-nums"
             value={voice.seed}
             disabled={working}
             aria-label="Seed"
-            onChange={(e) => setVoice({ seed: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+            onChange={(e) =>
+              setVoice({
+                seed: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+              })
+            }
           />
-          <Button disabled={working} onClick={() => setVoice({ seed: Math.floor(Math.random() * 100000) })}>
+          <Button
+            disabled={working}
+            onClick={() =>
+              setVoice({ seed: Math.floor(Math.random() * 100000) })
+            }
+          >
             Rastgele
           </Button>
         </RowGroup>
-        <Hint>Aynı seed aynı okumayı verir; değiştirince aynı ses biraz farklı bir vurguyla okur.</Hint>
+        <Hint>
+          Aynı seed aynı okumayı verir; değiştirince aynı ses biraz farklı bir
+          vurguyla okur.
+        </Hint>
         <SectionActions>
           <Button disabled={working || busy} onClick={onListen}>
             {previewLabel(preview)}
@@ -188,15 +242,22 @@ export function DubPanel({
       <Section title="Dinleme ve dışa aktarma">
         <Row>
           <RowLabel wide>Yapay sesi kullan</RowLabel>
-          <Switch checked={on} disabled={state.status !== "done" || busy} onChange={(e) => onOn(e.target.checked)} />
+          <Switch
+            checked={on}
+            disabled={state.status !== "done" || busy}
+            onChange={(e) => onOn(e.target.checked)}
+          />
         </Row>
         <Hint>
-          Açıkken oynatıcı ve altyazılı video orijinal ses yerine yapay sesi kullanır. Müzik ve ortam sesi de kalkar.
+          Açıkken oynatıcı ve altyazılı video orijinal ses yerine yapay sesi
+          kullanır. Müzik ve ortam sesi de kalkar.
         </Hint>
       </Section>
       <Section title="Model">
         <Hint>
-          <a href={model.link}>{model.name}</a>, {model.note} Ses bu bilgisayarda üretilir. Paylaşırken sesin yapay zekâyla üretildiğini belirtmeyi unutma.
+          <a href={model.link}>{model.name}</a>, {model.note} Ses bu
+          bilgisayarda üretilir. Paylaşırken sesin yapay zekâyla üretildiğini
+          belirtmeyi unutma.
         </Hint>
       </Section>
     </div>

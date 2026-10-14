@@ -9,6 +9,12 @@ import { tokensToWords, type SymbolTable, type Word } from "./tokens";
 
 /** Silence appended at the end so the last chunk gets decoded (as in the model card). */
 const TAIL_PADDING_SEC = 1;
+/**
+ * The transducer emits a token ~150 ms after it is spoken (measured against
+ * known onsets, the same for every decoding method); word times move back by
+ * this much.
+ */
+const EMIT_LAG_SEC = 0.15;
 
 export class Recognizer {
   private fbank: OnlineFbank;
@@ -103,7 +109,7 @@ export class Recognizer {
 
   private words(tokens: number[], frames: number[]): Word[] {
     const sec = (this.cfg.subsampling * this.cfg.frameShiftMs) / 1000;
-    return tokensToWords(this.syms, tokens, frames.map((f) => f * sec));
+    return tokensToWords(this.syms, tokens, frames.map((f) => Math.max(0, f * sec - EMIT_LAG_SEC)));
   }
 
   private commit(r: { tokens: number[]; frames: number[] }, all: boolean) {
