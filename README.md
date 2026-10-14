@@ -60,6 +60,9 @@ konuşurken de canlı çalışır.
   ve özel adlar büyük harfle yazılır. Türkçe özel ad ekleri için kesme işareti eklenir ("İstanbul'da",
   "Van Gölü'nün"); yapım ve çokluk ekleri TDK'ya göre ayrılmaz ("İstanbullu", "Ahmetler").
   Kelime zamanları korunur; işlem ⌘Z / Ctrl+Z ile geri alınabilir.
+- Sayı yazımı: sayılar **kurala göre** (TDK'ya göre: 1–9 yazıyla, 10 ve üstü rakamla) ya da **hepsi
+  rakamla** yazılır, istenirse hiç dokunulmaz. Ekler, sıra sayıları, tarih ve saat de doğru yazılır
+  ("Saat 15.30'da 15 kişi geldi").
 - Kelime düzeyinde zaman: bir kelimeye tıkla, kayıt o ana atlasın; çalarken konuşulan kelime vurgulanır.
 - Düzenleme: satıra çift tıkla ve düzelt, satırı sil, ⌘Z ile geri al. Değişmeyen kelimelerin zamanları
   korunur.
@@ -71,11 +74,18 @@ konuşurken de canlı çalışır.
 
 ### Altyazı
 
-- Yedi stil: **Klasik**, **Karaoke** (söylenen kelimeler belirginleşir), **Akış** (kelimeler söylendikçe
-  yerinde belirir), **Vurgu** (konuşulan kelime renkli kutuda), **Pop** (ortada iri, zıplayan kelimeler),
-  **Tek kelime** (ortada yalnızca söylenen kelime), **Sade**.
-- Sekiz yazı tipi, hepsi Türkçe karakterlerin tamamıyla: Google Sans Flex, Montserrat, Poppins, Inter,
-  Anton, Bebas Neue, Schibsted Grotesk, Literata.
+- On bir stil, üç grupta:
+  - **Sakin:** **Klasik** (koyu kutuda iki satır), **Sade** (kutusuz, hafif gölgeli), **Cam** (arkadaki
+    video buzlu camla bulanıklaşır).
+  - **Vurgulu:** **Karaoke** (söylenen kelimeler belirginleşir), **Dolgu** (söylenen kelime konuşma hızında
+    soldan sağa renkle dolar), **Akış** (kelimeler söylendikçe yerinde belirir), **Odak** (kelimeler
+    bulanıktan netleşir), **Vurgu** (konuşulan kelime renkli kutuda).
+  - **İri:** **Pop** (ortada iri, zıplayan kelimeler), **Tek kelime** (ortada yalnızca söylenen kelime),
+    **Netleş** (tek iri kelime bulanıktan netleşerek gelir).
+- **Sesle vurgula:** çevresindekilerden yüksek sesle söylenen kelimeler büyük ve vurgu renginde yazılır.
+- On yazı tipi, hepsi Türkçe karakterlerin tamamıyla: Google Sans Flex, Montserrat, Poppins, Inter, Anton,
+  Bebas Neue, Bangers, Luckiest Guy, Schibsted Grotesk, Literata. Kendi yazı tipin de (TTF, OTF, WOFF, WOFF2)
+  eklenebilir; tarayıcıda saklanır.
 - Boyut, konum, zemin (kutu, kontur, gölge), yazı ve vurgu rengi, Türkçe kurallarına uygun büyük harf
   (i → İ).
 
@@ -121,8 +131,18 @@ konuşurken de canlı çalışır.
 - **.harfiyen** proje dosyası: projeyi dosya olarak indir, başka zaman ya da başka tarayıcıda aç. Medya
   dosyası içine eklenmez, açarken bir kez seçilir.
 
-> Konuşma tanıma modeli küçük harfli, noktalamasız metin üretir; noktalama ve büyük harf ayrı bir modelle
-> sonradan eklenir. Sayılar yazıyla kalır ("bin dokuz yüz yirmi üç").
+### Ayarlar ve modeller
+
+- **Ayarlar → Modeller:** her modelin indirilip indirilmediği ve ne kadar yer kapladığı görünür. Modeller
+  tek tek indirilip silinebilir; bu cihaza uygun olanların hepsi tek düğmeyle indirilir. Başka bir modelin
+  de kullandığı dosyalar silinmez.
+- Büyük modeller 32 MB'lık parçalar hâlinde iner ve saklanır; bağlantı koparsa ya da sekme kapanırsa indirme
+  kaldığı yerden sürer.
+- Modeller tarayıcının bu siteye ayırdığı alanda (Cache Storage) durur. Tarayıcı ayarlarından site verisini
+  silmek projeleri de siler; yalnızca modellerden yer açmak için Ayarlar kullanılır.
+
+> Seda küçük harfli, noktalamasız metin üretir; noktalama ve büyük harf ayrı bir modelle sonradan eklenir.
+> Sayılar seçilen kurala göre rakama çevrilir.
 
 ## Hızlı başlangıç
 
@@ -138,7 +158,8 @@ npm run dev        # http://localhost:5173
 
 İlk açılışta tarayıcı yaklaşık 105 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
 önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB) indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB, İngilizce çeviri yaklaşık 360 MB indirilir ve
-önbelleğe alınır. Ses ve metin işlenmek için sunucuya gönderilmez.
+önbelleğe alınır. Modeller **Ayarlar → Modeller**'den önceden indirilebilir ya da silinebilir. Ses ve metin
+işlenmek için sunucuya gönderilmez.
 
 ### Telefondan veya ağdaki başka bir cihazdan açmak
 
@@ -173,6 +194,7 @@ güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarla
 | Kayıtlı projeyi açmak      | **Projeler** menüsü ya da boş ekrandaki **Son projeler**                                   |
 | Proje adını değiştirmek    | Üstteki proje adına tıkla, **Enter** kaydeder, **Esc** vazgeçer                            |
 | Proje dosyası              | **Projeler → Projeyi dosya olarak indir**; açmak için **Dosya aç** ya da sürükle-bırak     |
+| Modelleri yönetmek         | Üst çubukta **Ayarlar → Modeller**                                                         |
 
 ## Performans
 

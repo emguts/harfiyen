@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { loadCaptionFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
-import { FAMILIES, PRESETS, presetById, settingsFor, type CaptionSettings, type PresetFamily, type PresetId } from "../captions/style";
+import {
+  FAMILIES,
+  PRESETS,
+  presetById,
+  settingsFor,
+  type CaptionSettings,
+  type PresetFamily,
+  type PresetId,
+} from "../captions/style";
 import type { Word } from "../engine";
 import { paletteById } from "../render/aura";
 import { IconCheck } from "./icons";
@@ -51,7 +59,9 @@ function StyleCard({
 
   useEffect(() => {
     let live = true;
-    loadCaptionFont(s.font, document.fonts).then(() => live && setFontTick((n) => n + 1));
+    loadCaptionFont(s.font, document.fonts).then(
+      () => live && setFontTick((n) => n + 1),
+    );
     return () => {
       live = false;
     };
@@ -112,17 +122,23 @@ function StyleCard({
             aria-hidden
           />
         )}
-        <canvas ref={canvas} className="absolute inset-0 size-full" aria-hidden />
+        <canvas
+          ref={canvas}
+          className="absolute inset-0 size-full"
+          aria-hidden
+        />
         {selected && (
           <span
-            className="absolute top-1.5 right-1.5 grid size-[18px] place-items-center rounded-full bg-cini text-white shadow-[0_1px_4px_rgba(0,0,0,0.4)]"
+            className="absolute top-1.5 right-1.5 grid size-4.5 place-items-center rounded-full bg-cini text-white shadow-[0_1px_4px_rgba(0,0,0,0.4)]"
             aria-hidden
           >
             <IconCheck size={12} />
           </span>
         )}
       </span>
-      <span className={`pl-0.5 text-[12px] font-[550] tracking-[-0.01em] ${selected ? "text-white" : "text-fg-2"}`}>
+      <span
+        className={`pl-0.5 text-[12px] font-[550] tracking-[-0.01em] ${selected ? "text-white" : "text-fg-2"}`}
+      >
         {label}
       </span>
     </button>
@@ -144,21 +160,39 @@ export function StylePicker({
 
   return (
     <div className="grid gap-2">
-      <div className="flex gap-0.5 rounded-lg border border-line-soft bg-[#101316] p-0.75" role="tablist" aria-label="Stil ailesi">
+      <div
+        className="flex gap-0.5 rounded-lg border border-line-soft bg-[#101316] p-0.75"
+        role="tablist"
+        aria-label="Stil ailesi"
+      >
         {FAMILIES.map((f) => (
-          <button key={f.id} type="button" className={TAB} role="tab" aria-selected={tab === f.id} onClick={() => setTab(f.id)}>
+          <button
+            key={f.id}
+            type="button"
+            className={TAB}
+            role="tab"
+            aria-selected={tab === f.id}
+            onClick={() => setTab(f.id)}
+          >
             {f.label}
             {/* The chosen style is in another family. */}
             {f.id === family && tab !== family && (
               <>
-                <span className="absolute top-1 right-1.5 size-[5px] rounded-full bg-cini" aria-hidden />
+                <span
+                  className="absolute top-1 right-1.5 size-1.25 rounded-full bg-cini"
+                  aria-hidden
+                />
                 <span className="sr-only"> (seçili stil burada)</span>
               </>
             )}
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Altyazı stili">
+      <div
+        className="grid grid-cols-2 gap-2"
+        role="radiogroup"
+        aria-label="Altyazı stili"
+      >
         {PRESETS.filter((p) => p.family === tab).map((p) => (
           <StyleCard
             key={p.id}

@@ -1,13 +1,24 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { duration as fmtDuration } from "../lib/format";
 import { projectTitle, type Project } from "../lib/projectStore";
 import { IconChevron, IconEdit, IconProjects, IconTrash } from "./icons";
 import { IconButton, TbLabel, toolbarButton } from "./ui";
-import { Menu, MenuFoot, MenuGroup, MenuItem, MenuNote, MenuTitle } from "./Menu";
+import {
+  Menu,
+  MenuFoot,
+  MenuGroup,
+  MenuItem,
+  MenuNote,
+  MenuTitle,
+} from "./Menu";
 
 const when = (t: number) =>
-  new Date(t).toLocaleString("tr-TR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-
+  new Date(t).toLocaleString("tr-TR", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 function note(p: Project) {
   const parts = [when(p.updatedAt)];
@@ -34,6 +45,19 @@ export function ProjectList({
 }) {
   // The project whose delete button was pressed; its row asks to confirm.
   const [confirming, setConfirming] = useState<string | null>(null);
+  const asking = useRef<HTMLLIElement>(null);
+
+  // A press outside the question cancels it. Not on blur: Safari does not
+  // focus a clicked button, so pressing "Sil" blurred the row (to nothing)
+  // and removed the button before its click.
+  useEffect(() => {
+    if (!confirming) return;
+    const outside = (e: PointerEvent) => {
+      if (!asking.current?.contains(e.target as Node)) setConfirming(null);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [confirming]);
 
   return (
     <ul className={`m-0 grid list-none p-0 ${className}`}>
@@ -41,9 +65,12 @@ export function ProjectList({
         p.id === confirming ? (
           <li
             key={p.id}
+            ref={asking}
             className="flex items-center gap-2 rounded-ui-sm bg-mercan/10 py-1 pr-1 pl-2 shadow-[inset_0_0_0_1px_rgba(239,100,78,0.35)]"
             onBlur={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget)) setConfirming(null);
+              // Tab out of the question; focus going nowhere (a click in Safari) is not leaving.
+              if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget))
+                setConfirming(null);
             }}
             onKeyDown={(e) => {
               if (e.key !== "Escape") return;
@@ -53,17 +80,19 @@ export function ProjectList({
             }}
           >
             <span className="grid min-w-0 flex-1 gap-px text-[12.5px]">
-              <span className="truncate text-fg">“{projectTitle(p)}” silinsin mi?</span>
+              <span className="truncate text-fg">
+                “{projectTitle(p)}” silinsin mi?
+              </span>
               <MenuNote>Medya dosyan diskte kalır.</MenuNote>
             </span>
             <button
-              className="h-[24px] flex-none cursor-pointer rounded-ui-sm border-0 bg-transparent px-2 text-[12px] text-fg-2 hover:bg-line hover:text-fg"
+              className="h-6 flex-none cursor-pointer rounded-ui-sm border-0 bg-transparent px-2 text-[12px] text-fg-2 hover:bg-line hover:text-fg"
               onClick={() => setConfirming(null)}
             >
               Vazgeç
             </button>
             <button
-              className="h-[24px] flex-none cursor-pointer rounded-ui-sm border-0 bg-mercan px-2.5 text-[12px] font-medium text-white hover:brightness-110"
+              className="h-6 flex-none cursor-pointer rounded-ui-sm border-0 bg-mercan px-2.5 text-[12px] font-medium text-white hover:brightness-110"
               autoFocus
               onClick={() => {
                 setConfirming(null);
@@ -74,13 +103,20 @@ export function ProjectList({
             </button>
           </li>
         ) : (
-          <li key={p.id} className="group flex items-center gap-1 rounded-ui-sm pr-1 hover:bg-line">
+          <li
+            key={p.id}
+            className="group flex items-center gap-1 rounded-ui-sm pr-1 hover:bg-line"
+          >
             <button
               className="grid min-w-0 flex-1 cursor-pointer gap-px border-0 bg-transparent px-2 py-1.5 text-left text-[12.5px] text-fg"
               onClick={() => onOpen(p.id)}
               title={p.name}
             >
-              <span className={`truncate ${p.id === currentId ? "text-firuze" : ""}`}>{projectTitle(p)}</span>
+              <span
+                className={`truncate ${p.id === currentId ? "text-firuze" : ""}`}
+              >
+                {projectTitle(p)}
+              </span>
               <MenuNote>{note(p)}</MenuNote>
             </button>
             <IconButton
@@ -169,16 +205,27 @@ export function ProjectsMenu({
             onDelete={onDelete}
           />
         ) : (
-          <MenuFoot>Yazıya döktüğün kayıtlar burada otomatik saklanır.</MenuFoot>
+          <MenuFoot>
+            Yazıya döktüğün kayıtlar burada otomatik saklanır.
+          </MenuFoot>
         )}
       </MenuGroup>
-      <MenuFoot>Projeler yalnızca bu tarayıcıda saklanır. Medya dosyası proje dosyasına eklenmez.</MenuFoot>
+      <MenuFoot>
+        Projeler yalnızca bu tarayıcıda saklanır. Medya dosyası proje dosyasına
+        eklenmez.
+      </MenuFoot>
     </Menu>
   );
 }
 
 /** The toolbar title; for a saved project, click to rename it. */
-export function ProjectName({ title, onRename }: { title: string; onRename?: (name: string) => void }) {
+export function ProjectName({
+  title,
+  onRename,
+}: {
+  title: string;
+  onRename?: (name: string) => void;
+}) {
   const [editing, setEditing] = useState(false);
   return (
     <div
@@ -209,7 +256,7 @@ export function ProjectName({ title, onRename }: { title: string; onRename?: (na
         />
       ) : (
         <button
-          className="group inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-ui-sm border-0 bg-transparent py-[3px] pr-1.5 pl-2 tracking-[inherit] text-inherit [font:inherit] hover:text-fg"
+          className="group inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-ui-sm border-0 bg-transparent py-0.75 pr-1.5 pl-2 tracking-[inherit] text-inherit [font:inherit] hover:text-fg"
           onClick={() => setEditing(true)}
           aria-label={`${title}, yeniden adlandır`}
         >
