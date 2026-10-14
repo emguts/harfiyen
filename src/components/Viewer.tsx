@@ -187,7 +187,7 @@ export function Viewer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (!url || t.closest("input, textarea, select, [contenteditable]") || e.metaKey || e.ctrlKey) return;
+      if (!url || t.closest("input, textarea, select, [contenteditable], dialog") || e.metaKey || e.ctrlKey) return;
       if (e.key === " " && !t.closest("button")) player.toggle();
       else if (e.key === "ArrowLeft" && !t.closest("[role=slider]")) player.seek(player.time - 5);
       else if (e.key === "ArrowRight" && !t.closest("[role=slider]")) player.seek(player.time + 5);

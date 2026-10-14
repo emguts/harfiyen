@@ -21,6 +21,12 @@ export function megabytes(bytes: number): string {
   return (bytes / 1_000_000).toLocaleString("tr-TR", { maximumFractionDigits: bytes < 10_000_000 ? 1 : 0 });
 }
 
+/** 73_000_000 -> "73 MB", 1_500_000_000 -> "1,5 GB". */
+export function fileSize(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} GB`;
+  return `${megabytes(bytes)} MB`;
+}
+
 export function duration(sec: number): string {
   if (sec < 60) return `${Math.round(sec)} sn`;
   const m = Math.round(sec / 60);

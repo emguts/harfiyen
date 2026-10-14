@@ -5,7 +5,7 @@ import * as ort from "onnxruntime-web/webgpu";
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import ortMjsUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
 import type { Ort } from "../engine/models";
-import { MODELS_BASE } from "../models";
+import { MT_PACK, packFileUrl } from "../models";
 import { Translator, type MtConfig, type MtVocab } from "../mt/translator";
 import { fetchAll } from "./modelStore";
 
@@ -20,8 +20,6 @@ export type FromMt =
   | { type: "cancelled"; jobId: number }
   | { type: "error"; jobId: number; message: string };
 
-const DIR = `${MODELS_BASE}/opus-mt-tc-big-tr-en`;
-const FILES = ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"];
 /** Approximate; the real size is settled once the download finishes. */
 const ORT_WASM_SIZE = 26_800_000;
 
@@ -31,12 +29,12 @@ let translator: Promise<Translator> | null = null;
 let queue: Promise<void> = Promise.resolve();
 
 async function load(jobId: number): Promise<Translator> {
-  const res = await fetch(`${DIR}/model.json`, { cache: "no-cache" });
+  const res = await fetch(packFileUrl(MT_PACK, MT_PACK.manifest), { cache: "no-cache" });
   if (!res.ok) throw new Error("Çeviri modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
   const cfg: MtConfig = await res.json();
   const [encoder, decoder, spm, wasm] = await fetchAll(
     [
-      ...FILES.map((f) => ({ url: `${DIR}/${f}`, size: cfg.files[f] })),
+      ...MT_PACK.files.map((f) => ({ url: packFileUrl(MT_PACK, f), size: cfg.files[f] })),
       { url: ortWasmUrl, size: ORT_WASM_SIZE, approx: true },
     ],
     (loaded, total) => post({ type: "download", jobId, loaded, total }),

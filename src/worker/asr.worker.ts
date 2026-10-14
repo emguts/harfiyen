@@ -12,7 +12,7 @@ import {
   type ModelConfig,
 } from "../engine";
 import type { SpeechEngine, SpeechStream } from "../engine/stream";
-import { modelFileUrl, modelInfo, MODELS_BASE, type ModelId, type ModelInfo } from "../models";
+import { modelFileUrl, modelInfo, packFileUrl, PUNCT_PACK, type ModelId, type ModelInfo } from "../models";
 import { Punctuator, type PunctConfig } from "../punct/punctuator";
 import type { SpmVocab } from "../punct/spm";
 import { finishTurkish } from "../punct/turkish";
@@ -173,17 +173,16 @@ function getEngine() {
   return enginePromise;
 }
 
-const PUNCT_BASE = `${MODELS_BASE}/punct/`;
 let punctPromise: Promise<Punctuator> | null = null;
 
 /** The punctuation model is loaded on first use (≈60 MB, cached like the rest). */
 function getPunctuator(id: number): Promise<Punctuator> {
   punctPromise ??= (async () => {
-    const res = await fetch(PUNCT_BASE + "punct.json", { cache: "no-cache" });
+    const res = await fetch(packFileUrl(PUNCT_PACK, PUNCT_PACK.manifest), { cache: "no-cache" });
     if (!res.ok) throw new Error("Noktalama modeli bulunamadı. `npm run models` çalıştırılmalı.");
     const cfg: PunctConfig = await res.json();
     const [model, vocab] = await fetchAll(
-      ["punct.int8.onnx", "spm.json"].map((f) => ({ url: PUNCT_BASE + f, size: cfg.files[f] })),
+      PUNCT_PACK.files.map((f) => ({ url: packFileUrl(PUNCT_PACK, f), size: cfg.files[f] })),
       (done, total) => post({ type: "punct-progress", id, phase: "download", done, total }),
     );
     // Shares the wasm runtime loaded for the recognizer.

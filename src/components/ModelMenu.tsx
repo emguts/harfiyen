@@ -74,7 +74,7 @@ export function ModelMenu({
           );
         })}
       </MenuGroup>
-      <MenuFoot>Model ilk kullanımda indirilir ve bu tarayıcıda saklanır.</MenuFoot>
+      <MenuFoot>Model ilk kullanımda indirilir ve bu tarayıcıda saklanır. Ayarlar → Modeller'den indirilip silinebilir.</MenuFoot>
       {locked && <MenuFoot>Yazıya dökme sürerken değiştirilemez.</MenuFoot>}
     </Menu>
   );

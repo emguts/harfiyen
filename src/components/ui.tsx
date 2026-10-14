@@ -5,6 +5,8 @@ import type { ComponentProps, ReactNode } from "react";
 // ---- buttons ----
 
 const BUTTON_VARIANT = {
+  danger:
+    "border-[rgba(239,100,78,0.55)] bg-[rgba(239,100,78,0.14)] text-[#ff8b78] hover:not-disabled:border-mercan hover:not-disabled:bg-mercan hover:not-disabled:text-white",
   default:
     "border-line bg-raised text-fg hover:not-disabled:border-[#3f4752] hover:not-disabled:bg-raised-hover hover:not-disabled:text-white",
   primary:

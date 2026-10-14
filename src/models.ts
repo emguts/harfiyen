@@ -93,3 +93,97 @@ export const modelInfo = (id: ModelId): ModelInfo => MODELS.find((m) => m.id ===
 export const isModelId = (v: unknown): v is ModelId => MODELS.some((m) => m.id === v);
 
 export const modelFileUrl = (m: ModelInfo, file: string) => `${MODELS_BASE}/${m.dir}/${file}`;
+
+// ---- every downloadable model ----
+
+export type PackKind = "asr" | "punct" | "mt" | "tts";
+
+/**
+ * A set of files downloaded together: a speech model above, or one of the
+ * helpers below. Settings lists these; the workers load them by the same dir
+ * and file names.
+ */
+export interface ModelPack {
+  id: string;
+  kind: PackKind;
+  name: string;
+  note: string;
+  dir: string;
+  /** The directory's manifest; its `files` gives each file's exact size. */
+  manifest: string;
+  files: string[];
+  gpuOnly: boolean;
+  needsF16: boolean;
+}
+
+export const PUNCT_PACK: ModelPack = {
+  id: "punct",
+  kind: "punct",
+  name: "Noktalama",
+  note: "Seda'nın dökümüne nokta, virgül ve büyük harf ekler.",
+  dir: "punct",
+  manifest: "punct.json",
+  files: ["punct.int8.onnx", "spm.json"],
+  gpuOnly: false,
+  needsF16: false,
+};
+
+export const MT_PACK: ModelPack = {
+  id: "mt",
+  kind: "mt",
+  name: "İngilizce çeviri",
+  note: "opus-mt-tc-big-tr-en; transkripti cümle cümle İngilizceye çevirir.",
+  dir: "opus-mt-tc-big-tr-en",
+  manifest: "model.json",
+  files: ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"],
+  gpuOnly: false,
+  needsF16: false,
+};
+
+/** Dubbing voices; the file order is the order the TTS worker takes them in. */
+export const VOICE_PACKS = {
+  ema: {
+    id: "tts-ema",
+    kind: "tts",
+    name: "EMA Lightning",
+    note: "Seslendirme sesi.",
+    dir: "ema-lightning",
+    manifest: "model.json",
+    files: ["text.onnx", "sound.onnx", "decoder.onnx", "normalizer.wasm"],
+    gpuOnly: false,
+    needsF16: false,
+  },
+  mini: {
+    id: "tts-mini",
+    kind: "tts",
+    name: "Antalia Mini",
+    note: "Seslendirme sesi; ekran kartı olmadan da hızlı.",
+    dir: "antalia-mini",
+    manifest: "model.json",
+    files: ["text.onnx", "cond.onnx", "flow.onnx", "vocoder.fp16.onnx", "frontend-data.json.gz"],
+    gpuOnly: false,
+    needsF16: false,
+  },
+} satisfies Record<string, ModelPack>;
+
+export const PACKS: ModelPack[] = [
+  ...MODELS.map(
+    (m): ModelPack => ({
+      id: m.id,
+      kind: "asr",
+      name: m.name,
+      note: m.note,
+      dir: m.dir,
+      manifest: "model.json",
+      files: m.files,
+      gpuOnly: m.gpuOnly,
+      needsF16: m.needsF16,
+    }),
+  ),
+  PUNCT_PACK,
+  MT_PACK,
+  VOICE_PACKS.ema,
+  VOICE_PACKS.mini,
+];
+
+export const packFileUrl = (p: ModelPack, file: string) => `${MODELS_BASE}/${p.dir}/${file}`;

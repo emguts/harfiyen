@@ -4,10 +4,11 @@
 
 import { createFrontend, decodeAsset, type Frontend } from "./antalia-mini/frontend";
 import { Engine, speak, type MiniManifest } from "./antalia-mini/tts";
+import { VOICE_PACKS } from "../models";
 
 export type { MiniManifest };
 /** File names under the model directory, in the order `load` takes them. */
-export const MINI_FILES = ["text.onnx", "cond.onnx", "flow.onnx", "vocoder.fp16.onnx", "frontend-data.json.gz"];
+export const MINI_FILES = VOICE_PACKS.mini.files;
 
 export class Mini {
   private constructor(

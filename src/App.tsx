@@ -33,6 +33,7 @@ import {
   IconOpen,
   IconPause,
   IconPlay,
+  IconSettings,
   IconSound,
   IconSearch,
   IconUndo,
@@ -40,6 +41,7 @@ import {
 import { RecordButton } from "./components/RecordButton";
 import { Inspector } from "./components/Inspector";
 import { ModelMenu } from "./components/ModelMenu";
+import { Settings } from "./components/Settings";
 import { ProviderMenu } from "./components/ProviderMenu";
 import { StatusBar } from "./components/StatusBar";
 import { Timeline, TIMELINE } from "./components/Timeline";
@@ -166,6 +168,7 @@ export function App() {
   });
   useEffect(() => localStorage.setItem("harfiyen.numbers", numberMode), [numberMode]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
   const [settings, setSettings] = useState<CaptionSettings>(loadSettings);
   const [dragging, setDragging] = useState(false);
@@ -587,6 +590,8 @@ export function App() {
   }, [autoPunct, numberMode, job?.status, job?.id, job?.model, job?.words.length, applyPunct, applyNumbers]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Not behind an open window (settings).
+      if ((e.target as HTMLElement).closest("dialog")) return;
       const inField = !!(e.target as HTMLElement).closest(
         "input, textarea, select, [contenteditable]",
       );
@@ -812,6 +817,13 @@ export function App() {
             punct.phase === "download"
           }
         />
+        <button
+          className={toolbarButton({ compact: true })}
+          onClick={() => setSettingsOpen(true)}
+          title="Ayarlar"
+        >
+          <IconSettings /> <TbLabel>Ayarlar</TbLabel>
+        </button>
         <a
           className={toolbarButton({ compact: true })}
           href="https://github.com/ozcancelik/harfiyen"
@@ -822,6 +834,7 @@ export function App() {
           <IconGitHub /> <TbLabel>GitHub</TbLabel>
         </a>
       </header>
+      <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div className="grid min-h-0 grid-cols-[minmax(260px,340px)_minmax(0,1fr)_312px] max-[1100px]:grid-cols-[minmax(220px,280px)_minmax(0,1fr)_280px] max-[860px]:contents">
         <Pane side="left" label="Transkript">

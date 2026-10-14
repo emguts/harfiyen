@@ -7,10 +7,10 @@
 import * as ort from "onnxruntime-web/webgpu";
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import ortMjsUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
-import { MODELS_BASE } from "../models";
+import { packFileUrl, VOICE_PACKS } from "../models";
 import type { DubClip } from "../tts/dub";
 import { Ema, loadNormalizer, RATE, type EmaMeta } from "../tts/ema";
-import { Mini, MINI_FILES, type MiniManifest } from "../tts/mini";
+import { Mini, type MiniManifest } from "../tts/mini";
 import { fetchAll } from "./modelStore";
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -45,10 +45,6 @@ export type FromTts =
   | { type: "cancelled"; jobId: number }
   | { type: "error"; jobId: number; message: string };
 
-const DIRS: Record<VoiceModel, string> = {
-  ema: `${MODELS_BASE}/ema-lightning`,
-  mini: `${MODELS_BASE}/antalia-mini`,
-};
 /** Approximate; the real size is settled once the download finishes. */
 const ORT_WASM_SIZE = 26_800_000;
 const MAX_SPEED = 1.35;
@@ -67,14 +63,14 @@ const speakers = new Map<VoiceModel, Promise<Speaker>>();
 let adapter: GPUAdapter | null | undefined;
 
 async function load(jobId: number, model: VoiceModel): Promise<Speaker> {
-  const dir = DIRS[model];
-  const res = await fetch(`${dir}/model.json`, { cache: "no-cache" });
+  const pack = VOICE_PACKS[model];
+  const res = await fetch(packFileUrl(pack, pack.manifest), { cache: "no-cache" });
   if (!res.ok) throw new Error("Seslendirme modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
   const meta = await res.json();
-  const names = model === "ema" ? ["text.onnx", "sound.onnx", "decoder.onnx", "normalizer.wasm"] : MINI_FILES;
+  const names = pack.files;
   const runtime = adapter === undefined ? [{ url: ortWasmUrl, size: ORT_WASM_SIZE, approx: true }] : [];
   const files = await fetchAll(
-    [...names.map((n) => ({ url: `${dir}/${n}`, size: meta.files[n] as number })), ...runtime],
+    [...names.map((n) => ({ url: packFileUrl(pack, n), size: meta.files[n] as number })), ...runtime],
     (loaded, total) => post({ type: "download", jobId, loaded, total }),
   );
 
