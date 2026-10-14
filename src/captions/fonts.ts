@@ -7,8 +7,12 @@ import gsflexExt from "@fontsource-variable/google-sans-flex/files/google-sans-f
 import gsflex from "@fontsource-variable/google-sans-flex/files/google-sans-flex-latin-wght-normal.woff2?url";
 import antonExt from "@fontsource/anton/files/anton-latin-ext-400-normal.woff2?url";
 import anton from "@fontsource/anton/files/anton-latin-400-normal.woff2?url";
+import bangersExt from "@fontsource/bangers/files/bangers-latin-ext-400-normal.woff2?url";
+import bangers from "@fontsource/bangers/files/bangers-latin-400-normal.woff2?url";
 import bebasExt from "@fontsource/bebas-neue/files/bebas-neue-latin-ext-400-normal.woff2?url";
 import bebas from "@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff2?url";
+import luckiestExt from "@fontsource/luckiest-guy/files/luckiest-guy-latin-ext-400-normal.woff2?url";
+import luckiest from "@fontsource/luckiest-guy/files/luckiest-guy-latin-400-normal.woff2?url";
 import poppinsExt from "@fontsource/poppins/files/poppins-latin-ext-800-normal.woff2?url";
 import poppins from "@fontsource/poppins/files/poppins-latin-800-normal.woff2?url";
 import interExt from "@fontsource-variable/inter/files/inter-latin-ext-wght-normal.woff2?url";
@@ -20,7 +24,17 @@ import montserrat from "@fontsource-variable/montserrat/files/montserrat-latin-w
 import schibstedExt from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-ext-wght-normal.woff2?url";
 import schibsted from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-wght-normal.woff2?url";
 
-export type FontId = "gsflex" | "montserrat" | "poppins" | "inter" | "anton" | "bebas" | "schibsted" | "literata";
+export type FontId =
+  | "gsflex"
+  | "montserrat"
+  | "poppins"
+  | "inter"
+  | "anton"
+  | "bebas"
+  | "bangers"
+  | "luckiest"
+  | "schibsted"
+  | "literata";
 
 export interface CaptionFont {
   id: FontId;
@@ -30,6 +44,10 @@ export interface CaptionFont {
   /** Weight range of the file (variable fonts) or the single static weight. */
   weightRange: string;
   files: string[];
+  /** Lowercase letters are drawn as capitals, so a dotless "I" stands in for
+   *  "i" and Turkish "bir" reads "bır". In languages with a dotted i the
+   *  captions are always uppercased (i → İ, ı → I); see hasDottedI. */
+  capsOnly?: boolean;
 }
 
 export const FONTS: CaptionFont[] = [
@@ -38,7 +56,9 @@ export const FONTS: CaptionFont[] = [
   { id: "poppins", label: "Poppins", weight: 800, weightRange: "800", files: [poppins, poppinsExt] },
   { id: "inter", label: "Inter", weight: 650, weightRange: "100 900", files: [inter, interExt] },
   { id: "anton", label: "Anton", weight: 400, weightRange: "400", files: [anton, antonExt] },
-  { id: "bebas", label: "Bebas Neue", weight: 400, weightRange: "400", files: [bebas, bebasExt] },
+  { id: "bebas", label: "Bebas Neue", weight: 400, weightRange: "400", files: [bebas, bebasExt], capsOnly: true },
+  { id: "bangers", label: "Bangers", weight: 400, weightRange: "400", files: [bangers, bangersExt], capsOnly: true },
+  { id: "luckiest", label: "Luckiest Guy", weight: 400, weightRange: "400", files: [luckiest, luckiestExt], capsOnly: true },
   { id: "schibsted", label: "Schibsted Grotesk", weight: 650, weightRange: "400 900", files: [schibsted, schibstedExt] },
   { id: "literata", label: "Literata", weight: 600, weightRange: "200 900", files: [literata, literataExt] },
 ];

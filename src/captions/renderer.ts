@@ -4,6 +4,7 @@
 
 import type { Word } from "../engine";
 import { buildCues, type Cue } from "../lib/cues";
+import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
 import { captionFamily, fontById } from "./fonts";
 import { presetById, type CaptionSettings, type Preset } from "./style";
 
@@ -50,6 +51,8 @@ export class CaptionRenderer {
     private s: CaptionSettings,
     private W: number,
     private H: number,
+    /** Language of the words; decides how they are uppercased. */
+    private lang: string = TRANSCRIPT_LANG,
   ) {
     this.preset = presetById(s.preset);
     this.groups = buildCues(words, this.preset.grouping);
@@ -96,7 +99,8 @@ export class CaptionRenderer {
   private draw(g: Cue, active: number, grow: number, key: string): CaptionImage {
     const { s, W, H, preset } = this;
     const font = fontById(s.font);
-    const texts = g.words.map((w) => (s.uppercase ? w.text.toLocaleUpperCase("tr-TR") : w.text));
+    const upper = s.uppercase || (font.capsOnly && hasDottedI(this.lang));
+    const texts = g.words.map((w) => (upper ? w.text.toLocaleUpperCase(this.lang) : w.text));
     const css = (size: number) => `${font.weight} ${size}px "${captionFamily(s.font)}"`;
     const ctx = this.canvas.getContext("2d")!;
     let px = Math.max(10, Math.round(Math.min(W, H) * s.size));

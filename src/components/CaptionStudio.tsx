@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { captionFamily, FONTS, fontById, loadCaptionFont, type FontId } from "../captions/fonts";
 import { ACCENT_COLORS, presetById, TEXT_COLORS, type CaptionSettings } from "../captions/style";
+import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
 import { AURA_PALETTES, paletteById, type AuraPaletteId } from "../render/aura";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import { StylePicker } from "./StylePicker";
@@ -90,6 +91,7 @@ export function CaptionStudio({
 
   const set = (patch: Partial<CaptionSettings>) => onChange({ ...settings, ...patch });
   const preset = presetById(settings.preset);
+  const capsOnly = !!fontById(settings.font).capsOnly && hasDottedI(TRANSCRIPT_LANG);
 
   return (
     <fieldset className={STUDIO} disabled={disabled}>
@@ -108,17 +110,19 @@ export function CaptionStudio({
           render={(o, inList) => {
             const f = fontById(o.value);
             const style = { fontFamily: `"${captionFamily(f.id)}"`, fontWeight: f.weight };
+            // The sample is Turkish, so a caps-only font shows it uppercased.
+            const sample = (t: string) => (f.capsOnly ? t.toLocaleUpperCase("tr-TR") : t);
             return inList ? (
               <span className="grid min-w-0 gap-px">
                 <span className="text-[17px] leading-[1.2] text-balance" style={style}>
-                  Pijamalı hasta yağız şoföre çabucak güvendi.
+                  {sample("Pijamalı hasta yağız şoföre çabucak güvendi.")}
                 </span>
                 <span className={OPT_NOTE}>{f.label}</span>
               </span>
             ) : (
               <span className={OPT}>
                 <span className={`${TILE} bg-bg text-[15px]`} style={style}>
-                  Ağ
+                  {sample("Ağ")}
                 </span>
                 <span className={OPT_TITLE}>{f.label}</span>
               </span>
@@ -138,8 +142,13 @@ export function CaptionStudio({
         </Row>
         <Row>
           <RowLabel>Büyük harf</RowLabel>
-          <Switch checked={settings.uppercase} onChange={(e) => set({ uppercase: e.target.checked })} />
+          <Switch
+            checked={settings.uppercase || capsOnly}
+            disabled={capsOnly}
+            onChange={(e) => set({ uppercase: e.target.checked })}
+          />
         </Row>
+        {capsOnly && <Hint>Bu yazı tipinde küçük harf yok. "i" ile "ı" karışmasın diye altyazı hep büyük harfle yazılır.</Hint>}
       </Section>
 
       <Section title="Yerleşim">
