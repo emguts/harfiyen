@@ -71,8 +71,9 @@ konuşurken de canlı çalışır.
 
 ### Altyazı
 
-- Beş stil: **Klasik**, **Karaoke** (söylenen kelimeler belirginleşir), **Vurgu** (konuşulan kelime renkli
-  kutuda), **Pop** (ortada iri, zıplayan kelimeler), **Sade**.
+- Yedi stil: **Klasik**, **Karaoke** (söylenen kelimeler belirginleşir), **Akış** (kelimeler söylendikçe
+  yerinde belirir), **Vurgu** (konuşulan kelime renkli kutuda), **Pop** (ortada iri, zıplayan kelimeler),
+  **Tek kelime** (ortada yalnızca söylenen kelime), **Sade**.
 - Sekiz yazı tipi, hepsi Türkçe karakterlerin tamamıyla: Google Sans Flex, Montserrat, Poppins, Inter,
   Anton, Bebas Neue, Schibsted Grotesk, Literata.
 - Boyut, konum, zemin (kutu, kontur, gölge), yazı ve vurgu rengi, Türkçe kurallarına uygun büyük harf

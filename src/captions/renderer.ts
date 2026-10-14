@@ -23,6 +23,9 @@ export interface CaptionImage {
 }
 
 const POP_IN = 0.16;
+/** A word grows in over WORD_IN seconds (wordIn presets), redrawn in WORD_STEPS steps. */
+const WORD_IN = 0.15;
+const WORD_STEPS = 12;
 const easeOutBack = (x: number) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
 
 /** Readable text on top of an accent colour. */
@@ -59,9 +62,13 @@ export class CaptionRenderer {
     const g = this.groups[gi];
     let active = -1;
     for (let i = 0; i < g.words.length && g.words[i].start <= t; i++) active = i;
+    // Only the growing word changes between frames, in fixed steps.
+    const step = this.preset.wordIn
+      ? Math.min(WORD_STEPS, Math.floor(((t - g.words[active].start) / WORD_IN) * WORD_STEPS))
+      : WORD_STEPS;
     // Effects without per-word state draw the same pixels for the whole group.
-    const key = `${this.id}|${gi}|${this.preset.effect === "none" ? 0 : active}`;
-    if (this.cached?.key !== key) this.cached = this.draw(g, active, key);
+    const key = `${this.id}|${gi}|${this.preset.effect === "none" ? 0 : active}|${step}`;
+    if (this.cached?.key !== key) this.cached = this.draw(g, active, step / WORD_STEPS, key);
     const since = t - g.start;
     const scale = this.preset.pop && since < POP_IN ? 0.78 + 0.22 * easeOutBack(Math.max(0, since) / POP_IN) : 1;
     return { ...this.cached, scale };
@@ -85,15 +92,28 @@ export class CaptionRenderer {
     return t < until ? i : -1;
   }
 
-  private draw(g: Cue, active: number, key: string): CaptionImage {
+  /** grow: how far the active word has grown in, 0..1 (1 without wordIn). */
+  private draw(g: Cue, active: number, grow: number, key: string): CaptionImage {
     const { s, W, H, preset } = this;
     const font = fontById(s.font);
-    const px = Math.max(10, Math.round(Math.min(W, H) * s.size));
-    const fontCss = `${font.weight} ${px}px "${captionFamily(s.font)}"`;
+    const texts = g.words.map((w) => (s.uppercase ? w.text.toLocaleUpperCase("tr-TR") : w.text));
+    const css = (size: number) => `${font.weight} ${size}px "${captionFamily(s.font)}"`;
     const ctx = this.canvas.getContext("2d")!;
+    let px = Math.max(10, Math.round(Math.min(W, H) * s.size));
+    // Lines wrap between words only: shrink until the longest word fits the
+    // frame (padding scales with the font, so one step is enough).
+    ctx.font = css(px);
+    const longest = Math.max(...texts.map((t) => ctx.measureText(t).width));
+    // Both sides' padX, stroke and word box, in units of px (see below).
+    const pads =
+      (s.background === "box" ? 1 : 0.7) +
+      (s.background === "outline" ? 0.24 : 0) +
+      (preset.effect === "box" ? 0.64 : 0);
+    const need = longest + px * pads;
+    if (need > W * 0.86) px = Math.max(10, Math.floor((px * W * 0.86) / need));
+    const fontCss = css(px);
     ctx.font = fontCss;
 
-    const texts = g.words.map((w) => (s.uppercase ? w.text.toLocaleUpperCase("tr-TR") : w.text));
     const widths = texts.map((t) => ctx.measureText(t).width);
     const space = ctx.measureText(" ").width;
     const stroke = s.background === "outline" ? Math.max(2, px * 0.12) : 0;
@@ -138,9 +158,23 @@ export class CaptionRenderer {
       let x = (w - lineWidths[li]) / 2;
       const cy = padY + lineH * (li + 0.5);
       for (const i of line) {
+        if (preset.effect === "reveal" && i > active) {
+          x += widths[i] + wordPad * 2 + space;
+          continue;
+        }
         const isActive = i === active;
         let color = s.textColor;
         ctx.globalAlpha = preset.effect === "karaoke" && i > active ? 0.45 : 1;
+        ctx.save();
+        if (isActive && grow < 1) {
+          const e = 1 - Math.pow(1 - grow, 3);
+          const k = 0.8 + 0.2 * e;
+          const cx = x + wordPad + widths[i] / 2;
+          ctx.globalAlpha *= e;
+          ctx.translate(cx, cy);
+          ctx.scale(k, k);
+          ctx.translate(-cx, -cy);
+        }
 
         if (preset.effect === "box" && isActive) {
           ctx.fillStyle = s.accentColor;
@@ -166,7 +200,7 @@ export class CaptionRenderer {
         }
         ctx.fillStyle = color;
         ctx.fillText(texts[i], tx, cy);
-        ctx.shadowColor = "transparent";
+        ctx.restore();
         x += widths[i] + wordPad * 2 + space;
       }
     });

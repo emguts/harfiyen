@@ -13,6 +13,12 @@ export interface CueRules {
   gap: number;
   maxDuration: number;
   maxChars: number;
+  maxWords?: number;
+  /**
+   * A cue shown shorter than this (until the next word starts) takes the
+   * next word too, even past maxWords, so short words do not flash by.
+   */
+  minDuration?: number;
 }
 
 /** Subtitle-friendly defaults: two lines of ~42 characters. */
@@ -29,9 +35,14 @@ export function buildCues(words: Word[], rules: CueRules = SUBTITLE_RULES): Cue[
     const prev = i > 0 ? words[i - 1].text : "";
     // A sentence end starts a new cue, unless the cue would be a lone word.
     const sentenceEnd = /[.?!…]$/.test(prev) && !!cur && (chars >= 12 || cur.end - cur.start >= 0.8);
+    // A cue of maxWords takes one more word only while it would flash by,
+    // and never past a sentence end.
+    const brief = !!cur && w.start - cur.start < (rules.minDuration ?? 0) && !/[.?!…]$/.test(prev);
+    const full = !!cur && cur.words.length >= (rules.maxWords ?? Infinity) && !brief;
     const brk =
       !cur ||
       sentenceEnd ||
+      full ||
       w.start - cur.end >= rules.gap ||
       w.end - cur.start > rules.maxDuration ||
       chars + 1 + w.text.length > rules.maxChars;

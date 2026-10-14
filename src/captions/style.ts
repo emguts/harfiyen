@@ -2,10 +2,11 @@ import type { CueRules } from "../lib/cues";
 import type { AuraPaletteId } from "../render/aura";
 import type { FontId } from "./fonts";
 
-export type PresetId = "klasik" | "karaoke" | "vurgu" | "pop" | "sade";
+export type PresetId = "klasik" | "karaoke" | "akis" | "vurgu" | "pop" | "tek" | "sade";
 
 /** How each word reacts while it is being spoken. */
-export type WordEffect = "none" | "karaoke" | "box" | "color";
+/** "reveal" leaves words out until they are spoken; the line keeps its layout. */
+export type WordEffect = "none" | "karaoke" | "reveal" | "box" | "color";
 
 export interface CaptionSettings {
   preset: PresetId;
@@ -31,6 +32,8 @@ export interface Preset {
   effect: WordEffect;
   /** Scale-in when a new group appears. */
   pop: boolean;
+  /** Fade and grow each word in as it is spoken. */
+  wordIn?: boolean;
   defaults: Omit<CaptionSettings, "preset" | "aura">;
 }
 
@@ -61,6 +64,25 @@ export const PRESETS: Preset[] = [
     maxLines: 2,
     effect: "karaoke",
     pop: false,
+    defaults: {
+      font: "gsflex",
+      size: 0.055,
+      position: "bottom",
+      textColor: "#ffffff",
+      accentColor: "#ffd60a",
+      uppercase: false,
+      background: "outline",
+    },
+  },
+  {
+    id: "akis",
+    label: "Akış",
+    note: "Kelimeler söylendikçe yerinde belirir.",
+    grouping: { gap: 0.8, maxDuration: 5, maxChars: 56 },
+    maxLines: 2,
+    effect: "reveal",
+    pop: false,
+    wordIn: true,
     defaults: {
       font: "gsflex",
       size: 0.055,
@@ -103,6 +125,24 @@ export const PRESETS: Preset[] = [
       position: "middle",
       textColor: "#ffffff",
       accentColor: "#5ce1e6",
+      uppercase: true,
+      background: "outline",
+    },
+  },
+  {
+    id: "tek",
+    label: "Tek kelime",
+    note: "Ortada tek iri kelime, söylendiği anda gelir.",
+    grouping: { gap: 0.6, maxDuration: 2, maxChars: 40, maxWords: 1, minDuration: 0.25 },
+    maxLines: 2,
+    effect: "none",
+    pop: true,
+    defaults: {
+      font: "gsflex",
+      size: 0.11,
+      position: "middle",
+      textColor: "#ffffff",
+      accentColor: "#ffd60a",
       uppercase: true,
       background: "outline",
     },
