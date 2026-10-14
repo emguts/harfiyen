@@ -68,6 +68,12 @@ export const IconExport = (p: P) => (
   </Svg>
 );
 
+export const IconDownload = (p: P) => (
+  <Svg {...p}>
+    <path d="M8 2.5V10M5 7l3 3 3-3M3 9.5v3a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3" />
+  </Svg>
+);
+
 export const IconChevron = (p: P) => (
   <Svg {...p}>
     <path d="M4.5 6.5L8 10l3.5-3.5" />

@@ -2,7 +2,7 @@
 // Writes captions into a video.
 //
 // Video files: mediabunny decodes and re-encodes (WebCodecs, hardware H.264
-// where available), the WebGPU compositor draws every frame with its caption,
+// or HEVC where available, at the bitrate chosen in the export menu), the WebGPU compositor draws every frame with its caption,
 // and the audio track is copied over untouched.
 //
 // Audio files and recordings: the picture is the audio-reactive aura (the
@@ -25,6 +25,7 @@ import {
   Input,
   Mp4OutputFormat,
   Output,
+  Quality,
   QUALITY_HIGH,
 } from "mediabunny";
 import { levelsAt, paletteById } from "../render/aura";
@@ -32,6 +33,7 @@ import { loadCaptionFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
 import type { CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
+import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
 import { createCompositor } from "../render/compositor";
 import { DUB_RATE, dubSlice, type DubClip } from "../tts/dub";
 
@@ -46,6 +48,7 @@ export type ToRender =
       settings: CaptionSettings;
       bands: Float32Array;
       dub: DubClip[] | null;
+      encode: Encode;
     }
   | { type: "cancel"; jobId: number };
 
@@ -54,6 +57,23 @@ export type FromRender =
   | { type: "done"; jobId: number; blob: Blob; elapsed: number }
   | { type: "cancelled"; jobId: number }
   | { type: "error"; jobId: number; message: string };
+
+/**
+ * Video codec, bitrate, encoder and size. No bitrate (the file could not be read
+ * beforehand) is mediabunny's high quality; no known encoder lets the browser pick.
+ */
+export interface Encode {
+  codec: OutputCodec;
+  bitrate: number | null;
+  encoder: Encoder;
+  /** Picture size of the output; null keeps the file's own (1080p for auras). */
+  size: { width: number; height: number } | null;
+}
+
+// The browser's own choice when the hardware encoder is not there: the processor's.
+const acceleration = (encode: Encode) => (encode.encoder === "hardware" ? "prefer-hardware" : "no-preference");
+
+const quality = (encode: Encode) => (encode.bitrate ? new Quality({ bitrate: encode.bitrate }) : QUALITY_HIGH);
 
 const post = (m: FromRender) => self.postMessage(m);
 
@@ -76,19 +96,21 @@ async function burn(
   settings: CaptionSettings,
   bands: Float32Array,
   dub: DubClip[] | null,
+  encode: Encode,
 ) {
   const started = performance.now();
   // The 2D canvas in a worker only sees fonts registered on the worker.
   await loadCaptionFont(settings.font, self.fonts);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
-  if (!track) return burnAudio(jobId, input, words, settings, bands, dub, started);
-  if (!(await track.canDecode())) throw new Error(`Video kodeki (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
+  if (!track) return burnAudio(jobId, input, words, settings, bands, dub, encode, started);
+  if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
-  // so the canvas uses the displayed size. Encoders want even dimensions.
-  const width = track.displayWidth & ~1;
-  const height = track.displayHeight & ~1;
+  // so the canvas uses the displayed size, or the chosen smaller one
+  // (mediabunny resizes the frames before process). Encoders want even dimensions.
+  const width = encode.size?.width ?? track.displayWidth & ~1;
+  const height = encode.size?.height ?? track.displayHeight & ~1;
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas, false);
   const captions = new CaptionRenderer(words, settings, width, height);
@@ -101,11 +123,11 @@ async function burn(
     output,
     tracks: "primary",
     video: {
-      codec: "avc",
-      bitrate: QUALITY_HIGH,
+      codec: encode.codec,
+      bitrate: quality(encode),
       forceTranscode: true,
       allowRotationMetadata: false,
-      hardwareAcceleration: "prefer-hardware",
+      hardwareAcceleration: acceleration(encode),
       width,
       height,
       fit: "fill",
@@ -158,8 +180,6 @@ async function burn(
   post({ type: "done", jobId, blob, elapsed: (performance.now() - started) / 1000 });
 }
 
-const AUDIO_VIDEO = { width: 1920, height: 1080, fps: 30 };
-
 async function burnAudio(
   jobId: number,
   input: Input,
@@ -167,18 +187,20 @@ async function burnAudio(
   settings: CaptionSettings,
   bands: Float32Array,
   dub: DubClip[] | null,
+  encode: Encode,
   started: number,
 ) {
   const audio = await input.getPrimaryAudioTrack();
   if (!audio) throw new Error("Bu dosyada ses yok.");
-  if (!(await audio.canDecode())) throw new Error(`Ses kodeki (${audio.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
+  if (!(await audio.canDecode())) throw new Error(`Sesin kodlaması (${audio.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
   const codec = await getFirstEncodableAudioCodec(["aac", "opus"], {
     numberOfChannels: dub ? 1 : audio.numberOfChannels,
     sampleRate: dub ? DUB_RATE : audio.sampleRate,
   });
   if (!codec) throw new Error("Bu tarayıcı MP4 için ses kodlayamıyor (AAC veya Opus gerekli).");
 
-  const { width, height, fps } = AUDIO_VIDEO;
+  const { width, height } = encode.size ?? AUDIO_VIDEO;
+  const { fps } = AUDIO_VIDEO;
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas, false);
   const captions = new CaptionRenderer(words, settings, width, height);
@@ -187,7 +209,12 @@ async function burnAudio(
 
   const target = new BufferTarget();
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
-  const video = new CanvasSource(canvas, { codec: "avc", bitrate: QUALITY_HIGH, keyFrameInterval: 2 });
+  const video = new CanvasSource(canvas, {
+    codec: encode.codec,
+    bitrate: quality(encode),
+    keyFrameInterval: 2,
+    hardwareAcceleration: acceleration(encode),
+  });
   const sound = new AudioSampleSource({ codec, bitrate: QUALITY_HIGH });
   output.addVideoTrack(video, { frameRate: fps });
   output.addAudioTrack(sound);
@@ -256,7 +283,7 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
     void running.get(m.jobId)?.cancel();
     return;
   }
-  burn(m.jobId, m.file, m.words, m.settings, m.bands, m.dub)
+  burn(m.jobId, m.file, m.words, m.settings, m.bands, m.dub, m.encode)
     .catch((e) => {
       if (cancelled.has(m.jobId)) post({ type: "cancelled", jobId: m.jobId });
       else post({ type: "error", jobId: m.jobId, message: e instanceof Error ? e.message : String(e) });

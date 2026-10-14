@@ -318,7 +318,7 @@ async function transcribeFile(job: Job, file: File) {
     throw new JobError("decode-unsupported", "Dosya biçimi tanınmadı.");
   }
   if (!track) throw new JobError("no-audio", "Bu dosyada ses kanalı yok.");
-  if (!(await track.canDecode())) throw new JobError("decode-unsupported", `Ses kodeki (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
+  if (!(await track.canDecode())) throw new JobError("decode-unsupported", `Sesin kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   post({ type: "meta", jobId: job.id, duration: await track.computeDuration() });
   job.setSampleRate(track.sampleRate);

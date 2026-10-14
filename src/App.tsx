@@ -55,6 +55,8 @@ import { download } from "./lib/exporters";
 import { clock } from "./lib/format";
 import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
+import { useSourceInfo } from "./lib/useSourceInfo";
+import { effectiveOutput, loadOutput, resolutionOf, saveOutput, videoBitrate, type VideoOutput } from "./lib/videoOutput";
 import { usePlayer } from "./lib/usePlayer";
 import { DEFAULT_VOICE, sameVoice, useDubber, useDubPlayback, type Voice } from "./lib/useDubber";
 import { useProjects } from "./lib/useProjects";
@@ -154,6 +156,7 @@ export function App() {
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const burner = useBurner();
+  const [videoOutput, setVideoOutput] = useState<VideoOutput>(loadOutput);
   const player = usePlayer(job?.file ?? null);
   const dubber = useDubber();
   /** Play and export the dub instead of the original sound, once there is one. */
@@ -572,6 +575,26 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, job?.recording, liveWaiting, stopLive, editable, showFind]);
 
+  const sourceInfo = useSourceInfo(job?.file ?? null);
+  const changeOutput = (o: VideoOutput) => {
+    setVideoOutput(o);
+    saveOutput(o);
+    if (burner.state.status === "done" || burner.state.status === "error")
+      burner.reset();
+  };
+  const burnVideo = () => {
+    if (!job?.file) return;
+    const out = effectiveOutput(videoOutput, sourceInfo);
+    const resolution = sourceInfo && resolutionOf(out, sourceInfo);
+    const encode = {
+      codec: out.codec,
+      bitrate: sourceInfo ? videoBitrate(out, sourceInfo) : null,
+      encoder: resolution?.encoders[out.codec] ?? null,
+      size: resolution && { width: resolution.width, height: resolution.height },
+    };
+    burner.burn(job.file, words, settings, job.bands, encode, dubbing?.clips);
+  };
+
   const changeSettings = (s: CaptionSettings) => {
     setSettings(s);
     if (burner.state.status === "done" || burner.state.status === "error")
@@ -693,11 +716,12 @@ export function App() {
             isVideo={player.isVideo}
             canBurn={!!job.file}
             burn={burner.state}
-            onBurn={() =>
-              job.file &&
-              burner.burn(job.file, words, settings, job.bands, dubbing?.clips)
-            }
+            output={videoOutput}
+            onOutput={changeOutput}
+            source={sourceInfo}
+            onBurn={burnVideo}
             onCancelBurn={burner.cancel}
+            onResetBurn={burner.reset}
           />
         )}
         <ModelMenu

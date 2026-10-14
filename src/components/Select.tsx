@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { IconCheck, IconUpDown } from "./icons";
 
 // Building blocks for option renderings (an option title turns white once selected).
@@ -15,8 +16,9 @@ export interface Option<T extends string> {
 
 /**
  * Dropdown whose options preview themselves (fonts in their own typeface,
- * styles as tiny renderings). The list opens in a fixed layer so the
- * scrolling inspector never clips it. Keyboard: arrows, Home/End, Enter,
+ * styles as tiny renderings). The list opens in a fixed layer on the body,
+ * so neither the scrolling inspector nor a blurred menu panel (which would
+ * become its containing block) moves or clips it. Keyboard: arrows, Home/End, Enter,
  * Escape, and type-to-jump.
  */
 export function Select<T extends string>({
@@ -103,6 +105,8 @@ export function Select<T extends string>({
     else if (e.key === "End") setActive(n - 1);
     else if (e.key === "Enter" || e.key === " ") choose(active);
     else if (e.key === "Escape" || e.key === "Tab") {
+      // Escape closes the list only, not a menu around it.
+      if (e.key === "Escape") e.stopPropagation();
       setOpen(false);
       if (e.key === "Escape") button.current?.focus();
       if (e.key === "Tab") return;
@@ -144,41 +148,45 @@ export function Select<T extends string>({
           <IconUpDown size={14} />
         </span>
       </button>
-      {open && pos && (
-        <ul
-          ref={list}
-          id={id}
-          role="listbox"
-          tabIndex={-1}
-          aria-label={label}
-          aria-activedescendant={`${id}-${active}`}
-          className="fixed z-50 m-0 list-none overflow-auto rounded-lg border border-[#363e48] bg-[#20252b] p-1 shadow-[0_16px_36px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.05)] outline-none backdrop-blur-[12px] [scrollbar-width:thin]"
-          style={{
-            left: pos.left,
-            width: pos.width,
-            maxHeight: pos.maxHeight,
-            ...(pos.up ? { bottom: window.innerHeight - pos.top } : { top: pos.top }),
-          }}
-          onKeyDown={onListKey}
-        >
-          {options.map((o, i) => (
-            <li
-              key={o.value}
-              id={`${id}-${i}`}
-              role="option"
-              aria-selected={i === selected}
-              className={`group/option flex items-center gap-2 rounded-ui-sm py-1.5 pr-1.5 pl-2 ${i === active ? "bg-cini-wash" : ""}`}
-              onPointerMove={() => setActive(i)}
-              onClick={() => choose(i)}
-            >
-              <span className="min-w-0 flex-1">{render(o, true)}</span>
-              <span className="grid w-4 flex-none place-items-center text-wave-played" aria-hidden>
-                {i === selected && <IconCheck size={14} />}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open &&
+        pos &&
+        createPortal(
+          <ul
+            data-floating
+            ref={list}
+            id={id}
+            role="listbox"
+            tabIndex={-1}
+            aria-label={label}
+            aria-activedescendant={`${id}-${active}`}
+            className="fixed z-50 m-0 list-none overflow-auto rounded-lg border border-[#363e48] bg-[#20252b] p-1 shadow-[0_16px_36px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.05)] outline-none backdrop-blur-[12px] [scrollbar-width:thin]"
+            style={{
+              left: pos.left,
+              width: pos.width,
+              maxHeight: pos.maxHeight,
+              ...(pos.up ? { bottom: window.innerHeight - pos.top } : { top: pos.top }),
+            }}
+            onKeyDown={onListKey}
+          >
+            {options.map((o, i) => (
+              <li
+                key={o.value}
+                id={`${id}-${i}`}
+                role="option"
+                aria-selected={i === selected}
+                className={`group/option flex items-center gap-2 rounded-ui-sm py-1.5 pr-1.5 pl-2 ${i === active ? "bg-cini-wash" : ""}`}
+                onPointerMove={() => setActive(i)}
+                onClick={() => choose(i)}
+              >
+                <span className="min-w-0 flex-1">{render(o, true)}</span>
+                <span className="grid w-4 flex-none place-items-center text-wave-played" aria-hidden>
+                  {i === selected && <IconCheck size={14} />}
+                </span>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </>
   );
 }

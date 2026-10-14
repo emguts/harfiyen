@@ -81,9 +81,12 @@ konuşurken de canlı çalışır.
 ### Görüntü ve dışa aktarma
 
 - WebGPU oynatıcı: önizlemede gördüğün, dışa aktarılan videonun birebir aynısıdır.
-- Altyazılı MP4: kareler ekran kartında birleştirilir, video donanımla H.264 kodlanır, ses kopyalanır.
+- Altyazılı MP4: kareler ekran kartında birleştirilir, video H.264 ya da HEVC olarak kodlanır, ses kopyalanır.
+  Tarayıcı destekliyorsa ekran kartı, desteklemiyorsa işlemci kullanılır; menü hangisinin kullanılacağını gösterir.
+- Dışa aktarırken çözünürlük (kaynakla aynı ya da daha küçük: 1080p, 720p) ve kalite seçilir; tahmini dosya
+  boyutu seçim yapılırken görünür.
 - Ses dosyaları ve kayıtlar için **aura**: sesle hareket eden yumuşak bir gradyan ve sakin bir ses
-  görselleştirmesi. Bunlar da altyazılı 1080p MP4 olarak dışa aktarılabilir.
+  görselleştirmesi. Bunlar da altyazılı MP4 olarak 720p, 1080p ya da 4K dışa aktarılabilir.
 - SRT, WebVTT, düz metin, kelime zamanlı JSON ve panoya kopyalama.
 
 ### Seslendirme
@@ -232,8 +235,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [ ] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
 - [x] **Noktalama için Türkçe testleri:** özel ad ekleri, birleşik adlar, soru cümleleri ve tekrar uygulama;
       Vikipedi metniyle kesme işareti, büyük harf ve noktalama ölçümü.
-- [ ] **Sayıları rakama çevirme seçeneği:** "bin dokuz yüz yirmi üç" → "1923";
-      tarih, saat ve para ifadeleri için açılıp kapatılabilen dönüşüm.
+- [x] **Sayıları rakama çevirme seçeneği:** "bin dokuz yüz yirmi üç" → "1923";
+      kurala göre, hepsi rakamla ya da dokunma; tarih ve saat her zaman rakamla.
 - [x] **Transkriptte bul ve değiştir:** yanlış tanınan bir kelimeyi veya ismi bütün kayıtta düzeltme.
 - [x] **SRT / VTT içe aktarma:** hazır altyazıyı açıp stillendirme ve videoya yazma.
 
