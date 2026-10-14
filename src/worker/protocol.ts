@@ -45,6 +45,8 @@ export type FromWorker =
       peaks: Float32Array;
       /** Aura bands (low, mid, high interleaved, BAND_RATE per second), appended. */
       bands: Float32Array;
+      /** Speech loudness (one log-mel value per band frame), appended; for "Sesle vurgula". */
+      loudness: Float32Array;
       speed: number;
     }
   | {
@@ -54,6 +56,7 @@ export type FromWorker =
       decoded: number;
       elapsed: number;
       bands: Float32Array;
+      loudness: Float32Array;
       timing: { encoder: number; search: number; chunks: number };
     }
   | { type: "cancelled"; jobId: number }

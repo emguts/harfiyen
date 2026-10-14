@@ -152,6 +152,13 @@ export function CaptionStudio({
             )}
           />
         </RowGroup>
+        <Row>
+          <RowLabel>Sesle vurgula</RowLabel>
+          <Switch checked={settings.voiceEmphasis} onChange={(e) => set({ voiceEmphasis: e.target.checked })} />
+        </Row>
+        {settings.voiceEmphasis && (
+          <Hint>Çevresindekilerden daha yüksek sesle söylenen kelimeler büyük ve vurgu renginde yazılır.</Hint>
+        )}
       </Section>
 
       <Section title="Yazı">
@@ -257,7 +264,7 @@ export function CaptionStudio({
 
       <Section title="Renk">
         <Swatches label="Yazı" colors={TEXT_COLORS} value={settings.textColor} onChange={(textColor) => set({ textColor })} />
-        {preset.effect !== "none" && (
+        {(preset.effect !== "none" || settings.voiceEmphasis) && (
           <Swatches label="Vurgu" colors={ACCENT_COLORS} value={settings.accentColor} onChange={(accentColor) => set({ accentColor })} />
         )}
       </Section>

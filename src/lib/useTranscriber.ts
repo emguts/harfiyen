@@ -41,6 +41,8 @@ export interface Job {
   peaks: Float32Array;
   /** Aura band levels (low, mid, high interleaved at BAND_RATE). */
   bands: Float32Array;
+  /** Speech loudness at BAND_RATE, for "Sesle vurgula"; empty in projects saved before it. */
+  loudness: Float32Array;
   speed: number;
   elapsed: number | null;
   error: string | null;
@@ -165,6 +167,7 @@ export function useTranscriber() {
             tentative: m.tentative,
             peaks: append(j.peaks, m.peaks),
             bands: append(j.bands, m.bands),
+            loudness: append(j.loudness, m.loudness),
             speed: m.speed,
           }));
           break;
@@ -182,6 +185,7 @@ export function useTranscriber() {
             tentative: [],
             elapsed: m.elapsed,
             bands: append(j.bands, m.bands),
+            loudness: append(j.loudness, m.loudness),
             speed: m.decoded / m.elapsed,
           }));
           break;
@@ -302,6 +306,7 @@ export function useTranscriber() {
         tentative: [],
         peaks: new Float32Array(0),
         bands: new Float32Array(0),
+        loudness: new Float32Array(0),
         speed: 0,
         elapsed: null,
         error: null,
@@ -315,7 +320,7 @@ export function useTranscriber() {
 
   /** Open a saved transcript as a finished job; `file` may come later (attach). */
   const load = useCallback(
-    (p: Pick<Job, "file" | "model" | "imported" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands">) => {
+    (p: Pick<Job, "file" | "model" | "imported" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands" | "loudness">) => {
       const prev = jobRef.current;
       if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
       cancelLiveWait();
@@ -392,6 +397,7 @@ export function useTranscriber() {
         tentative: [],
         peaks: new Float32Array(0),
         bands: new Float32Array(0),
+        loudness: new Float32Array(0),
         speed: 0,
         elapsed: null,
         error: null,

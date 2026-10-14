@@ -24,6 +24,7 @@ export class BandTracker {
   private count = 0;
   private level = [0, 0, 0];
   private out: number[] = [];
+  private loud: number[] = [];
 
   push(f: Float32Array) {
     for (let b = 0; b < 3; b++) {
@@ -33,6 +34,8 @@ export class BandTracker {
       this.acc[b] += m / (hi - lo);
     }
     if (++this.count < 100 / BAND_RATE) return;
+    // The speech band as it is: the levels below stop at loud speech.
+    this.loud.push(this.acc[1] / this.count);
     for (let b = 0; b < 3; b++) {
       // Log-mel means run from ~-16 (digital silence) to ~0 (loud speech).
       const v = Math.min(1, Math.max(0, (this.acc[b] / this.count + 11) / 10));
@@ -48,6 +51,13 @@ export class BandTracker {
   take(): Float32Array {
     const r = Float32Array.from(this.out);
     this.out = [];
+    return r;
+  }
+
+  /** Loudness frames (the speech band's log-mel mean, unsmoothed and unclipped) since the last call. */
+  takeLoudness(): Float32Array {
+    const r = Float32Array.from(this.loud);
+    this.loud = [];
     return r;
   }
 }

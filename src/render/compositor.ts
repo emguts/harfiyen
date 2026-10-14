@@ -206,11 +206,19 @@ class GpuCompositor implements Compositor {
     if (glass && caption?.panel) {
       // The picture is done: blur it, lay the panel on, then go on drawing the text.
       pass.end();
-      const { rect, w, h } = this.placed;
-      const sx = this.canvas.width / caption.frameW;
-      const sy = this.canvas.height / caption.frameH;
-      const radius = caption.panel.radius * caption.scale * Math.min(sx, sy);
-      glass.draw(enc, view, this.canvas.width, this.canvas.height, rect, w, h, Math.min(radius, w / 2, h / 2));
+      const { width: W, height: H } = this.canvas;
+      const { panel, scale, frameW, frameH } = caption;
+      const sx = W / frameW;
+      const sy = H / frameH;
+      // The panel sits inside the image's clear margin.
+      const ix = panel.insetX * scale * sx;
+      const iy = panel.insetY * scale * sy;
+      const { rect: r } = this.placed;
+      const rect = new Float32Array([r[0] + (ix / W) * 2, r[1] + (iy / H) * 2, r[2] - (ix / W) * 2, r[3] - (iy / H) * 2]);
+      const w = this.placed.w - ix * 2;
+      const h = this.placed.h - iy * 2;
+      const radius = panel.radius * scale * Math.min(sx, sy);
+      glass.draw(enc, view, W, H, rect, w, h, Math.min(radius, w / 2, h / 2));
       pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
     }
     if (overlayBind) {
@@ -306,7 +314,11 @@ class CanvasCompositor implements Compositor {
       const h = c.h * c.scale * sy;
       const x = (c.x + c.w / 2) * sx - w / 2;
       const y = (c.y + c.h / 2) * sy - h / 2;
-      if (c.panel) this.drawGlass(picture, x, y, w, h, c.panel.radius * c.scale * Math.min(sx, sy));
+      if (c.panel) {
+        const ix = c.panel.insetX * c.scale * sx;
+        const iy = c.panel.insetY * c.scale * sy;
+        this.drawGlass(picture, x + ix, y + iy, w - ix * 2, h - iy * 2, c.panel.radius * c.scale * Math.min(sx, sy));
+      }
       this.g.drawImage(c.source, x, y, w, h);
     }
   }

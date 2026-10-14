@@ -2,7 +2,18 @@ import type { CueRules } from "../lib/cues";
 import type { AuraPaletteId } from "../render/aura";
 import type { FontId } from "./fonts";
 
-export type PresetId = "klasik" | "karaoke" | "akis" | "odak" | "vurgu" | "pop" | "tek" | "sade" | "cam";
+export type PresetId =
+  | "klasik"
+  | "karaoke"
+  | "dolgu"
+  | "akis"
+  | "odak"
+  | "vurgu"
+  | "pop"
+  | "tek"
+  | "netles"
+  | "sade"
+  | "cam";
 
 /** Families group the style picker: calm lines, word-by-word highlights, big words. */
 export type PresetFamily = "sakin" | "vurgulu" | "iri";
@@ -15,7 +26,8 @@ export const FAMILIES: { id: PresetFamily; label: string }[] = [
 
 /** How each word reacts while it is being spoken. */
 /** "reveal" leaves words out until they are spoken; the line keeps its layout. */
-export type WordEffect = "none" | "karaoke" | "reveal" | "box" | "color";
+/** "fill" paints the accent across each word, left to right, while it is spoken. */
+export type WordEffect = "none" | "karaoke" | "fill" | "reveal" | "box" | "color";
 
 export interface CaptionSettings {
   preset: PresetId;
@@ -30,6 +42,8 @@ export interface CaptionSettings {
   background: "box" | "outline" | "shadow" | "glass";
   /** Background for audio-only projects. */
   aura: AuraPaletteId;
+  /** "Sesle vurgula": words said louder than those around them are larger and in the accent colour. */
+  voiceEmphasis: boolean;
 }
 
 export interface Preset {
@@ -43,9 +57,9 @@ export interface Preset {
   effect: WordEffect;
   /** Scale-in when a new group appears. */
   pop: boolean;
-  /** How each word comes in as it is spoken: fade and grow, or out of blur into focus. */
-  wordIn?: "grow" | "focus";
-  defaults: Omit<CaptionSettings, "preset" | "aura">;
+  /** How each word comes in as it is spoken: fade and grow, or out of blur (rising, or shrinking into place). */
+  wordIn?: "grow" | "focus" | "sharpen";
+  defaults: Omit<CaptionSettings, "preset" | "aura" | "voiceEmphasis">;
 }
 
 export const PRESETS: Preset[] = [
@@ -76,6 +90,25 @@ export const PRESETS: Preset[] = [
     grouping: { gap: 0.8, maxDuration: 5, maxChars: 56 },
     maxLines: 2,
     effect: "karaoke",
+    pop: false,
+    defaults: {
+      font: "gsflex",
+      size: 0.055,
+      position: "bottom",
+      textColor: "#ffffff",
+      accentColor: "#ffd60a",
+      uppercase: false,
+      background: "outline",
+    },
+  },
+  {
+    id: "dolgu",
+    label: "Dolgu",
+    note: "Söylenen kelime, konuşma hızında soldan sağa renkle dolar.",
+    family: "vurgulu",
+    grouping: { gap: 0.8, maxDuration: 5, maxChars: 56 },
+    maxLines: 2,
+    effect: "fill",
     pop: false,
     defaults: {
       font: "gsflex",
@@ -185,6 +218,26 @@ export const PRESETS: Preset[] = [
     },
   },
   {
+    id: "netles",
+    label: "Netleş",
+    note: "Ortada tek iri kelime, bulanıktan netleşerek yerine oturur.",
+    family: "iri",
+    grouping: { gap: 0.6, maxDuration: 2, maxChars: 40, maxWords: 1, minDuration: 0.25 },
+    maxLines: 2,
+    effect: "none",
+    pop: false,
+    wordIn: "sharpen",
+    defaults: {
+      font: "gsflex",
+      size: 0.11,
+      position: "middle",
+      textColor: "#ffffff",
+      accentColor: "#ffd60a",
+      uppercase: true,
+      background: "shadow",
+    },
+  },
+  {
     id: "sade",
     label: "Sade",
     note: "Kutusuz, hafif gölgeli, sakin.",
@@ -230,6 +283,7 @@ export const presetById = (id: PresetId) => PRESETS.find((p) => p.id === id)!;
 export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettings => ({
   preset: id,
   aura: prev?.aura ?? "cini",
+  voiceEmphasis: prev?.voiceEmphasis ?? false,
   ...presetById(id).defaults,
 });
 

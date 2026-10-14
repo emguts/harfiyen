@@ -74,7 +74,13 @@ function StyleCard({
     const css = c.clientWidth / FRAME.w;
     setPanel(
       img.panel
-        ? { left: img.x * css, top: img.y * css, width: img.w * css, height: img.h * css, radius: img.panel.radius * css }
+        ? {
+            left: (img.x + img.panel.insetX) * css,
+            top: (img.y + img.panel.insetY) * css,
+            width: (img.w - img.panel.insetX * 2) * css,
+            height: (img.h - img.panel.insetY * 2) * css,
+            radius: img.panel.radius * css,
+          }
         : null,
     );
     // Only depends on the preset and font readiness.

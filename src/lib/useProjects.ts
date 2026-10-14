@@ -85,6 +85,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
         words: [],
         peaks: job.peaks,
         bands: job.bands,
+        loudness: job.loudness,
         settings,
         media: null,
         storage: "none",
@@ -103,6 +104,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
       words: job.words,
       peaks: job.peaks,
       bands: job.bands,
+      loudness: job.loudness,
       settings,
     });
     const project = p;

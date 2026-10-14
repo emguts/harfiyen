@@ -30,6 +30,7 @@ export function Viewer({
   liveTime = null,
   liveLevels,
   bands,
+  loudness,
   children,
   notice,
 }: {
@@ -37,6 +38,8 @@ export function Viewer({
   liveLevels?: React.RefObject<AuraLevels | null>;
   /** Aura band levels, for audio-only projects. */
   bands: Float32Array;
+  /** Speech loudness, for "Sesle vurgula". */
+  loudness: Float32Array;
   player: Player;
   words: Word[];
   settings: CaptionSettings;
@@ -101,10 +104,11 @@ export function Viewer({
   }, [el, isVideo]);
 
   const captions = useMemo(
-    () => (words.length ? new CaptionRenderer(words, settings, frame.w, frame.h) : null),
-    // fontTick: lay out again once the font file has loaded.
+    () =>
+      words.length ? new CaptionRenderer(words, settings, frame.w, frame.h, settings.voiceEmphasis ? loudness : null) : null,
+    // fontTick: lay out again once the font file has loaded. Loudness only matters with voiceEmphasis.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, settings, frame, fontTick],
+    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null],
   );
 
   // The loop reads these through refs, so new words (every progress update)

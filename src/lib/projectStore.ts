@@ -37,6 +37,8 @@ export interface Project {
   words: Word[];
   peaks: Float32Array;
   bands: Float32Array;
+  /** Missing in projects saved before "Sesle vurgula". */
+  loudness?: Float32Array;
   settings: CaptionSettings;
   media: MediaInfo | null;
   storage: MediaStorage;
@@ -239,6 +241,7 @@ export function projectToFile(p: Project): string {
     words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
     peaks: toBase64(p.peaks),
     bands: toBase64(p.bands),
+    ...(p.loudness?.length && { loudness: toBase64(p.loudness) }),
   });
 }
 
@@ -278,6 +281,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     words,
     peaks: fromBase64(d.peaks),
     bands: fromBase64(d.bands),
+    loudness: fromBase64(d.loudness),
     settings: { ...defaults, ...(d.settings as Partial<CaptionSettings>) },
     media: media && typeof media.name === "string" && typeof media.size === "number" ? media : null,
     storage: "none",

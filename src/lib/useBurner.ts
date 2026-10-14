@@ -111,6 +111,7 @@ export function useBurner() {
       words: Word[],
       settings: CaptionSettings,
       bands: Float32Array,
+      loudness: Float32Array,
       encode: Encode,
       dub: DubClip[] | null,
       name: string,
@@ -122,7 +123,7 @@ export function useBurner() {
       startedAt.current = performance.now();
       setState({ status: "running", progress: 0, fps: 0, remaining: null });
       const userFont = userFontById(settings.font);
-      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, userFont, bands, dub, encode, handle };
+      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, userFont, bands, loudness, dub, encode, handle };
       ensureWorker().postMessage(msg);
     },
     [ensureWorker],

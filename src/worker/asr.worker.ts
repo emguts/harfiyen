@@ -268,6 +268,7 @@ class Job {
       decoded: this.rec.decodedSeconds,
       elapsed,
       bands: this.bands.take(),
+      loudness: this.bands.takeLoudness(),
       timing: this.rec.timing,
     });
   }
@@ -292,6 +293,7 @@ class Job {
     const peaks = Float32Array.from(this.peaks);
     this.peaks = [];
     const bands = this.bands.take();
+    const loudness = this.bands.takeLoudness();
     const decoded = this.rec.decodedSeconds;
     post(
       {
@@ -302,9 +304,10 @@ class Job {
         tentative: this.rec.tentative(),
         peaks,
         bands,
+        loudness,
         speed: decoded / ((now - this.started) / 1000),
       },
-      [peaks.buffer, bands.buffer],
+      [peaks.buffer, bands.buffer, loudness.buffer],
     );
   }
 }

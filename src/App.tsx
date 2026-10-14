@@ -244,6 +244,7 @@ export function App() {
           words: p.words,
           peaks: p.peaks,
           bands: p.bands,
+          loudness: p.loudness ?? EMPTY_BANDS,
         });
         punctuated.current.add(jobId);
         bind(jobId, p, file);
@@ -293,6 +294,7 @@ export function App() {
         words: subs,
         peaks: media?.peaks ?? new Float32Array(0),
         bands: media?.bands ?? EMPTY_BANDS,
+        loudness: media?.loudness ?? EMPTY_BANDS,
       });
       punctuated.current.add(jobId);
     },
@@ -602,7 +604,7 @@ export function App() {
       encoder: resolution?.encoders[out.codec] ?? null,
       size: resolution && { width: resolution.width, height: resolution.height },
     };
-    void burner.burn(job.file, words, settings, job.bands, encode, dubbing?.clips ?? null, `${name}.altyazili.mp4`);
+    void burner.burn(job.file, words, settings, job.bands, job.loudness, encode, dubbing?.clips ?? null, `${name}.altyazili.mp4`);
   };
 
   const changeSettings = (s: CaptionSettings) => {
@@ -859,6 +861,7 @@ export function App() {
             settings={settings}
             liveTime={job?.live && !job.file ? job.decoded : null}
             bands={job?.bands ?? EMPTY_BANDS}
+            loudness={job?.loudness ?? EMPTY_BANDS}
             liveLevels={liveLevels}
             notice={
               badCodec &&

@@ -5,6 +5,7 @@
 import type { Word } from "../engine";
 import { buildCues, type Cue } from "../lib/cues";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
+import { loudWords } from "./emphasis";
 import { captionStack, fontById } from "./fonts";
 import { presetById, type CaptionSettings, type Preset } from "./style";
 
@@ -18,8 +19,11 @@ export interface CaptionImage {
   w: number;
   h: number;
   scale: number;
-  /** Frosted glass behind the whole image: corner radius in caption pixels. */
-  panel: { radius: number } | null;
+  /**
+   * Frosted glass behind the caption: corner radius, and how far in from the
+   * image's edges it starts (the image has room around it for blur), in caption pixels.
+   */
+  panel: { radius: number; insetX: number; insetY: number } | null;
   /** Frame size the caption was laid out for. */
   frameW: number;
   frameH: number;
@@ -29,10 +33,12 @@ const POP_IN = 0.16;
 /** A word grows in over WORD_IN seconds (wordIn presets), redrawn in WORD_STEPS steps. */
 const WORD_IN = 0.15;
 const WORD_STEPS = 12;
-/** A word comes into focus over FOCUS_IN seconds ("focus" presets), redrawn every frame meanwhile. */
-const FOCUS_IN = 0.3;
-/** Redraws per second while focusing: above any frame rate, so every frame differs. */
-const FOCUS_RATE = 240;
+/** Seconds a word takes to come out of blur ("focus" drifts up, "sharpen" shrinks into place). */
+const FOCUS_IN = { focus: 0.3, sharpen: 0.35 };
+/** Redraws per second while something moves: above any frame rate, so every frame differs. */
+const LIVE_RATE = 240;
+/** Size of a word said loudly ("Sesle vurgula"), relative to the others. */
+const LOUD = 1.3;
 const easeOutBack = (x: number) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
 
 /** Readable text on top of an accent colour. */
@@ -51,17 +57,22 @@ export class CaptionRenderer {
   private groups: Cue[];
   private canvas = new OffscreenCanvas(8, 8);
   private cached: CaptionImage | null = null;
+  /** Words said louder than those around them, drawn larger. */
+  private loud: Set<Word>;
 
   constructor(
     words: Word[],
     private s: CaptionSettings,
     private W: number,
     private H: number,
+    /** Speech loudness (BandTracker.takeLoudness), for "Sesle vurgula"; null without it. */
+    loudness: Float32Array | null = null,
     /** Language of the words; decides how they are uppercased. */
     private lang: string = TRANSCRIPT_LANG,
   ) {
     this.preset = presetById(s.preset);
     this.groups = buildCues(words, this.preset.grouping);
+    this.loud = s.voiceEmphasis && loudness ? loudWords(words, loudness) : new Set();
   }
 
   /** Caption for time t (seconds), or null when nothing is on screen. */
@@ -76,13 +87,17 @@ export class CaptionRenderer {
       this.preset.wordIn === "grow"
         ? Math.min(WORD_STEPS, Math.floor(((t - g.words[active].start) / WORD_IN) * WORD_STEPS))
         : WORD_STEPS;
-    // Focusing words (several when speech is quick) change on every frame.
-    const focusing =
-      this.preset.wordIn === "focus" && g.words.some((w) => t >= w.start && t - w.start < FOCUS_IN)
-        ? Math.floor(t * FOCUS_RATE)
-        : -1;
+    // Words coming into focus (several when speech is quick) and a filling
+    // word change on every frame.
+    const { wordIn, effect } = this.preset;
+    const moving =
+      (wordIn === "focus" || wordIn === "sharpen"
+        ? g.words.some((w) => t >= w.start && t - w.start < FOCUS_IN[wordIn])
+        : false) ||
+      (effect === "fill" && g.words.some((w) => t >= w.start && t < w.end));
+    const live = moving ? Math.floor(t * LIVE_RATE) : -1;
     // Effects without per-word state draw the same pixels for the whole group.
-    const key = `${this.id}|${gi}|${this.preset.effect === "none" ? 0 : active}|${step}|${focusing}`;
+    const key = `${this.id}|${gi}|${effect === "none" ? 0 : active}|${step}|${live}`;
     if (this.cached?.key !== key) this.cached = this.draw(g, active, step / WORD_STEPS, t, key);
     const since = t - g.start;
     const scale = this.preset.pop && since < POP_IN ? 0.78 + 0.22 * easeOutBack(Math.max(0, since) / POP_IN) : 1;
@@ -107,19 +122,21 @@ export class CaptionRenderer {
     return t < until ? i : -1;
   }
 
-  /** grow: how far the active word has grown in, 0..1 (1 without wordIn); t: the time, for focusing words. */
+  /** grow: how far the active word has grown in, 0..1 (1 without wordIn); t: the time, for words that move. */
   private draw(g: Cue, active: number, grow: number, t: number, key: string): CaptionImage {
     const { s, W, H, preset } = this;
     const font = fontById(s.font);
     const upper = s.uppercase || (font.capsOnly && hasDottedI(this.lang));
     const texts = g.words.map((w) => (upper ? w.text.toLocaleUpperCase(this.lang) : w.text));
+    // Each word's size relative to px (loud words are larger).
+    const size = g.words.map((w) => (this.loud.has(w) ? LOUD : 1));
     const css = (size: number) => `${font.weight} ${size}px ${captionStack(font.id)}`;
     const ctx = this.canvas.getContext("2d")!;
     let px = Math.max(10, Math.round(Math.min(W, H) * s.size));
     // Lines wrap between words only: shrink until the longest word fits the
     // frame (padding scales with the font, so one step is enough).
     ctx.font = css(px);
-    const longest = Math.max(...texts.map((t) => ctx.measureText(t).width));
+    const longest = Math.max(...texts.map((t, i) => ctx.measureText(t).width * size[i]));
     // Both sides' padX, stroke and word box, in units of px (see below).
     const pads =
       (s.background === "box" ? 1 : s.background === "glass" ? 1.2 : 0.7) +
@@ -130,7 +147,8 @@ export class CaptionRenderer {
     const fontCss = css(px);
     ctx.font = fontCss;
 
-    const widths = texts.map((t) => ctx.measureText(t).width);
+    // Text widths grow with the font size, so larger words are measured at px and scaled.
+    const widths = texts.map((t, i) => ctx.measureText(t).width * size[i]);
     const space = ctx.measureText(" ").width;
     const stroke = s.background === "outline" ? Math.max(2, px * 0.12) : 0;
     const wordPad = preset.effect === "box" ? px * 0.16 : 0;
@@ -154,11 +172,21 @@ export class CaptionRenderer {
       }
     });
     const lineWidths = lines.map((l) => l.reduce((a, i, k) => a + widths[i] + wordPad * 2 + (k ? space : 0), 0));
+    // A line with a larger word is taller.
+    const lineHs = lines.map((l) => Math.round(lineH * Math.max(...l.map((i) => size[i]))));
+    const lineTops = lineHs.map((_, li) => padY + lineHs.slice(0, li).reduce((a, v) => a + v, 0));
     const w = Math.ceil(Math.max(...lineWidths) + padX * 2);
-    const h = Math.ceil(lines.length * lineH + padY * 2);
+    const h = Math.ceil(lineHs.reduce((a, v) => a + v, 0) + padY * 2);
+    // Clear room around the caption so blur and growth are not cut at the
+    // image's edges; the caption itself (and its box) stays w x h.
+    const blurs = preset.wordIn === "focus" || preset.wordIn === "sharpen";
+    const grows = preset.wordIn === "sharpen" ? 0.15 : 0;
+    const bleedX = blurs ? Math.ceil(px * 0.6 + (Math.max(...lineWidths) * grows) / 2) : 0;
+    const bleedY = blurs ? Math.ceil(px * 0.6 + (Math.max(...lineHs) * grows) / 2) : 0;
 
-    this.canvas.width = w;
-    this.canvas.height = h;
+    this.canvas.width = w + bleedX * 2;
+    this.canvas.height = h + bleedY * 2;
+    ctx.translate(bleedX, bleedY);
     ctx.font = fontCss; // resizing resets the context
     ctx.textBaseline = "middle";
     ctx.lineJoin = "round";
@@ -172,7 +200,8 @@ export class CaptionRenderer {
 
     lines.forEach((line, li) => {
       let x = (w - lineWidths[li]) / 2;
-      const cy = padY + lineH * (li + 0.5);
+      const lh = lineHs[li];
+      const cy = lineTops[li] + lh / 2;
       for (const i of line) {
         if (preset.effect === "reveal" && i > active) {
           x += widths[i] + wordPad * 2 + space;
@@ -182,6 +211,9 @@ export class CaptionRenderer {
         let color = s.textColor;
         ctx.globalAlpha = preset.effect === "karaoke" && i > active ? 0.45 : 1;
         ctx.save();
+        if (size[i] !== 1) ctx.font = css(px * size[i]);
+        // A loud word takes the accent; with "fill" the accent is the fill, so only its size changes.
+        if (size[i] !== 1 && preset.effect !== "fill") color = s.accentColor;
         if (isActive && grow < 1) {
           const e = 1 - Math.pow(1 - grow, 3);
           const k = 0.8 + 0.2 * e;
@@ -191,14 +223,22 @@ export class CaptionRenderer {
           ctx.scale(k, k);
           ctx.translate(-cx, -cy);
         }
-        if (preset.wordIn === "focus") {
-          // Blurred, faint and a little low at first; sharp in place after FOCUS_IN.
-          const p = Math.min(1, Math.max(0, (t - g.words[i].start) / FOCUS_IN));
+        if (preset.wordIn === "focus" || preset.wordIn === "sharpen") {
+          // Blurred and faint at first, sharp in place after FOCUS_IN: "focus"
+          // rises a little, "sharpen" starts larger and settles.
+          const p = Math.min(1, Math.max(0, (t - g.words[i].start) / FOCUS_IN[preset.wordIn]));
           if (p < 1) {
             const e = 1 - Math.pow(1 - p, 3);
             ctx.globalAlpha *= e;
-            ctx.translate(0, (1 - e) * px * 0.3);
-            const blur = (1 - e) * px * 0.35;
+            if (preset.wordIn === "focus") ctx.translate(0, (1 - e) * px * 0.3);
+            else {
+              const k = 1 + grows * (1 - e);
+              const cx = x + wordPad + widths[i] / 2;
+              ctx.translate(cx, cy);
+              ctx.scale(k, k);
+              ctx.translate(-cx, -cy);
+            }
+            const blur = (1 - e) * px * (preset.wordIn === "focus" ? 0.35 : 0.5);
             if (blur > 0.05) ctx.filter = `blur(${blur.toFixed(2)}px)`;
           }
         }
@@ -206,7 +246,7 @@ export class CaptionRenderer {
         if (preset.effect === "box" && isActive) {
           ctx.fillStyle = s.accentColor;
           ctx.beginPath();
-          ctx.roundRect(x, cy - lineH * 0.47, widths[i] + wordPad * 2, lineH * 0.94, px * 0.18);
+          ctx.roundRect(x, cy - lh * 0.47, widths[i] + wordPad * 2, lh * 0.94, px * 0.18);
           ctx.fill();
           color = contrastText(s.accentColor);
         } else if (preset.effect === "color" && isActive) {
@@ -217,7 +257,7 @@ export class CaptionRenderer {
         const boxed = preset.effect === "box" && isActive;
         if (s.background === "outline" && !boxed) {
           ctx.strokeStyle = "rgba(0, 0, 0, 0.92)";
-          ctx.lineWidth = stroke * 2;
+          ctx.lineWidth = stroke * 2 * size[i];
           ctx.strokeText(texts[i], tx, cy);
         }
         if (s.background === "shadow") {
@@ -232,6 +272,21 @@ export class CaptionRenderer {
         }
         ctx.fillStyle = color;
         ctx.fillText(texts[i], tx, cy);
+        if (preset.effect === "fill" && i <= active) {
+          // The accent fills the word left to right while it is spoken.
+          const wd = g.words[i];
+          const p = wd.end > wd.start ? Math.min(1, Math.max(0, (t - wd.start) / (wd.end - wd.start))) : 1;
+          if (p > 0) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(tx, cy - lh, widths[i] * p, lh * 2);
+            ctx.clip();
+            ctx.shadowColor = "transparent"; // the white pass already cast it
+            ctx.fillStyle = s.accentColor;
+            ctx.fillText(texts[i], tx, cy);
+            ctx.restore();
+          }
+        }
         ctx.restore();
         x += widths[i] + wordPad * 2 + space;
       }
@@ -243,12 +298,12 @@ export class CaptionRenderer {
     return {
       source: this.canvas,
       key,
-      x: (W - w) / 2,
-      y,
-      w,
-      h,
+      x: (W - w) / 2 - bleedX,
+      y: y - bleedY,
+      w: w + bleedX * 2,
+      h: h + bleedY * 2,
       scale: 1,
-      panel: s.background === "glass" ? { radius: px * 0.32 } : null,
+      panel: s.background === "glass" ? { radius: px * 0.32, insetX: bleedX, insetY: bleedY } : null,
       frameW: W,
       frameH: H,
     };
