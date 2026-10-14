@@ -31,6 +31,7 @@ export function Viewer({
   liveLevels,
   bands,
   children,
+  notice,
 }: {
   /** Raw microphone levels while recording (updated in place). */
   liveLevels?: React.RefObject<AuraLevels | null>;
@@ -43,6 +44,8 @@ export function Viewer({
   liveTime?: number | null;
   /** Shown instead of the picture when no file is open. */
   children?: React.ReactNode;
+  /** Shown over the picture when it cannot be shown (a codec this browser cannot decode). */
+  notice?: React.ReactNode;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -277,6 +280,13 @@ export function Viewer({
         </>
       ) : (
         children
+      )}
+      {url && notice && (
+        <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">
+          <p className="m-0 max-w-[400px] rounded-ui border border-line bg-pane/95 px-4 py-3 text-center text-[13px] leading-[1.55] text-fg-2 shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+            {notice}
+          </p>
+        </div>
       )}
     </div>
   );

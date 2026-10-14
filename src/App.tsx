@@ -56,7 +56,15 @@ import { clock } from "./lib/format";
 import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { useSourceInfo } from "./lib/useSourceInfo";
-import { effectiveOutput, loadOutput, resolutionOf, saveOutput, videoBitrate, type VideoOutput } from "./lib/videoOutput";
+import {
+  effectiveOutput,
+  loadOutput,
+  resolutionOf,
+  saveOutput,
+  undecodable,
+  videoBitrate,
+  type VideoOutput,
+} from "./lib/videoOutput";
 import { usePlayer } from "./lib/usePlayer";
 import { DEFAULT_VOICE, sameVoice, useDubber, useDubPlayback, type Voice } from "./lib/useDubber";
 import { useProjects } from "./lib/useProjects";
@@ -576,6 +584,8 @@ export function App() {
   }, [undo, job?.recording, liveWaiting, stopLive, editable, showFind]);
 
   const sourceInfo = useSourceInfo(job?.file ?? null);
+  // A picture this browser cannot decode (AV1 in Safari without the hardware for it): said up front, not at export.
+  const badCodec = undecodable(sourceInfo);
   const changeOutput = (o: VideoOutput) => {
     setVideoOutput(o);
     saveOutput(o);
@@ -592,7 +602,7 @@ export function App() {
       encoder: resolution?.encoders[out.codec] ?? null,
       size: resolution && { width: resolution.width, height: resolution.height },
     };
-    burner.burn(job.file, words, settings, job.bands, encode, dubbing?.clips);
+    void burner.burn(job.file, words, settings, job.bands, encode, dubbing?.clips ?? null, `${name}.altyazili.mp4`);
   };
 
   const changeSettings = (s: CaptionSettings) => {
@@ -850,6 +860,10 @@ export function App() {
             liveTime={job?.live && !job.file ? job.decoded : null}
             bands={job?.bands ?? EMPTY_BANDS}
             liveLevels={liveLevels}
+            notice={
+              badCodec &&
+              `Bu video ${badCodec} ile kodlanmış ve bu tarayıcı onu oynatamıyor. Chrome'da açabilir ya da videoyu H.264 olarak kaydedip yükleyebilirsin. Yazıya döküm ve altyazı dosyaları bundan etkilenmez.`
+            }
           >
             {needsMedia ? (
               <Dropzone

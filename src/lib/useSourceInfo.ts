@@ -36,8 +36,9 @@ export function useSourceInfo(file: File | null): SourceInfo | null {
         const height = track ? track.displayHeight & ~1 : AUDIO_VIDEO.height;
         // A few thousand packets are enough for an average and stay quick on files without an index.
         const sizes = resolutionSizes(width, height, !!track);
-        const [videoStats, audioStats, resolutions] = await Promise.all([
+        const [videoStats, decodes, audioStats, resolutions] = await Promise.all([
           track?.computePacketStats(3000),
+          track?.canDecode().catch(() => false),
           audio?.computePacketStats(3000),
           Promise.all(
             sizes.map(async (r) => {
@@ -56,7 +57,8 @@ export function useSourceInfo(file: File | null): SourceInfo | null {
           // For video, packets per second is the frame rate.
           fps: videoStats?.averagePacketRate || AUDIO_VIDEO.fps,
           duration,
-          video: track && videoStats ? { bitrate: videoStats.averageBitrate, codec: track.codec } : null,
+          video:
+            track && videoStats ? { bitrate: videoStats.averageBitrate, codec: track.codec, decodes: !!decodes } : null,
           // Recordings and audio files are re-encoded to AAC at about 192 kbps.
           audioBitrate: track ? (audioStats?.averageBitrate ?? 0) : 192_000,
           resolutions,

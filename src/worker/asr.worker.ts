@@ -85,7 +85,7 @@ async function readConfig<T>(m: ModelInfo): Promise<T> {
 /** Model files plus the wasm runtime, with progress posted to the page. */
 function download(m: ModelInfo, sizes: Record<string, number>) {
   return fetchAll(
-    [...m.files.map((n) => ({ url: modelFileUrl(m, n), size: sizes[n] })), { url: ortWasmUrl, size: ORT_WASM_SIZE }],
+    [...m.files.map((n) => ({ url: modelFileUrl(m, n), size: sizes[n] })), { url: ortWasmUrl, size: ORT_WASM_SIZE, approx: true }],
     (loaded, total, fromCache) => post({ type: "download", loaded, total, fromCache }),
   );
 }

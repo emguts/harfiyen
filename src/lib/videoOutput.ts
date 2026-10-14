@@ -66,8 +66,11 @@ export interface SourceInfo {
   height: number;
   fps: number;
   duration: number;
-  /** Average video bitrate and codec of the file, when it has a picture. */
-  video: { bitrate: number; codec: string | null } | null;
+  /**
+   * Average video bitrate and codec of the file, when it has a picture, and
+   * whether this browser can decode it (Safari has AV1 only on chips that decode it in hardware).
+   */
+  video: { bitrate: number; codec: string | null; decodes: boolean } | null;
   /** Average audio bitrate (copied over for videos). */
   audioBitrate: number;
   /** Largest first. Videos only shrink ("source" and the standard sizes below it); auras come in 720p, 1080p and 4K. */
@@ -138,4 +141,20 @@ export function effectiveOutput(output: VideoOutput, source: SourceInfo | null):
     codec: !resolution.encoders[output.codec] && resolution.encoders[other] ? other : output.codec,
     quality: output.quality === "source" && !source.video ? "high" : output.quality,
   };
+}
+
+const CODEC_NAMES: Record<string, string> = {
+  avc: "H.264",
+  hevc: "HEVC",
+  av1: "AV1",
+  vp9: "VP9",
+  vp8: "VP8",
+  prores: "ProRes",
+};
+
+/** The picture's codec, by name, when this browser cannot decode it; null when it can (or there is no picture). */
+export function undecodable(source: SourceInfo | null): string | null {
+  const v = source?.video;
+  if (!v || v.decodes) return null;
+  return (v.codec && CODEC_NAMES[v.codec]) ?? v.codec?.toUpperCase() ?? "bilinmeyen bir kodlama";
 }

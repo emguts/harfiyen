@@ -1,4 +1,4 @@
-import { clock, duration as fmtDuration, megabytes } from "../lib/format";
+import { clock, duration as fmtDuration, megabytes, remaining } from "../lib/format";
 import type { BurnState } from "../lib/useBurner";
 import type { EngineState, Job, PunctState } from "../lib/useTranscriber";
 import { Meter, RecDot } from "./Indicators";
@@ -126,6 +126,7 @@ function BurnItem({ burn }: { burn: BurnState }) {
   return (
     <span className={ITEM} role="status">
       Video oluşturuluyor %{Math.floor(burn.progress * 100)}
+      {burn.remaining !== null && `, ${remaining(burn.remaining)} kaldı`}
       <Meter value={burn.progress} />
     </span>
   );

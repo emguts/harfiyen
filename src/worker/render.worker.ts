@@ -11,6 +11,10 @@
 //
 // With a dub, the sound in either case is the synthetic voice instead of the
 // file's own audio.
+//
+// The MP4 is written to disk as it is encoded (sink.ts): into the file the
+// user picked, or onto the browser's private disk, so hours of video never
+// sit in memory.
 
 import {
   ALL_FORMATS,
@@ -18,7 +22,6 @@ import {
   AudioSampleSink,
   AudioSampleSource,
   BlobSource,
-  BufferTarget,
   CanvasSource,
   Conversion,
   getFirstEncodableAudioCodec,
@@ -36,6 +39,7 @@ import type { Word } from "../engine";
 import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
 import { createCompositor } from "../render/compositor";
 import { DUB_RATE, dubSlice, type DubClip } from "../tts/dub";
+import { clearRenders, openSink, type Sink } from "./sink";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -49,12 +53,22 @@ export type ToRender =
       bands: Float32Array;
       dub: DubClip[] | null;
       encode: Encode;
+      /** The file the user picked to save into; null renders to the private disk (or memory). */
+      handle: FileSystemFileHandle | null;
     }
   | { type: "cancel"; jobId: number };
 
 export type FromRender =
   | { type: "progress"; jobId: number; progress: number; fps: number }
-  | { type: "done"; jobId: number; blob: Blob; elapsed: number }
+  | {
+      type: "done";
+      jobId: number;
+      /** The video to download; null when it was saved into the picked file (`saved`). */
+      file: File | null;
+      saved: string | null;
+      size: number;
+      elapsed: number;
+    }
   | { type: "cancelled"; jobId: number }
   | { type: "error"; jobId: number; message: string };
 
@@ -78,7 +92,15 @@ const quality = (encode: Encode) => (encode.bitrate ? new Quality({ bitrate: enc
 const post = (m: FromRender) => self.postMessage(m);
 
 const running = new Map<number, { cancel(): Promise<void> }>();
+const sinks = new Map<number, Sink>();
 const cancelled = new Set<number>();
+
+/** Closes the output on disk and reports it. */
+async function finish(jobId: number, sink: Sink, handle: FileSystemFileHandle | null, started: number) {
+  const file = await sink.finish();
+  const size = file?.size ?? (await handle!.getFile()).size;
+  post({ type: "done", jobId, file, saved: file ? null : handle!.name, size, elapsed: (performance.now() - started) / 1000 });
+}
 
 const dubSample = (dub: DubClip[], timestamp: number, frames: number) =>
   new AudioSample({
@@ -97,13 +119,15 @@ async function burn(
   bands: Float32Array,
   dub: DubClip[] | null,
   encode: Encode,
+  sink: Sink,
+  handle: FileSystemFileHandle | null,
 ) {
   const started = performance.now();
   // The 2D canvas in a worker only sees fonts registered on the worker.
   await loadCaptionFont(settings.font, self.fonts);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
-  if (!track) return burnAudio(jobId, input, words, settings, bands, dub, encode, started);
+  if (!track) return burnAudio(jobId, input, words, settings, bands, dub, encode, sink, handle, started);
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -115,8 +139,7 @@ async function burn(
   const compositor = await createCompositor(canvas, false);
   const captions = new CaptionRenderer(words, settings, width, height);
 
-  const target = new BufferTarget();
-  const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
   let frames = 0;
   const conversion = await Conversion.init({
     input,
@@ -173,11 +196,11 @@ async function burn(
     input.dispose();
   }
   if (conversion.state === "canceled") {
+    await sink.discard();
     post({ type: "cancelled", jobId });
     return;
   }
-  const blob = new Blob([target.buffer!], { type: "video/mp4" });
-  post({ type: "done", jobId, blob, elapsed: (performance.now() - started) / 1000 });
+  await finish(jobId, sink, handle, started);
 }
 
 async function burnAudio(
@@ -188,6 +211,8 @@ async function burnAudio(
   bands: Float32Array,
   dub: DubClip[] | null,
   encode: Encode,
+  sink: Sink,
+  handle: FileSystemFileHandle | null,
   started: number,
 ) {
   const audio = await input.getPrimaryAudioTrack();
@@ -207,8 +232,7 @@ async function burnAudio(
   const palette = paletteById(settings.aura).colors;
   const duration = await input.computeDuration();
 
-  const target = new BufferTarget();
-  const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
   const video = new CanvasSource(canvas, {
     codec: encode.codec,
     bitrate: quality(encode),
@@ -263,6 +287,7 @@ async function burnAudio(
     if (!stop) await renderUntil(Infinity);
     if (stop) {
       await output.cancel();
+      await sink.discard();
       post({ type: "cancelled", jobId });
       return;
     }
@@ -272,21 +297,34 @@ async function burnAudio(
     compositor.destroy();
     input.dispose();
   }
-  const blob = new Blob([target.buffer!], { type: "video/mp4" });
-  post({ type: "done", jobId, blob, elapsed: (performance.now() - started) / 1000 });
+  await finish(jobId, sink, handle, started);
 }
 
 self.onmessage = (ev: MessageEvent<ToRender>) => {
   const m = ev.data;
   if (m.type === "cancel") {
     cancelled.add(m.jobId);
+    // Before the encoder stops, so the half-written file is thrown away rather than saved.
+    sinks.get(m.jobId)?.cancel();
     void running.get(m.jobId)?.cancel();
     return;
   }
-  burn(m.jobId, m.file, m.words, m.settings, m.bands, m.dub, m.encode)
-    .catch((e) => {
+  const run = async () => {
+    // The previous render's download link is gone once a new one starts.
+    await clearRenders();
+    const sink = await openSink(m.handle);
+    sinks.set(m.jobId, sink);
+    if (cancelled.has(m.jobId)) sink.cancel();
+    await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.dub, m.encode, sink, m.handle);
+  };
+  run()
+    .catch(async (e) => {
+      await sinks.get(m.jobId)?.discard();
       if (cancelled.has(m.jobId)) post({ type: "cancelled", jobId: m.jobId });
       else post({ type: "error", jobId: m.jobId, message: e instanceof Error ? e.message : String(e) });
     })
-    .finally(() => cancelled.delete(m.jobId));
+    .finally(() => {
+      cancelled.delete(m.jobId);
+      sinks.delete(m.jobId);
+    });
 };

@@ -217,7 +217,9 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 
 ## Bilinen sınırlar
 
-- Altyazılı video şimdilik bellekte oluşturulup indiriliyor; çok uzun videolarda bellek yetmeyebilir.
+- Altyazılı video oluşturulurken diske yazılır, uzun videolarda da bellek dolmaz: Chrome ve Edge önce kaydedilecek
+  yeri sorar, diğer tarayıcılar videoyu tarayıcının kendi disk alanında hazırlayıp indirir. Sayfa ağdan `http://`
+  ile açıldığında bu ikisi de kullanılamaz, video bellekte oluşturulur.
 - Düzenleme metinle sınırlı; kelime zamanlarını elle kaydırmak yok.
 - Seslendirmede her modelin tek sesi var ve orijinal sesin tamamı (müzik, ortam sesi) kalkar. Konuşmacılar ayrılmaz,
   dudak hareketleriyle eşleşmez. Seslendirme projeye kaydedilmez.
@@ -232,7 +234,7 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
       projeyi dosya olarak indirip yeniden açma.
 - [ ] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
       tüm altyazıya toplu zaman kaydırma.
-- [ ] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
+- [x] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
 - [x] **Noktalama için Türkçe testleri:** özel ad ekleri, birleşik adlar, soru cümleleri ve tekrar uygulama;
       Vikipedi metniyle kesme işareti, büyük harf ve noktalama ölçümü.
 - [x] **Sayıları rakama çevirme seçeneği:** "bin dokuz yüz yirmi üç" → "1923";

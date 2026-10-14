@@ -6,14 +6,60 @@ import type { Encode, FromRender, ToRender } from "../worker/render.worker";
 
 export type BurnState =
   | { status: "idle" }
-  | { status: "running"; progress: number; fps: number }
-  | { status: "done"; url: string; size: number; elapsed: number }
+  /** `remaining`: seconds left, once there is enough progress to tell. */
+  | { status: "running"; progress: number; fps: number; remaining: number | null }
+  /** `url` to download, or `saved`: the name of the file it was written into. */
+  | { status: "done"; url: string | null; saved: string | null; size: number; elapsed: number }
   | { status: "error"; message: string };
 
-/** Writes captions into the video in a dedicated WebGPU worker. */
+type SavePicker = (options: {
+  suggestedName: string;
+  types: { description: string; accept: Record<string, string[]> }[];
+}) => Promise<FileSystemFileHandle>;
+
+/** Asks where to save (Chrome, Edge); null where the browser has no such dialog, undefined when the user cancelled. */
+async function pickFile(name: string): Promise<FileSystemFileHandle | null | undefined> {
+  const picker = (window as Window & { showSaveFilePicker?: SavePicker }).showSaveFilePicker;
+  if (!picker) return null;
+  try {
+    return await picker({ suggestedName: name, types: [{ description: "MP4 video", accept: { "video/mp4": [".mp4"] } }] });
+  } catch (e) {
+    // Cancelled; any other refusal (an embedding page, say) falls back to the private disk.
+    return e instanceof DOMException && e.name === "AbortError" ? undefined : null;
+  }
+}
+
+/** Keeps the screen (and so the computer) awake while `on`; taken again when the tab comes back. */
+function useWakeLock(on: boolean) {
+  useEffect(() => {
+    if (!on || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let done = false;
+    const take = async () => {
+      if (document.visibilityState !== "visible" || (lock && !lock.released)) return;
+      try {
+        const next = await navigator.wakeLock.request("screen");
+        if (done) void next.release();
+        else lock = next;
+      } catch {
+        // Refused (battery saver, say): the render goes on, the screen may sleep.
+      }
+    };
+    void take();
+    document.addEventListener("visibilitychange", take);
+    return () => {
+      done = true;
+      document.removeEventListener("visibilitychange", take);
+      void lock?.release();
+    };
+  }, [on]);
+}
+
+/** Writes captions into the video in a dedicated WebGPU worker, straight to disk. */
 export function useBurner() {
   const worker = useRef<Worker | null>(null);
   const jobId = useRef(0);
+  const startedAt = useRef(0);
   const [state, setState] = useState<BurnState>({ status: "idle" });
 
   const ensureWorker = useCallback(() => {
@@ -23,11 +69,21 @@ export function useBurner() {
       const m = ev.data;
       if (m.jobId !== jobId.current) return;
       switch (m.type) {
-        case "progress":
-          setState({ status: "running", progress: m.progress, fps: m.fps });
+        case "progress": {
+          // Time left from the pace so far, once past the first few seconds (encoders warm up).
+          const elapsed = (performance.now() - startedAt.current) / 1000;
+          const remaining = m.progress > 0.01 && elapsed > 5 ? (elapsed * (1 - m.progress)) / m.progress : null;
+          setState({ status: "running", progress: m.progress, fps: m.fps, remaining });
           break;
+        }
         case "done":
-          setState({ status: "done", url: URL.createObjectURL(m.blob), size: m.blob.size, elapsed: m.elapsed });
+          setState({
+            status: "done",
+            url: m.file && URL.createObjectURL(m.file),
+            saved: m.saved,
+            size: m.size,
+            elapsed: m.elapsed,
+          });
           break;
         case "cancelled":
           setState({ status: "idle" });
@@ -42,16 +98,29 @@ export function useBurner() {
   }, []);
 
   useEffect(() => () => worker.current?.terminate(), []);
+  useWakeLock(state.status === "running");
 
   // Free the previous result when it is replaced.
   const url = state.status === "done" ? state.url : null;
   useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
 
   const burn = useCallback(
-    (file: File, words: Word[], settings: CaptionSettings, bands: Float32Array, encode: Encode, dub: DubClip[] | null = null) => {
+    async (
+      file: File,
+      words: Word[],
+      settings: CaptionSettings,
+      bands: Float32Array,
+      encode: Encode,
+      dub: DubClip[] | null,
+      name: string,
+    ) => {
+      // The dialog must open straight from the click, before anything else waits.
+      const handle = await pickFile(name);
+      if (handle === undefined) return;
       const id = ++jobId.current;
-      setState({ status: "running", progress: 0, fps: 0 });
-      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, bands, dub, encode };
+      startedAt.current = performance.now();
+      setState({ status: "running", progress: 0, fps: 0, remaining: null });
+      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, bands, dub, encode, handle };
       ensureWorker().postMessage(msg);
     },
     [ensureWorker],

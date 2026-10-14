@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import type { Word } from "../engine";
 import { buildCues, importedCues } from "../lib/cues";
 import { download, toJson, toSrt, toText, toVtt } from "../lib/exporters";
-import { duration as fmtDuration, megabytes } from "../lib/format";
+import { duration as fmtDuration, megabytes, remaining } from "../lib/format";
 import type { BurnState } from "../lib/useBurner";
 import {
   effectiveOutput,
   estimateSize,
+  undecodable,
   resolutionOf,
   videoBitrate,
   type Encoder,
@@ -16,7 +17,7 @@ import {
   type SourceInfo,
   type VideoOutput,
 } from "../lib/videoOutput";
-import { IconChevron, IconCpu, IconDownload, IconExport, IconGpu } from "./icons";
+import { IconCheck, IconChevron, IconCpu, IconDownload, IconExport, IconGpu } from "./icons";
 import { Meter } from "./Indicators";
 import { OPT_NOTE, OPT_TITLE, Select } from "./Select";
 import { LinkButton, toolbarButton } from "./ui";
@@ -101,7 +102,8 @@ export function ExportMenu({
   const resolution = source && resolutionOf(out, source);
   const encoder = resolution?.encoders[out.codec];
   const size = (o: VideoOutput) => (source ? `${megabytes(estimateSize(o, source))} MB` : "");
-  const canCreate = has && complete && canBurn && (!source || !!encoder);
+  const badCodec = undecodable(source);
+  const canCreate = has && complete && canBurn && (!source || !!encoder) && !badCodec;
   const wide = `${toolbarButton({ primary: true })} w-full justify-center`;
 
   const cues = () => importedCues(words) ?? buildCues(words);
@@ -137,16 +139,26 @@ export function ExportMenu({
             <div className="flex items-baseline justify-between gap-3">
               <MenuNote>
                 Oluşturuluyor, %{Math.floor(burn.progress * 100)}
-                {burn.fps > 0 && `, ${burn.fps.toFixed(0)} kare/sn`}
+                {burn.remaining !== null
+                  ? `, kalan ${remaining(burn.remaining)}`
+                  : burn.fps > 0 && `, ${burn.fps.toFixed(0)} kare/sn`}
               </MenuNote>
               <LinkButton onClick={onCancelBurn}>Durdur</LinkButton>
             </div>
           </div>
         ) : burn.status === "done" ? (
           <div className="grid gap-2 px-2 pt-1 pb-2">
-            <a className={wide} href={burn.url} download={`${baseName}.altyazili.mp4`}>
-              <IconDownload /> Videoyu indir
-            </a>
+            {burn.url ? (
+              <a className={wide} href={burn.url} download={`${baseName}.altyazili.mp4`}>
+                <IconDownload /> Videoyu indir
+              </a>
+            ) : (
+              // Written straight into the file the user picked: nothing left to download.
+              <p className="m-0 flex items-center gap-2 text-[12.5px] text-firuze">
+                <IconCheck size={14} />
+                <span className="min-w-0 truncate">{burn.saved} kaydedildi</span>
+              </p>
+            )}
             <div className="flex items-baseline justify-between gap-3">
               <MenuNote>
                 MP4, {codecName(out.codec)}, {megabytes(burn.size)} MB, {fmtDuration(burn.elapsed)} sürdü
@@ -227,10 +239,14 @@ export function ExportMenu({
               <button className={wide} disabled={!canCreate} onClick={onBurn}>
                 Videoyu oluştur
               </button>
-              <MenuNote>
-                {isVideo ? "Altyazı görüntüye yazılır" : "Ses, hareketli aura ve altyazı"}, MP4
-                {source && `, yaklaşık ${size(out)}`}.
-              </MenuNote>
+              {badCodec ? (
+                <MenuNote>Bu tarayıcı {badCodec} kodlamasını çözemiyor; video Chrome'da oluşturulabilir.</MenuNote>
+              ) : (
+                <MenuNote>
+                  {isVideo ? "Altyazı görüntüye yazılır" : "Ses, hareketli aura ve altyazı"}, MP4
+                  {source && `, yaklaşık ${size(out)}`}.
+                </MenuNote>
+              )}
             </div>
           </div>
         )}

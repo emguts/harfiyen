@@ -72,7 +72,7 @@ async function load(jobId: number, model: VoiceModel): Promise<Speaker> {
   if (!res.ok) throw new Error("Seslendirme modeli bulunamadı. Önce `npm run models` çalıştırılmalı.");
   const meta = await res.json();
   const names = model === "ema" ? ["text.onnx", "sound.onnx", "decoder.onnx", "normalizer.wasm"] : MINI_FILES;
-  const runtime = adapter === undefined ? [{ url: ortWasmUrl, size: ORT_WASM_SIZE }] : [];
+  const runtime = adapter === undefined ? [{ url: ortWasmUrl, size: ORT_WASM_SIZE, approx: true }] : [];
   const files = await fetchAll(
     [...names.map((n) => ({ url: `${dir}/${n}`, size: meta.files[n] as number })), ...runtime],
     (loaded, total) => post({ type: "download", jobId, loaded, total }),

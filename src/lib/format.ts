@@ -27,3 +27,10 @@ export function duration(sec: number): string {
   if (m < 60) return `${m} dk`;
   return `${Math.floor(m / 60)} sa ${m % 60} dk`;
 }
+
+/** Time left, roughly: "1 dakikadan az", "12 dk", "1 sa 5 dk". */
+export function remaining(sec: number): string {
+  if (sec < 60) return "1 dakikadan az";
+  const m = Math.round(sec / 60);
+  return m < 60 ? `${m} dk` : `${Math.floor(m / 60)} sa${m % 60 ? ` ${m % 60} dk` : ""}`;
+}
