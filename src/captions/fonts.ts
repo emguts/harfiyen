@@ -2,6 +2,7 @@
 // (ğ ş ı İ ç ö ü) always renders with the real glyphs, never a fallback.
 // Fonts are registered under our own family names from the bundled files, so
 // the on-screen preview and the WebGPU render use exactly the same font.
+// Fonts the user adds (userFonts.ts) are registered here too, from their bytes.
 
 import gsflexExt from "@fontsource-variable/google-sans-flex/files/google-sans-flex-latin-ext-wght-normal.woff2?url";
 import gsflex from "@fontsource-variable/google-sans-flex/files/google-sans-flex-latin-wght-normal.woff2?url";
@@ -24,7 +25,7 @@ import montserrat from "@fontsource-variable/montserrat/files/montserrat-latin-w
 import schibstedExt from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-ext-wght-normal.woff2?url";
 import schibsted from "@fontsource-variable/schibsted-grotesk/files/schibsted-grotesk-latin-wght-normal.woff2?url";
 
-export type FontId =
+export type BuiltinFontId =
   | "gsflex"
   | "montserrat"
   | "poppins"
@@ -36,14 +37,32 @@ export type FontId =
   | "schibsted"
   | "literata";
 
+export type UserFontId = `user:${string}`;
+export type FontId = BuiltinFontId | UserFontId;
+
+/** A font the user added, as stored in IndexedDB and sent to the render worker. */
+export interface UserFont {
+  id: UserFontId;
+  label: string;
+  data: ArrayBuffer;
+  /** See CaptionFont.capsOnly; detected when the font is added. */
+  capsOnly: boolean;
+  /** Turkish letters the font lacks (they render in a fallback font). */
+  missing: string;
+  addedAt: number;
+}
+
 export interface CaptionFont {
   id: FontId;
   label: string;
   /** Weight used for captions. */
   weight: number;
   /** Weight range of the file (variable fonts) or the single static weight. */
-  weightRange: string;
-  files: string[];
+  weightRange?: string;
+  /** Bundled fonts: the [latin, latin-ext] files. */
+  files?: string[];
+  /** User fonts: the font file itself, at its default weight. */
+  data?: ArrayBuffer;
   /** Lowercase letters are drawn as capitals, so a dotless "I" stands in for
    *  "i" and Turkish "bir" reads "bır". In languages with a dotted i the
    *  captions are always uppercased (i → İ, ı → I); see hasDottedI. */
@@ -63,10 +82,34 @@ export const FONTS: CaptionFont[] = [
   { id: "literata", label: "Literata", weight: 600, weightRange: "200 900", files: [literata, literataExt] },
 ];
 
-export const fontById = (id: FontId) => FONTS.find((f) => f.id === id)!;
+const userFonts = new Map<FontId, CaptionFont>();
+
+export const isUserFont = (id: FontId): id is UserFontId => id.startsWith("user:");
+
+/** Make a user font known (main thread from storage, the worker from its job). */
+export function addUserFont(u: UserFont) {
+  userFonts.set(u.id, { id: u.id, label: u.label, weight: 400, data: u.data, capsOnly: u.capsOnly });
+}
+
+export const removeUserFont = (id: UserFontId) => userFonts.delete(id);
+
+export const hasFont = (id: FontId) => FONTS.some((f) => f.id === id) || userFonts.has(id);
+
+/** A font that is not here (a deleted user font) falls back to the first one. */
+export const fontById = (id: FontId) => FONTS.find((f) => f.id === id) ?? userFonts.get(id) ?? FONTS[0];
+
+let userFontsReady: Promise<unknown> = Promise.resolve();
+/** Main thread: user fonts load from storage; loading one waits for that. */
+export const waitForUserFonts = (p: Promise<unknown>) => (userFontsReady = p);
 
 /** CSS family name the caption renderer uses for a font. */
 export const captionFamily = (id: FontId) => `Harfiyen Caption ${id}`;
+
+/** Letters a user font lacks (often ğ ş İ ı) come from the first bundled font, not the browser's serif. */
+const FALLBACK = FONTS[0].id;
+
+/** CSS font-family list for a font, with that fallback. */
+export const captionStack = (id: FontId) => `"${captionFamily(id)}", "${captionFamily(FALLBACK)}"`;
 
 // Subset ranges from fontsource; files are always [latin, latin-ext].
 const RANGES = [
@@ -82,16 +125,24 @@ export function loadCaptionFont(id: FontId, set: FontFaceSet): Promise<void> {
   if (!m) loaded.set(set, (m = new Map()));
   let p = m.get(id);
   if (!p) {
-    const f = fontById(id);
-    p = Promise.all(
-      f.files.map(async (url, i) => {
-        const face = new FontFace(captionFamily(id), `url(${url})`, {
-          weight: f.weightRange,
-          unicodeRange: RANGES[i],
-        });
-        set.add(await face.load());
-      }),
-    ).then(() => undefined);
+    p = (isUserFont(id) ? userFontsReady.catch(() => {}) : Promise.resolve()).then(async () => {
+      const f = fontById(id);
+      if (f.id !== id) return loadCaptionFont(f.id, set); // Not here: its fallback.
+      if (f.data) {
+        const face = new FontFace(captionFamily(id), f.data);
+        await Promise.all([face.load().then((x) => set.add(x)), loadCaptionFont(FALLBACK, set)]);
+        return;
+      }
+      await Promise.all(
+        f.files!.map(async (url, i) => {
+          const face = new FontFace(captionFamily(id), `url(${url})`, {
+            weight: f.weightRange,
+            unicodeRange: RANGES[i],
+          });
+          set.add(await face.load());
+        }),
+      );
+    });
     m.set(id, p);
   }
   return p;

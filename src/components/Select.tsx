@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconCheck, IconUpDown } from "./icons";
+import { IconCheck, IconTrash, IconUpDown } from "./icons";
 
 // Building blocks for option renderings (an option title turns white once selected).
 export const OPT = "flex min-w-0 items-center gap-2.5";
@@ -12,6 +12,8 @@ export interface Option<T extends string> {
   value: T;
   /** Accessible name. */
   label: string;
+  /** Heading shown above the first option of each group. */
+  group?: string;
 }
 
 /**
@@ -19,7 +21,8 @@ export interface Option<T extends string> {
  * styles as tiny renderings). The list opens in a fixed layer on the body,
  * so neither the scrolling inspector nor a blurred menu panel (which would
  * become its containing block) moves or clips it. Keyboard: arrows, Home/End, Enter,
- * Escape, and type-to-jump.
+ * Escape, and type-to-jump. Options can be removable: a trash button (or
+ * Delete) asks first, a second press removes.
  */
 export function Select<T extends string>({
   label,
@@ -28,6 +31,8 @@ export function Select<T extends string>({
   onChange,
   render,
   disabled,
+  canRemove,
+  onRemove,
 }: {
   label: string;
   value: T;
@@ -36,8 +41,12 @@ export function Select<T extends string>({
   /** Renders an option; `inList` is false for the closed button. */
   render: (o: Option<T>, inList: boolean) => React.ReactNode;
   disabled?: boolean;
+  canRemove?: (v: T) => boolean;
+  onRemove?: (v: T) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // The option whose remove was pressed once; the next press removes it.
+  const [armed, setArmed] = useState<T | null>(null);
   const [active, setActive] = useState(0);
   const [pos, setPos] = useState<{ left: number; top: number; width: number; maxHeight: number; up: boolean } | null>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -63,7 +72,16 @@ export function Select<T extends string>({
     if (disabled) return;
     place();
     setActive(selected);
+    setArmed(null);
     setOpen(true);
+  };
+
+  const removable = (v: T) => !!onRemove && !!canRemove?.(v);
+  const remove = (v: T) => {
+    if (armed !== v) return setArmed(v);
+    setArmed(null);
+    setActive((a) => Math.max(0, Math.min(a, options.length - 2)));
+    onRemove!(v);
   };
 
   const choose = (i: number) => {
@@ -73,7 +91,7 @@ export function Select<T extends string>({
   };
 
   useLayoutEffect(() => {
-    if (open) list.current?.children[active]?.scrollIntoView({ block: "nearest" });
+    if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" });
   }, [open, active]);
 
   useEffect(() => {
@@ -104,6 +122,8 @@ export function Select<T extends string>({
     else if (e.key === "Home") setActive(0);
     else if (e.key === "End") setActive(n - 1);
     else if (e.key === "Enter" || e.key === " ") choose(active);
+    else if ((e.key === "Delete" || e.key === "Backspace") && options[active] && removable(options[active].value))
+      remove(options[active].value);
     else if (e.key === "Escape" || e.key === "Tab") {
       // Escape closes the list only, not a menu around it.
       if (e.key === "Escape") e.stopPropagation();
@@ -168,7 +188,16 @@ export function Select<T extends string>({
             }}
             onKeyDown={onListKey}
           >
-            {options.map((o, i) => (
+            {options.flatMap((o, i) => [
+              o.group && o.group !== options[i - 1]?.group && (
+                <li
+                  key={`group-${o.group}`}
+                  role="presentation"
+                  className="px-2 pt-2 pb-1 text-[11px] font-semibold tracking-[0.04em] text-fg-3 uppercase first:pt-1"
+                >
+                  {o.group}
+                </li>
+              ),
               <li
                 key={o.value}
                 id={`${id}-${i}`}
@@ -179,11 +208,40 @@ export function Select<T extends string>({
                 onClick={() => choose(i)}
               >
                 <span className="min-w-0 flex-1">{render(o, true)}</span>
+                {removable(o.value) &&
+                  (armed === o.value ? (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className="h-[22px] flex-none cursor-pointer rounded-ui-sm border-0 bg-mercan px-2 text-[12px] font-medium text-white hover:brightness-110"
+                      aria-label={`${o.label}: silmeyi onayla`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        remove(o.value);
+                      }}
+                    >
+                      Sil
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      className={`grid h-[22px] w-6 flex-none cursor-pointer place-items-center rounded-ui-sm border-0 bg-transparent p-0 text-fg-2 hover:bg-line hover:text-fg ${i === active ? "" : "opacity-0 [@media(hover:none)]:opacity-100"}`}
+                      title="Sil"
+                      aria-label={`${o.label}: sil`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        remove(o.value);
+                      }}
+                    >
+                      <IconTrash size={14} />
+                    </button>
+                  ))}
                 <span className="grid w-4 flex-none place-items-center text-wave-played" aria-hidden>
                   {i === selected && <IconCheck size={14} />}
                 </span>
-              </li>
-            ))}
+              </li>,
+            ])}
           </ul>,
           document.body,
         )}

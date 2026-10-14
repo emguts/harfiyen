@@ -1,11 +1,12 @@
-import { useEffect } from "react";
-import { captionFamily, FONTS, fontById, loadCaptionFont, type FontId } from "../captions/fonts";
+import { useEffect, useRef, useState } from "react";
+import { captionStack, FONTS, fontById, isUserFont, loadCaptionFont, type FontId } from "../captions/fonts";
 import { ACCENT_COLORS, presetById, TEXT_COLORS, type CaptionSettings } from "../captions/style";
+import { addFontFile, removeFont, useUserFonts } from "../captions/userFonts";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
 import { AURA_PALETTES, paletteById, type AuraPaletteId } from "../render/aura";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import { StylePicker } from "./StylePicker";
-import { Hint, Range, Row, RowGroup, RowLabel, RowValue, Section, Switch } from "./ui";
+import { Hint, LinkButton, Range, Row, RowGroup, RowLabel, RowValue, Section, Switch } from "./ui";
 
 const SWATCH =
   "relative size-[22px] cursor-pointer rounded-full border border-white/18 p-0 transition-[transform,outline-color] duration-150 ease-[ease] hover:scale-112";
@@ -84,14 +85,41 @@ export function CaptionStudio({
   onChange: (s: CaptionSettings) => void;
   disabled?: boolean;
 }) {
+  const userFonts = useUserFonts();
+  const fontFile = useRef<HTMLInputElement>(null);
+  const [adding, setAdding] = useState(false);
+  const [fontError, setFontError] = useState<string | null>(null);
+
   // Font options render in their own typeface.
   useEffect(() => {
-    for (const f of FONTS) void loadCaptionFont(f.id, document.fonts);
-  }, []);
+    for (const f of [...FONTS, ...userFonts.fonts]) void loadCaptionFont(f.id, document.fonts);
+  }, [userFonts.fonts]);
 
   const set = (patch: Partial<CaptionSettings>) => onChange({ ...settings, ...patch });
   const preset = presetById(settings.preset);
-  const capsOnly = !!fontById(settings.font).capsOnly && hasDottedI(TRANSCRIPT_LANG);
+  const font = fontById(settings.font);
+  const capsOnly = !!font.capsOnly && hasDottedI(TRANSCRIPT_LANG);
+  const added = userFonts.fonts.find((f) => f.id === settings.font);
+  // A project whose added font was deleted, or opened in another browser.
+  const lost = userFonts.ready && font.id !== settings.font;
+
+  const addFont = async (file: File) => {
+    setAdding(true);
+    setFontError(null);
+    try {
+      const f = await addFontFile(file);
+      set({ font: f.id });
+    } catch (e) {
+      setFontError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const fontOptions = [
+    ...userFonts.fonts.map((f) => ({ value: f.id, label: f.label, group: "Yüklediklerin" })),
+    ...FONTS.map((f) => ({ value: f.id, label: f.label, group: userFonts.fonts.length ? "Hazır" : undefined })),
+  ];
 
   return (
     <fieldset className={STUDIO} disabled={disabled}>
@@ -103,13 +131,19 @@ export function CaptionStudio({
       <Section title="Yazı">
         <Select<FontId>
           label="Yazı tipi"
-          value={settings.font}
-          options={FONTS.map((f) => ({ value: f.id, label: f.label }))}
+          value={font.id}
+          options={fontOptions}
           onChange={(font) => set({ font })}
           disabled={disabled}
+          canRemove={isUserFont}
+          onRemove={(id) => {
+            if (!isUserFont(id)) return;
+            if (id === settings.font) set({ font: preset.defaults.font });
+            void removeFont(id);
+          }}
           render={(o, inList) => {
             const f = fontById(o.value);
-            const style = { fontFamily: `"${captionFamily(f.id)}"`, fontWeight: f.weight };
+            const style = { fontFamily: captionStack(f.id), fontWeight: f.weight };
             // The sample is Turkish, so a caps-only font shows it uppercased.
             const sample = (t: string) => (f.capsOnly ? t.toLocaleUpperCase("tr-TR") : t);
             return inList ? (
@@ -129,6 +163,29 @@ export function CaptionStudio({
             );
           }}
         />
+        <input
+          ref={fontFile}
+          type="file"
+          accept=".ttf,.otf,.woff,.woff2"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = ""; // The same file can be picked again.
+            if (file) void addFont(file);
+          }}
+        />
+        <div>
+          <LinkButton type="button" disabled={adding} onClick={() => fontFile.current?.click()}>
+            {adding ? "Yazı tipi inceleniyor…" : "Bilgisayarından yazı tipi ekle"}
+          </LinkButton>
+        </div>
+        {fontError && <p className="m-0 text-[12px] leading-normal text-mercan">{fontError}</p>}
+        {lost && <Hint>Bu projenin yazı tipi bu tarayıcıda yok, yerine {font.label} kullanılıyor.</Hint>}
+        {added?.missing && (
+          <Hint>
+            Bu yazı tipinde {[...added.missing].join(" ")} yok, bu harfler {FONTS[0].label} ile görünür.
+          </Hint>
+        )}
         <Row>
           <RowLabel>Boyut</RowLabel>
           <Range

@@ -1,10 +1,12 @@
 // Projects live in IndexedDB: the transcript, style and waveform in one
 // store, the media in another, so the project list never loads a video.
+// Fonts the user adds sit in a third store, shared by every project.
 //
 // Media is kept one of two ways: a file handle (Chromium; no copy, the file
 // stays where it is) or a copy of the file (other browsers, recordings).
 // Files too large to copy are linked again by hand when the project opens.
 
+import type { UserFont } from "../captions/fonts";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod, Word } from "../engine";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
@@ -49,17 +51,28 @@ export const COPY_LIMIT = 1024 ** 3;
 const DB_NAME = "harfiyen";
 const PROJECTS = "projects";
 const MEDIA = "media";
+const FONTS = "fonts";
 
 let db: Promise<IDBDatabase> | null = null;
 
 function open(): Promise<IDBDatabase> {
   db ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => {
-      req.result.createObjectStore(PROJECTS, { keyPath: "id" });
-      req.result.createObjectStore(MEDIA);
+    const req = indexedDB.open(DB_NAME, 2);
+    req.onupgradeneeded = (e) => {
+      if (e.oldVersion < 1) {
+        req.result.createObjectStore(PROJECTS, { keyPath: "id" });
+        req.result.createObjectStore(MEDIA);
+      }
+      if (e.oldVersion < 2) req.result.createObjectStore(FONTS, { keyPath: "id" });
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // A newer tab wants to upgrade: step aside, open again on next use.
+      req.result.onversionchange = () => {
+        req.result.close();
+        db = null;
+      };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   }).catch((e) => {
     db = null; // Try again next time (e.g. a blocked upgrade).
@@ -114,6 +127,16 @@ export const deleteProject = (id: string) =>
     t.objectStore(PROJECTS).delete(id);
     t.objectStore(MEDIA).delete(id);
   });
+
+export async function listFonts(): Promise<UserFont[]> {
+  const t = (await open()).transaction(FONTS);
+  const all = await done(t.objectStore(FONTS).getAll() as IDBRequest<UserFont[]>);
+  return all.sort((a, b) => a.addedAt - b.addedAt);
+}
+
+export const saveFont = (f: UserFont) => tx([FONTS], "readwrite", (t) => t.objectStore(FONTS).put(f));
+
+export const deleteFont = (id: string) => tx([FONTS], "readwrite", (t) => t.objectStore(FONTS).delete(id));
 
 /** Room for a copy of `bytes`, leaving some headroom. */
 export async function canCopy(bytes: number): Promise<boolean> {

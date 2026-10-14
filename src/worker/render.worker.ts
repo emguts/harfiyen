@@ -32,7 +32,7 @@ import {
   QUALITY_HIGH,
 } from "mediabunny";
 import { levelsAt, paletteById } from "../render/aura";
-import { loadCaptionFont } from "../captions/fonts";
+import { addUserFont, loadCaptionFont, type UserFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
 import type { CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
@@ -50,6 +50,8 @@ export type ToRender =
       file: File;
       words: Word[];
       settings: CaptionSettings;
+      /** The caption font, when the user added it (the worker has no access to their fonts). */
+      userFont: UserFont | null;
       bands: Float32Array;
       dub: DubClip[] | null;
       encode: Encode;
@@ -315,6 +317,7 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
     const sink = await openSink(m.handle);
     sinks.set(m.jobId, sink);
     if (cancelled.has(m.jobId)) sink.cancel();
+    if (m.userFont) addUserFont(m.userFont);
     await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.dub, m.encode, sink, m.handle);
   };
   run()

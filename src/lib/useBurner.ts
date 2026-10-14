@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaptionSettings } from "../captions/style";
+import { userFontById } from "../captions/userFonts";
 import type { Word } from "../engine";
 import type { DubClip } from "../tts/dub";
 import type { Encode, FromRender, ToRender } from "../worker/render.worker";
@@ -120,7 +121,8 @@ export function useBurner() {
       const id = ++jobId.current;
       startedAt.current = performance.now();
       setState({ status: "running", progress: 0, fps: 0, remaining: null });
-      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, bands, dub, encode, handle };
+      const userFont = userFontById(settings.font);
+      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, userFont, bands, dub, encode, handle };
       ensureWorker().postMessage(msg);
     },
     [ensureWorker],

@@ -5,7 +5,7 @@
 import type { Word } from "../engine";
 import { buildCues, type Cue } from "../lib/cues";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
-import { captionFamily, fontById } from "./fonts";
+import { captionStack, fontById } from "./fonts";
 import { presetById, type CaptionSettings, type Preset } from "./style";
 
 export interface CaptionImage {
@@ -101,7 +101,7 @@ export class CaptionRenderer {
     const font = fontById(s.font);
     const upper = s.uppercase || (font.capsOnly && hasDottedI(this.lang));
     const texts = g.words.map((w) => (upper ? w.text.toLocaleUpperCase(this.lang) : w.text));
-    const css = (size: number) => `${font.weight} ${size}px "${captionFamily(s.font)}"`;
+    const css = (size: number) => `${font.weight} ${size}px ${captionStack(font.id)}`;
     const ctx = this.canvas.getContext("2d")!;
     let px = Math.max(10, Math.round(Math.min(W, H) * s.size));
     // Lines wrap between words only: shrink until the longest word fits the
