@@ -2,8 +2,14 @@
 
 Yeni sürümler en üstte.
 
-## v0.3.0 (14 Ekim 2026)
+## v0.3.0 (15 Ekim 2026)
 
+- **Yeni model Duyu:** [Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small) eklendi. 85 MB,
+  ekran kartı istemez; noktalama ve büyük harfi kendisi yazar. İşlemcide çalışır, canlı kayıtta
+  kullanılmaz.
+- **Durdur, devam et, iptal:** Yazıya dökme durdurulup sonra kaldığı yerden sürdürülebilir; sayfa
+  yenilense de kalınan yer unutulmaz. Yanlış dosya İptal ile bırakılır, uzun işlerde önce onay sorulur.
+  Döküm sürerken önizleme yazılanı takip eder; oynatınca ya da sarınca takip durur.
 - **İngilizce çeviri:** Transkript cümle cümle İngilizceye çevrilir; her cümle Türkçesinin zamanında
   görünür. Transkriptin üstündeki TR / EN ile altyazı, dışa aktarma ve video istenen dilde olur. Çeviri
   düzenlenebilir ve projeyle birlikte kaydedilir. Çeviri de tarayıcıda yapılır, metin bilgisayarından
