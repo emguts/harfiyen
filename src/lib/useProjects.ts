@@ -101,6 +101,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
       method: job.options.method,
       duration: job.duration ?? job.decoded,
       elapsed: job.elapsed,
+      stoppedAt: job.status === "cancelled" && !job.live ? job.decoded : undefined,
       words: job.words,
       peaks: job.peaks,
       bands: job.bands,

@@ -20,27 +20,29 @@ const CHOICES: { value: ProviderChoice; label: string; note: string; Icon: typeo
   { value: "wasm", label: "İşlemci (WASM)", note: "Daha yavaş, ama her cihazda çalışır.", Icon: IconCpu },
 ];
 
-/** Toolbar control: where the model runs, and what it runs on right now. */
-export function ProviderMenu({
-  value,
-  engine,
-  onChange,
-  cpuUnavailable,
-  locked,
-}: {
+export interface ProviderProps {
   value: ProviderChoice;
   engine: EngineState;
   onChange: (p: ProviderChoice) => void;
   /** Why the chosen model cannot run on the CPU, if it cannot. */
   cpuUnavailable: string | null;
+  /** Why the chosen model does not use the GPU, if it does not. */
+  gpuUnavailable: string | null;
   /** A transcription is running; switching would abort it. */
   locked: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  // Once loaded, show what it actually runs on (a GPU failure moves it to the CPU).
+}
+
+/** What the model runs on: once loaded, what it actually runs on (a GPU failure moves it to the CPU). */
+export function shownProvider({ value, engine }: Pick<ProviderProps, "value" | "engine">) {
   const ready = engine.phase === "ready" ? engine : null;
   const current = ready ? (ready.provider === "wasm" ? "wasm" : "webgpu") : value;
-  const shown = CHOICES.find((c) => c.value === current)!;
+  return { ready, current, shown: CHOICES.find((c) => c.value === current)! };
+}
+
+/** Toolbar control: where the model runs, and what it runs on right now. */
+export function ProviderMenu(props: ProviderProps) {
+  const [open, setOpen] = useState(false);
+  const { ready, current, shown } = shownProvider(props);
 
   return (
     <Menu
@@ -62,10 +64,28 @@ export function ProviderMenu({
         </button>
       }
     >
+      <ProviderChoices {...props} onDone={() => setOpen(false)} />
+    </Menu>
+  );
+}
+
+/** Where the model may run; also in the phone toolbar's "⋯" menu. */
+export function ProviderChoices({
+  value,
+  engine,
+  onChange,
+  cpuUnavailable,
+  gpuUnavailable,
+  locked,
+  onDone,
+}: ProviderProps & { onDone: () => void }) {
+  const { ready } = shownProvider({ value, engine });
+  return (
+    <>
       <MenuGroup>
         <MenuTitle>Model nerede çalışsın</MenuTitle>
         {CHOICES.map((c) => {
-          const blocked = c.value === "wasm" ? cpuUnavailable : null;
+          const blocked = c.value === "wasm" ? cpuUnavailable : c.value === "webgpu" ? gpuUnavailable : null;
           return (
             <MenuItem
               key={c.value}
@@ -74,7 +94,7 @@ export function ProviderMenu({
               aria-checked={c.value === value}
               disabled={locked || (!!blocked && c.value !== value)}
               onClick={() => {
-                setOpen(false);
+                onDone();
                 if (c.value !== value) onChange(c.value);
               }}
             >
@@ -95,6 +115,6 @@ export function ProviderMenu({
       {ready?.fallbackReason && <MenuFoot>{ready.fallbackReason}</MenuFoot>}
       {ready?.gpu && <MenuFoot>Şu an: {ready.gpu}</MenuFoot>}
       {locked && <MenuFoot>Yazıya dökme sürerken değiştirilemez.</MenuFoot>}
-    </Menu>
+    </>
   );
 }

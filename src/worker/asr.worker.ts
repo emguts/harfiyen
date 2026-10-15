@@ -19,6 +19,7 @@ import { finishTurkish } from "../punct/turkish";
 import { fetchAll } from "./modelStore";
 import { BandTracker } from "../render/aura";
 import { WhisperEngine, type WhisperConfig } from "../whisper";
+import { DuyuEngine, type DuyuConfig } from "../duyu";
 import { PEAK_STEP, type ErrorCode, type FromWorker, type ProviderChoice, type ToWorker } from "./protocol";
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -150,15 +151,31 @@ async function loadWhisper(m: ModelInfo, pick: ProviderPick): Promise<SpeechEngi
   return createOnProvider(pick, () => WhisperEngine.create(ort, files, pick.provider));
 }
 
+async function loadDuyu(m: ModelInfo): Promise<SpeechEngine> {
+  const config = await readConfig<DuyuConfig>(m);
+  const [pre, pass, postGraph, decoder, fbank, tokens, wasm] = await download(m, config.files);
+  post({ type: "compiling" });
+  setupRuntime(wasm, "wasm");
+  const pieces: string[] = JSON.parse(new TextDecoder().decode(tokens));
+  return DuyuEngine.create(ort, { config, pre, pass, post: postGraph, decoder, fbank, pieces });
+}
+
+/** CPU-only models skip the GPU check: the CPU is not a fallback for them. */
+const CPU_PICK: ProviderPick = { provider: "wasm", gpu: null, reason: null, f16: false };
+
 async function loadEngine(model: ModelId, choice: ProviderChoice): Promise<SpeechEngine> {
   const m = modelInfo(model);
-  const pick = await pickProvider(choice);
-  const engine = await (m.engine === "whisper" ? loadWhisper(m, pick) : loadSeda(m, pick));
+  const pick = m.cpuOnly ? CPU_PICK : await pickProvider(choice);
+  const engine = await (m.engine === "whisper"
+    ? loadWhisper(m, pick)
+    : m.engine === "duyu"
+      ? loadDuyu(m)
+      : loadSeda(m, pick));
   post({
     type: "ready",
     provider: engine.provider === "webgpu" ? "webgpu" : "wasm",
     gpu: pick.gpu,
-    fallbackReason: pick.reason ?? cpuReason,
+    fallbackReason: m.cpuOnly ? null : (pick.reason ?? cpuReason),
   });
   return engine;
 }
@@ -219,10 +236,12 @@ class Job {
 
   private onGpu: boolean;
 
+  /** offset: seconds of the file before this job's audio (a continued job); times are reported from the file's start. */
   constructor(
     readonly id: number,
     engine: SpeechEngine,
     options: DecodeOptions,
+    readonly offset = 0,
   ) {
     this.onGpu = engine.provider === "webgpu";
     this.rec = engine.createRecognizer(options);
@@ -257,14 +276,26 @@ class Job {
     }
   }
 
+  /** Words with times from the file's start. */
+  private committed() {
+    const words = this.rec.takeCommitted();
+    if (this.offset) for (const w of words) Object.assign(w, { start: w.start + this.offset, end: w.end + this.offset });
+    return words;
+  }
+
+  private tentative() {
+    const words = this.rec.tentative();
+    return this.offset ? words.map((w) => ({ ...w, start: w.start + this.offset, end: w.end + this.offset })) : words;
+  }
+
   finish() {
     this.rec.flush();
     const elapsed = (performance.now() - this.started) / 1000;
     post({
       type: "done",
       jobId: this.id,
-      committed: this.rec.takeCommitted(),
-      decoded: this.rec.decodedSeconds,
+      committed: this.committed(),
+      decoded: this.offset + this.rec.decodedSeconds,
       elapsed,
       bands: this.bands.take(),
       loudness: this.bands.takeLoudness(),
@@ -298,9 +329,9 @@ class Job {
       {
         type: "progress",
         jobId: this.id,
-        decoded,
-        committed: this.rec.takeCommitted(),
-        tentative: this.rec.tentative(),
+        decoded: this.offset + decoded,
+        committed: this.committed(),
+        tentative: this.tentative(),
         peaks,
         bands,
         loudness,
@@ -326,19 +357,22 @@ async function transcribeFile(job: Job, file: File) {
   job.setSampleRate(track.sampleRate);
 
   const sink = new AudioSampleSink(track);
-  for await (const sample of sink.samples()) {
+  const from = job.offset;
+  for await (const sample of sink.samples(from || undefined)) {
     if (job.isCancelled) {
       sample.close();
       break;
     }
+    // A continued job starts exactly at its offset: the first sample may begin before it.
+    const skip = Math.max(0, Math.min(sample.numberOfFrames, Math.round((from - sample.timestamp) * sample.sampleRate)));
     const channels: Float32Array[] = [];
     for (let ch = 0; ch < sample.numberOfChannels; ch++) {
       const buf = new Float32Array(sample.numberOfFrames);
       sample.copyTo(buf, { planeIndex: ch, format: "f32-planar" });
-      channels.push(buf);
+      channels.push(skip ? buf.subarray(skip) : buf);
     }
     sample.close();
-    await job.push(downmix(channels));
+    if (skip < sample.numberOfFrames) await job.push(downmix(channels));
   }
   input.dispose();
 }
@@ -347,7 +381,7 @@ async function transcribePcm(job: Job, pcm: Float32Array, sampleRate: number) {
   post({ type: "meta", jobId: job.id, duration: pcm.length / sampleRate });
   job.setSampleRate(sampleRate);
   const step = sampleRate * 2;
-  for (let i = 0; i < pcm.length && !job.isCancelled; i += step) {
+  for (let i = Math.round(job.offset * sampleRate); i < pcm.length && !job.isCancelled; i += step) {
     await job.push(pcm.subarray(i, i + step));
   }
 }
@@ -411,11 +445,11 @@ async function peek(source: LiveSource): Promise<Float32Array | null> {
   return source.hasChunk() ? source.next() : null;
 }
 
-async function runJob(jobId: number, options: DecodeOptions, feed: (job: Job) => Promise<void>) {
+async function runJob(jobId: number, options: DecodeOptions, feed: (job: Job) => Promise<void>, startAt = 0) {
   let job: Job | null = null;
   try {
     const engine = await getEngine();
-    job = new Job(jobId, engine, options);
+    job = new Job(jobId, engine, options, startAt);
     await feed(job);
     if (job.isCancelled) {
       post({ type: "cancelled", jobId });
@@ -446,10 +480,12 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
       );
       break;
     case "transcribe":
-      queue = queue.then(() => runJob(m.jobId, m.options, (job) => transcribeFile(job, m.file)));
+      queue = queue.then(() => runJob(m.jobId, m.options, (job) => transcribeFile(job, m.file), m.startAt));
       break;
     case "transcribe-pcm":
-      queue = queue.then(() => runJob(m.jobId, m.options, (job) => transcribePcm(job, m.pcm, m.sampleRate)));
+      queue = queue.then(() =>
+        runJob(m.jobId, m.options, (job) => transcribePcm(job, m.pcm, m.sampleRate), m.startAt),
+      );
       break;
     case "live-start": {
       const source = new LiveSource();

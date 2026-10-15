@@ -18,6 +18,13 @@ the punctuation / true-casing model to public/models/punct/:
   spm.json             its SentencePiece unigram vocabulary (pieces + scores)
   punct.json           labels and windowing parameters
 
+Duyu-small to public/models/duyu-small/:
+
+  encoder_pre / encoder_pass / encoder_post / decoder .onnx   int8 graphs, unchanged (wasm)
+  fbank.bin            the feature window (400) and mel filters (257 x 80), float32
+  tokens.json          SentencePiece pieces by id (decoding only)
+  model.json           special tokens, refinement gates and pass embeddings, file sizes
+
 Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the two text-to-speech models for
 dubbing: EMA Lightning to public/models/ema-lightning/ and Antalia Mini to public/models/antalia-mini/,
 and the Turkish -> English translation model to public/models/opus-mt-tc-big-tr-en/.
@@ -620,6 +627,55 @@ def prepare_mini() -> None:
     (MINI_OUT / "model.json").write_text(json.dumps(mini, ensure_ascii=False, indent=2))
     print(f"antalia mini: {sum(mini['files'].values()) / 1e6:.0f} MB")
 
+DUYU_REPO = "KaanAydinli/Duyu-small"
+DUYU_OUT = ROOT / "public" / "models" / "duyu-small"
+DUYU_GRAPHS = ["encoder_pre.onnx", "encoder_pass.onnx", "encoder_post.onnx", "decoder.onnx"]
+
+
+def prepare_duyu(cache: Path) -> None:
+    """Duyu-small, the int8 graphs as published (they run on wasm)."""
+    import sentencepiece as spm
+
+    for f in [*(f"int8/{g}" for g in DUYU_GRAPHS), "engine.json", "fbank.npz", "passes.npz", "spm.model"]:
+        p = cache / f
+        if not p.exists():
+            p.parent.mkdir(parents=True, exist_ok=True)
+            url = f"https://huggingface.co/{DUYU_REPO}/resolve/main/{f}"
+            print("download", url)
+            urllib.request.urlretrieve(url, str(p) + ".part")
+            os.replace(str(p) + ".part", p)
+    DUYU_OUT.mkdir(parents=True, exist_ok=True)
+    for g in DUYU_GRAPHS:
+        shutil.copy(cache / "int8" / g, DUYU_OUT / g)
+
+    fb = np.load(cache / "fbank.npz")
+    assert fb["window"].shape == (400,) and fb["mel"].shape == (257, 80)
+    np.concatenate([fb["window"].ravel(), fb["mel"].ravel()]).astype("<f4").tofile(DUYU_OUT / "fbank.bin")
+    sp = spm.SentencePieceProcessor(model_file=str(cache / "spm.model"))
+    pieces = [sp.id_to_piece(i) for i in range(sp.get_piece_size())]
+    (DUYU_OUT / "tokens.json").write_text(json.dumps(pieces, ensure_ascii=False, separators=(",", ":")))
+
+    meta = json.loads((cache / "engine.json").read_text())
+    passes = np.load(cache / "passes.npz")
+    files = [*DUYU_GRAPHS, "fbank.bin", "tokens.json"]
+    duyu = {
+        "name": "Duyu-small",
+        "pad": meta["pad"],
+        "bos": meta["bos"],
+        "eos": meta["eos"],
+        "lang": meta["lang"],
+        "style": meta["style"],
+        "maxPositions": meta["max_positions"],
+        "vocabSize": meta["vocab_size"],
+        "dModel": meta["d_model"],
+        "frameHz": meta["frame_hz"],
+        "gates": [round(float(g), 8) for g in passes["gates"]],
+        "passEmbed": [[round(float(v), 8) for v in row] for row in passes["pass_embed"]],
+        "files": {f: (DUYU_OUT / f).stat().st_size for f in files},
+    }
+    (DUYU_OUT / "model.json").write_text(json.dumps(duyu, indent=1))
+    print(f"duyu: {sum(duyu['files'].values()) / 1e6:.0f} MB")
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -627,8 +683,10 @@ def main() -> None:
     ap.add_argument("--whisper-only", action="store_true", help="only (re)build the Whisper files")
     ap.add_argument("--tts-only", action="store_true", help="only download the dubbing voices")
     ap.add_argument("--mt-only", action="store_true", help="only (re)build the translation model")
+    ap.add_argument("--duyu-only", action="store_true", help="only (re)build Duyu-small")
     args = ap.parse_args()
     mt_cache = args.src.parent / "opus-mt-tc-big-tr-en"
+    duyu_cache = args.src.parent / "duyu-small"
     if args.whisper_only:
         prepare_whisper()
         return
@@ -638,6 +696,9 @@ def main() -> None:
         return
     if args.mt_only:
         prepare_mt(mt_cache)
+        return
+    if args.duyu_only:
+        prepare_duyu(duyu_cache)
         return
     args.src.mkdir(parents=True, exist_ok=True)
     download(args.src)
@@ -653,6 +714,7 @@ def main() -> None:
     write_config(args.src)
     prepare_punct(args.src.parent / "punct_cap_seg_47_language")
     prepare_whisper()
+    prepare_duyu(duyu_cache)
     prepare_ema()
     prepare_mini()
     prepare_mt(mt_cache)

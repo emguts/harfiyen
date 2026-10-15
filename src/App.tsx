@@ -41,6 +41,7 @@ import {
 import { RecordButton } from "./components/RecordButton";
 import { Inspector } from "./components/Inspector";
 import { ModelMenu } from "./components/ModelMenu";
+import { MoreMenu } from "./components/MoreMenu";
 import { Settings } from "./components/Settings";
 import { ProviderMenu } from "./components/ProviderMenu";
 import { StatusBar } from "./components/StatusBar";
@@ -54,7 +55,7 @@ import { writeNumbers, type NumberMode } from "./lib/numbers";
 import { plainWord } from "./punct/turkish";
 import { isSubtitle, parseSubtitles, readSubtitle, SUBTITLE_EXTS } from "./lib/subtitles";
 import { download } from "./lib/exporters";
-import { clock } from "./lib/format";
+import { clock, duration as fmtDuration } from "./lib/format";
 import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { useSourceInfo } from "./lib/useSourceInfo";
@@ -68,9 +69,10 @@ import {
   type VideoOutput,
 } from "./lib/videoOutput";
 import { usePlayer } from "./lib/usePlayer";
+import { useFollow } from "./lib/useFollow";
 import { DEFAULT_VOICE, sameVoice, useDubber, useDubPlayback, type Voice } from "./lib/useDubber";
 import { useProjects } from "./lib/useProjects";
-import { modelIsCached, useTranscriber } from "./lib/useTranscriber";
+import { canResume, modelIsCached, useTranscriber } from "./lib/useTranscriber";
 import { useTranslator } from "./lib/useTranslator";
 import { sourceKey } from "./lib/translation";
 import { TRANSCRIPT_LANG } from "./lib/lang";
@@ -134,6 +136,9 @@ function baseName(name: string) {
   return i > 0 ? name.slice(0, i) : name;
 }
 
+/** Seconds of transcription work after which cancelling asks first. */
+const LONG_JOB_SEC = 60;
+
 export function App() {
   const {
     engine,
@@ -151,6 +156,7 @@ export function App() {
     startLive,
     stopLive,
     cancel,
+    resume,
     setWords,
     setTranslation,
     liveLevels,
@@ -179,6 +185,7 @@ export function App() {
   const burner = useBurner();
   const [videoOutput, setVideoOutput] = useState<VideoOutput>(loadOutput);
   const player = usePlayer(job?.file ?? null);
+  const following = useFollow(player, job);
   const dubber = useDubber();
   const translator = useTranslator();
   /** Show the English translation instead of the transcript, once there is one. */
@@ -256,6 +263,7 @@ export function App() {
           options: optionsFor(p.method),
           duration: p.duration,
           elapsed: p.elapsed,
+          stoppedAt: p.stoppedAt,
           imported: p.imported,
           words: p.words,
           peaks: p.peaks,
@@ -398,6 +406,29 @@ export function App() {
     resetBurn();
     clear();
   };
+
+  // A wrong file: stop and drop it, nothing is saved. Asks first once a
+  // minute of work would be thrown away.
+  const discardJob = () => {
+    if (!job) return;
+    const worked = job.speed > 0 ? job.decoded / job.speed : 0;
+    if (
+      worked >= LONG_JOB_SEC &&
+      !confirm(`Yazıya dökme iptal edilsin mi? Şimdiye kadar dökülen ${fmtDuration(job.decoded)} silinir, proje kaydedilmez.`)
+    ) {
+      return;
+    }
+    newProject();
+  };
+
+  // Go on with a stopped transcription; the whole transcript is punctuated
+  // once it is done, as if it had never stopped.
+  const resumeJob = canResume(job)
+    ? () => {
+        punctuated.current.delete(job.id);
+        resume();
+      }
+    : undefined;
 
   // Deleting the open project moves on to the next most recent one.
   const deleteProject = async (id: string) => {
@@ -553,7 +584,7 @@ export function App() {
       ? "İşlemci (WASM) seçili; bu model ekran kartı gerektirir."
       : !("gpu" in navigator)
         ? "Bu tarayıcı WebGPU desteklemiyor."
-        : engine.phase === "ready" && engine.provider === "wasm" && !chosen.gpuOnly
+        : engine.phase === "ready" && engine.provider === "wasm" && !chosen.gpuOnly && !chosen.cpuOnly
           ? (engine.fallbackReason ?? "Ekran kartı kullanılamıyor.")
           : null;
 
@@ -701,6 +732,22 @@ export function App() {
     job.model !== model
       ? modelInfo(job.model)
       : null;
+  // A transcription in progress: switching model or provider would abort it.
+  const engineBusy =
+    job?.status === "running" ||
+    punct.phase === "run" ||
+    punct.phase === "download";
+  const modelProps = { value: model, onChange: setModel, gpuReason, locked: engineBusy };
+  const providerProps = {
+    value: provider,
+    engine,
+    onChange: setProvider,
+    cpuUnavailable: chosen.gpuOnly
+      ? `${chosen.name} işlemcide çalışmaz; önce Seda'ya geç.`
+      : null,
+    gpuUnavailable: chosen.cpuOnly ? `${chosen.name} yalnızca işlemcide çalışır.` : null,
+    locked: engineBusy,
+  };
   const goLiveRef = useRef<() => Promise<void>>(async () => {});
   const goLive = async () => {
     setNotice(null);
@@ -799,40 +846,22 @@ export function App() {
             onResetBurn={burner.reset}
           />
         )}
-        <ModelMenu
-          value={model}
-          onChange={setModel}
-          gpuReason={gpuReason}
-          locked={
-            job?.status === "running" ||
-            punct.phase === "run" ||
-            punct.phase === "download"
-          }
-        />
-        <ProviderMenu
-          value={provider}
-          engine={engine}
-          onChange={setProvider}
-          cpuUnavailable={
-            chosen.gpuOnly
-              ? `${chosen.name} işlemcide çalışmaz; önce Seda'ya geç.`
-              : null
-          }
-          locked={
-            job?.status === "running" ||
-            punct.phase === "run" ||
-            punct.phase === "download"
-          }
-        />
+        {/* Phones fold the model, provider and settings into "⋯"; GitHub is in Ayarlar → Hakkında. */}
+        <div className="max-[480px]:hidden">
+          <ModelMenu {...modelProps} />
+        </div>
+        <div className="max-[480px]:hidden">
+          <ProviderMenu {...providerProps} />
+        </div>
         <button
-          className={toolbarButton({ compact: true })}
+          className={`${toolbarButton({ compact: true })} max-[480px]:hidden`}
           onClick={() => setSettingsOpen(true)}
           title="Ayarlar"
         >
           <IconSettings /> <TbLabel>Ayarlar</TbLabel>
         </button>
         <a
-          className={toolbarButton({ compact: true })}
+          className={`${toolbarButton({ compact: true })} max-[480px]:hidden`}
           href="https://github.com/ozcancelik/harfiyen"
           target="_blank"
           rel="noopener noreferrer"
@@ -840,6 +869,9 @@ export function App() {
         >
           <IconGitHub /> <TbLabel>GitHub</TbLabel>
         </a>
+        <div className="hidden max-[480px]:block">
+          <MoreMenu model={modelProps} provider={providerProps} onSettings={() => setSettingsOpen(true)} />
+        </div>
       </header>
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
@@ -955,6 +987,7 @@ export function App() {
             words={liveWords}
             settings={settings}
             liveTime={job?.live && !job.file ? job.decoded : null}
+            following={following}
             bands={job?.bands ?? EMPTY_BANDS}
             loudness={(!english && job?.loudness) || EMPTY_BANDS}
             lang={lang}
@@ -1091,6 +1124,7 @@ export function App() {
           job={job}
           engine={engine}
           onRestart={() => job?.file && openFile(job.file)}
+          onResume={resumeJob}
           autoPunct={autoPunct}
           onAutoPunct={setAutoPunct}
           onPunctuate={applyPunct}
@@ -1176,6 +1210,9 @@ export function App() {
         notice={notice}
         punct={punct}
         liveWaiting={liveWaiting}
+        onStop={cancel}
+        onDiscard={discardJob}
+        onResume={resumeJob}
       />
     </div>
   );

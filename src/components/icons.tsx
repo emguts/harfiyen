@@ -191,6 +191,12 @@ export const IconSettings = (p: P) => (
   </Svg>
 );
 
+export const IconMore = (p: P) => (
+  <Svg {...p}>
+    <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth="2.5" />
+  </Svg>
+);
+
 export const IconWave = (p: P) => (
   <Svg {...p}>
     <path d="M2.5 7v2M5 5v6M8 2.5v11M11 5v6M13.5 7v2" />

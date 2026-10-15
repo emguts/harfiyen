@@ -35,6 +35,8 @@ export interface Project {
   method: DecodingMethod;
   duration: number | null;
   elapsed: number | null;
+  /** The transcription was stopped here and can be continued; missing when it finished. */
+  stoppedAt?: number;
   words: Word[];
   peaks: Float32Array;
   bands: Float32Array;
@@ -238,6 +240,7 @@ export function projectToFile(p: Project): string {
     method: p.method,
     duration: p.duration,
     elapsed: p.elapsed,
+    ...(p.stoppedAt !== undefined && { stoppedAt: p.stoppedAt }),
     media: p.media,
     settings: p.settings,
     words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
@@ -292,6 +295,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     method: (d.method as DecodingMethod) ?? "beam-lm",
     duration: num(d.duration),
     elapsed: num(d.elapsed),
+    stoppedAt: num(d.stoppedAt) ?? undefined,
     words,
     peaks: fromBase64(d.peaks),
     bands: fromBase64(d.bands),

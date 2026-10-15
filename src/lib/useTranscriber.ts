@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { DecodeOptions, Word } from "../engine";
 import { DEFAULT_MODEL, isModelId, modelFileUrl, modelInfo, type ModelId } from "../models";
 import { allCached } from "../worker/modelStore";
-import type { FromWorker, ProviderChoice, ToWorker } from "../worker/protocol";
+import { BAND_RATE, PEAK_STEP, type FromWorker, type ProviderChoice, type ToWorker } from "../worker/protocol";
 import { decodeWithAudioContext } from "./decodeFallback";
 import { LiveMeter, type AuraLevels } from "../render/aura";
 import { MicError, startMicrophone, type Microphone } from "./microphone";
@@ -48,7 +48,13 @@ export interface Job {
   elapsed: number | null;
   error: string | null;
   translation?: Translation;
+  /** Where the current run started in the file: 0, or where a stopped job was continued from. */
+  startAt?: number;
 }
+
+/** A stopped file job can go on from where it stopped. */
+export const canResume = (j: Job | null): j is Job & { file: File } =>
+  !!j && j.status === "cancelled" && !j.live && !!j.file && !j.imported && j.decoded < (j.duration ?? Infinity) - 0.5;
 
 const PROVIDER_KEY = "harfiyen.provider";
 const MODEL_KEY = "harfiyen.model";
@@ -223,7 +229,10 @@ export function useTranscriber() {
             // Let the browser's media stack decode the whole file instead.
             try {
               const pcm = await decodeWithAudioContext(j.file);
-              send({ type: "transcribe-pcm", jobId: j.id, pcm, sampleRate: 16000, options: j.options }, [pcm.buffer]);
+              send(
+                { type: "transcribe-pcm", jobId: j.id, pcm, sampleRate: 16000, options: j.options, startAt: j.startAt },
+                [pcm.buffer],
+              );
               break;
             } catch {
               update(m.jobId, (x) => ({
@@ -320,26 +329,32 @@ export function useTranscriber() {
     [prepare, send, cancelLiveWait],
   );
 
-  /** Open a saved transcript as a finished job; `file` may come later (attach). */
+  /**
+   * Open a saved transcript as a finished job; `file` may come later (attach).
+   * `stoppedAt`: the transcription was stopped there, it can be continued.
+   */
   const load = useCallback(
     (
       p: Pick<
         Job,
         "file" | "model" | "imported" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands" | "loudness" | "translation"
-      >,
+      > & { stoppedAt?: number | null },
     ) => {
       const prev = jobRef.current;
       if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
       cancelLiveWait();
       void mic.current?.stop();
       mic.current = null;
+      const { stoppedAt, ...rest } = p;
+      // Only a sane position counts (project files can be edited by hand).
+      const stopped = typeof stoppedAt === "number" && stoppedAt >= 0;
       const j: Job = {
-        ...p,
+        ...rest,
         id: nextId.current++,
         live: false,
         recording: false,
-        status: "done",
-        decoded: p.duration ?? p.words.at(-1)?.end ?? 0,
+        status: stopped ? "cancelled" : "done",
+        decoded: stopped ? stoppedAt : (p.duration ?? p.words.at(-1)?.end ?? 0),
         tentative: [],
         speed: p.duration && p.elapsed ? p.duration / p.elapsed : 0,
         error: null,
@@ -543,7 +558,35 @@ export function useTranscriber() {
     [restartWorker, prepare, provider],
   );
 
-  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, start, load, attach, startLive, stopLive, cancel, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct };
+  /**
+   * Go on with a stopped job from where it stopped. The words so far stay;
+   * the waveform and aura are cut back to that point, since the worker may
+   * have read a little further than it wrote. The model that wrote the
+   * job writes the rest, so the selected model switches back to it if needed.
+   */
+  const resume = useCallback(() => {
+    const j = jobRef.current;
+    if (!canResume(j)) return;
+    if (workerModel.current !== j.model) setModel(j.model);
+    prepare();
+    const at = j.decoded;
+    const bands = Math.floor(at * BAND_RATE);
+    update(j.id, (x) => ({
+      ...x,
+      status: "running",
+      startAt: at,
+      error: null,
+      tentative: [],
+      speed: 0,
+      elapsed: null,
+      peaks: x.peaks.slice(0, Math.floor(at / PEAK_STEP)),
+      bands: x.bands.slice(0, bands * 3),
+      loudness: x.loudness.slice(0, bands),
+    }));
+    send({ type: "transcribe", jobId: j.id, file: j.file, options: j.options, startAt: at });
+  }, [prepare, send, update, setModel]);
+
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, start, load, attach, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct };
 }
 
 export { MicError };

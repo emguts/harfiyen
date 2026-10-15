@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 export interface Player {
   /** Attach to the (invisible) <video>/<audio> that does decoding and sound. */
@@ -12,6 +12,10 @@ export interface Player {
   muted: boolean;
   toggle: () => void;
   seek: (t: number) => void;
+  /** Seek for the app itself (e.g. following a transcription): not counted in `touches`. */
+  preview: (t: number) => void;
+  /** How often the user played, paused or sought; changes mean they took over. */
+  touches: RefObject<number>;
   setMuted: (m: boolean) => void;
 }
 
@@ -30,6 +34,12 @@ export function usePlayer(file: File | null): Player {
   const [muted, setMutedState] = useState(false);
   /** null until metadata says whether the file has a picture. */
   const [hasPicture, setHasPicture] = useState<boolean | null>(null);
+  /** Where a scrub wants to be once the running seek lands. */
+  const pending = useRef<number | null>(null);
+  /** The scrub's latest time, shown at the next frame (see seek). */
+  const scrubTo = useRef(0);
+  const scrubFrame = useRef(0);
+  const touches = useRef(0);
 
   // Object URL tied to the effect, so StrictMode's re-run cannot revoke one in use.
   useEffect(() => {
@@ -47,6 +57,7 @@ export function usePlayer(file: File | null): Player {
   }, [file]);
 
   useEffect(() => {
+    pending.current = null;
     if (!el) return;
     const on = (type: string, fn: () => void) => {
       el.addEventListener(type, fn);
@@ -54,7 +65,13 @@ export function usePlayer(file: File | null): Player {
     };
     const offs = [
       on("timeupdate", () => setTime(el.currentTime)),
-      on("seeked", () => setTime(el.currentTime)),
+      on("seeked", () => {
+        // A scrub moved on while this seek ran: go there now.
+        const t = pending.current;
+        pending.current = null;
+        if (t !== null && t !== el.currentTime) el.currentTime = t;
+        else setTime(el.currentTime);
+      }),
       on("durationchange", () => setDuration(Number.isFinite(el.duration) ? el.duration : 0)),
       on("play", () => setPlaying(true)),
       on("pause", () => setPlaying(false)),
@@ -77,22 +94,43 @@ export function usePlayer(file: File | null): Player {
     return () => {
       offs.forEach((f) => f());
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(scrubFrame.current);
+      scrubFrame.current = 0;
     };
   }, [el]);
 
   const toggle = useCallback(() => {
     if (!el) return;
+    touches.current++;
     if (el.paused) void el.play();
     else el.pause();
   }, [el]);
 
-  const seek = useCallback(
+  // Scrubbing sets a new time on every pointer move. Each one cancels the seek
+  // before it, so no frame is ever decoded; while one runs, keep only the latest.
+  const preview = useCallback(
     (t: number) => {
       if (!el) return;
-      el.currentTime = Math.max(0, t);
-      setTime(el.currentTime);
+      const to = Math.max(0, t);
+      if (el.seeking) pending.current = to;
+      else el.currentTime = to;
+      // Pointer moves can come faster than the screen redraws, and each time
+      // re-renders the app: show only the latest, once per frame.
+      scrubTo.current = to;
+      scrubFrame.current ||= requestAnimationFrame(() => {
+        scrubFrame.current = 0;
+        setTime(scrubTo.current);
+      });
     },
     [el],
+  );
+
+  const seek = useCallback(
+    (t: number) => {
+      touches.current++;
+      preview(t);
+    },
+    [preview],
   );
 
   const setMuted = useCallback((m: boolean) => el && (el.muted = m), [el]);
@@ -109,6 +147,8 @@ export function usePlayer(file: File | null): Player {
     muted,
     toggle,
     seek,
+    preview,
+    touches,
     setMuted,
   };
 }

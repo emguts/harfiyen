@@ -34,6 +34,7 @@ export function Viewer({
   children,
   notice,
   lang,
+  following = false,
 }: {
   /** Raw microphone levels while recording (updated in place). */
   liveLevels?: React.RefObject<AuraLevels | null>;
@@ -52,6 +53,8 @@ export function Viewer({
   notice?: React.ReactNode;
   /** Language of the words; decides how they are uppercased. */
   lang: string;
+  /** The preview follows a running transcription (see useFollow). */
+  following?: boolean;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -130,6 +133,8 @@ export function Viewer({
     if (!compositor || !c || !st || (!el && !live)) return;
     let raf = 0;
     let last = "";
+    /** A video frame has been drawn: from then on a seek keeps it up until the new one is decoded. */
+    let drawn = false;
     const loop = () => {
       const dpr = window.devicePixelRatio || 1;
       const fit = Math.min(1, (st.clientWidth * dpr) / frame.w, (st.clientHeight * dpr) / frame.h);
@@ -161,10 +166,15 @@ export function Viewer({
       const key = aura
         ? `${w}x${h}|${aura.time}|${aura.palette}|${bandsRef.current.length}|${cap ? `${cap.key}|${cap.scale}` : ""}`
         : `${w}x${h}|${t}|${el?.readyState}|${cap ? `${cap.key}|${cap.scale}` : ""}`;
-      if (key !== last) {
+      const video = !aura && isVideo && el ? (el as HTMLVideoElement) : null;
+      // While scrubbing, the element has no frame (readyState < 2) until the
+      // seek lands; drawing then would flash black, so the last frame stays.
+      const waiting = !!video && drawn && video.readyState < 2;
+      if (key !== last && !waiting) {
         last = key;
         compositor.resize(w, h);
-        compositor.render(aura ?? (isVideo && el ? (el as HTMLVideoElement) : null), cap);
+        compositor.render(aura ?? video, cap);
+        if (video && video.readyState >= 2) drawn = true;
       }
       raf = requestAnimationFrame(loop);
     };
@@ -289,6 +299,15 @@ export function Viewer({
         </>
       ) : (
         children
+      )}
+      {url && following && !notice && (
+        <p
+          className="pointer-events-none absolute top-2.5 left-2.5 m-0 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white/85"
+          role="status"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-cini motion-reduce:animate-none" aria-hidden />
+          Yazılanı takip ediyor · oynatınca durur
+        </p>
       )}
       {url && notice && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">

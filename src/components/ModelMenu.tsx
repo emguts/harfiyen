@@ -4,22 +4,19 @@ import { IconCheck, IconChevron, IconWave } from "./icons";
 import { Menu, MenuFoot, MenuGroup, MenuItem, MenuNote, MenuTitle } from "./Menu";
 import { TbLabel, toolbarButton } from "./ui";
 
-/** Toolbar control: which speech model transcribes. */
-export function ModelMenu({
-  value,
-  onChange,
-  gpuReason,
-  locked,
-}: {
+export interface ModelProps {
   value: ModelId;
   onChange: (m: ModelId) => void;
   /** Why GPU-only models cannot run here, if they cannot. */
   gpuReason: string | null;
   /** A transcription is running; switching would abort it. */
   locked: boolean;
-}) {
+}
+
+/** Toolbar control: which speech model transcribes. */
+export function ModelMenu(props: ModelProps) {
   const [open, setOpen] = useState(false);
-  const current = modelInfo(value);
+  const current = modelInfo(props.value);
 
   return (
     <Menu
@@ -42,6 +39,15 @@ export function ModelMenu({
         </button>
       }
     >
+      <ModelChoices {...props} onDone={() => setOpen(false)} />
+    </Menu>
+  );
+}
+
+/** The models to pick from; also in the phone toolbar's "⋯" menu. */
+export function ModelChoices({ value, onChange, gpuReason, locked, onDone }: ModelProps & { onDone: () => void }) {
+  return (
+    <>
       <MenuGroup>
         <MenuTitle>Yazıya döken model</MenuTitle>
         {MODELS.map((m) => {
@@ -54,7 +60,7 @@ export function ModelMenu({
               aria-checked={m.id === value}
               disabled={locked || (!!unavailable && m.id !== value)}
               onClick={() => {
-                setOpen(false);
+                onDone();
                 if (m.id !== value) onChange(m.id);
               }}
             >
@@ -76,6 +82,6 @@ export function ModelMenu({
       </MenuGroup>
       <MenuFoot>Model ilk kullanımda indirilir ve bu tarayıcıda saklanır. Ayarlar → Modeller'den indirilip silinebilir.</MenuFoot>
       {locked && <MenuFoot>Yazıya dökme sürerken değiştirilemez.</MenuFoot>}
-    </Menu>
+    </>
   );
 }

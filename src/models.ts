@@ -1,14 +1,14 @@
 // The speech models the user can choose from. Files live under
 // VITE_MODELS_BASE_URL (default /models) in each model's directory.
 
-export type ModelId = "seda" | "whisper-turbo" | "whisper-turbo-q4";
+export type ModelId = "seda" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
 
 export const MODELS_BASE = (import.meta.env.VITE_MODELS_BASE_URL || `${import.meta.env.BASE_URL}models`).replace(/\/+$/, "");
 
 export interface ModelInfo {
   id: ModelId;
   /** Which engine runs it. */
-  engine: "seda" | "whisper";
+  engine: "seda" | "duyu" | "whisper";
   name: string;
   /** Short tag next to the name. */
   tier: string;
@@ -28,6 +28,8 @@ export interface ModelInfo {
   live: boolean;
   /** Needs WebGPU. */
   gpuOnly: boolean;
+  /** Always runs on the CPU (WASM), whatever the provider choice. */
+  cpuOnly: boolean;
   /** Needs 16-bit float shaders (shader-f16) on the GPU. */
   needsF16: boolean;
   /** Writes punctuation and capitals itself. */
@@ -49,8 +51,26 @@ export const MODELS: ModelInfo[] = [
     link: "https://huggingface.co/atasoglu/seda-v0.1",
     live: true,
     gpuOnly: false,
+    cpuOnly: false,
     needsF16: false,
     punctuates: false,
+  },
+  {
+    id: "duyu",
+    engine: "duyu",
+    name: "Duyu",
+    tier: "Hafif",
+    note: "Küçük; noktalama ve büyük harfi kendisi yazar. İşlemcide çalışır; canlı kayıtta kullanılmaz.",
+    size: "85 MB",
+    spec: "Duyu-small (int8)",
+    dir: "duyu-small",
+    files: ["encoder_pre.onnx", "encoder_pass.onnx", "encoder_post.onnx", "decoder.onnx", "fbank.bin", "tokens.json"],
+    link: "https://huggingface.co/KaanAydinli/Duyu-small",
+    live: false,
+    gpuOnly: false,
+    cpuOnly: true,
+    needsF16: false,
+    punctuates: true,
   },
   {
     id: "whisper-turbo-q4",
@@ -65,6 +85,7 @@ export const MODELS: ModelInfo[] = [
     link: "https://huggingface.co/openai/whisper-large-v3-turbo",
     live: false,
     gpuOnly: true,
+    cpuOnly: false,
     needsF16: true,
     punctuates: true,
   },
@@ -81,6 +102,7 @@ export const MODELS: ModelInfo[] = [
     link: "https://huggingface.co/openai/whisper-large-v3-turbo",
     live: false,
     gpuOnly: true,
+    cpuOnly: false,
     needsF16: true,
     punctuates: true,
   },

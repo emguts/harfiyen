@@ -49,7 +49,7 @@ function melFilters(numMel: number): MelBin[] {
  * Mixed-radix complex FFT for sizes that factor into 2, 3, 4 and 5 (kissfft's
  * recursive decimation in time with generic butterflies). 400 = 4·4·5·5.
  */
-class MixedFft {
+export class MixedFft {
   private factors: number[] = [];
   private twRe: Float64Array;
   private twIm: Float64Array;

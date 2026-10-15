@@ -132,6 +132,9 @@ function BurnItem({ burn }: { burn: BurnState }) {
   );
 }
 
+const ACTION =
+  "cursor-pointer rounded-ui-sm border border-line bg-transparent px-1.5 py-px text-[11px] leading-[15px] text-fg-2 hover:bg-line hover:text-fg";
+
 export function StatusBar({
   engine,
   job,
@@ -139,6 +142,9 @@ export function StatusBar({
   notice,
   punct,
   liveWaiting,
+  onStop,
+  onDiscard,
+  onResume,
 }: {
   engine: EngineState;
   job: Job | null;
@@ -147,7 +153,14 @@ export function StatusBar({
   punct: PunctState;
   /** One-off problem to show, e.g. microphone permission denied. */
   notice: string | null;
+  /** Stop the transcription and keep what is written. */
+  onStop: () => void;
+  /** Stop it and drop the job: nothing is saved. */
+  onDiscard: () => void;
+  /** Go on with a stopped transcription; missing when it cannot. */
+  onResume?: () => void;
 }) {
+  const transcribing = job?.status === "running" && !job.live;
   return (
     <footer className="flex items-center gap-[18px] border-t border-line-soft bg-[#111417] px-3.5 text-[11px] tracking-[-0.005em] whitespace-nowrap text-fg-2 max-[860px]:order-5 max-[860px]:mt-auto max-[860px]:h-[26px]">
       {notice && (
@@ -156,6 +169,24 @@ export function StatusBar({
         </span>
       )}
       <JobItem job={job} engine={engine} liveWaiting={liveWaiting} />
+      {transcribing && (
+        <span className="inline-flex flex-none gap-1.5">
+          <button type="button" className={ACTION} title="Şimdiye kadar dökülen kısım proje olarak kalır" onClick={onStop}>
+            Durdur
+          </button>
+          {/* A continued job is already saved as a project: only stopping makes sense. */}
+          {!job.startAt && (
+            <button type="button" className={ACTION} title="Yanlış dosya mı? Döküm silinir, proje kaydedilmez" onClick={onDiscard}>
+              İptal
+            </button>
+          )}
+        </span>
+      )}
+      {onResume && (
+        <button type="button" className={`${ACTION} flex-none`} title="Kaldığı yerden yazıya dökmeye devam et" onClick={onResume}>
+          Devam et
+        </button>
+      )}
       <PunctItem punct={punct} />
       <BurnItem burn={burn} />
       <span className="flex-1" />

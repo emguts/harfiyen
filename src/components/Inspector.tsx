@@ -57,6 +57,7 @@ export function Inspector({
   job,
   engine,
   onRestart,
+  onResume,
   onCancel,
   autoPunct,
   onAutoPunct,
@@ -93,6 +94,8 @@ export function Inspector({
   job: Job | null;
   engine: EngineState;
   onRestart: () => void;
+  /** Go on with a stopped transcription; missing when it cannot. */
+  onResume?: () => void;
   onCancel: () => void;
   autoPunct: boolean;
   onAutoPunct: (on: boolean) => void;
@@ -211,7 +214,7 @@ export function Inspector({
                 />
               ) : (
                 <Hint>
-                  {info.name} sesi 30 saniyelik parçalar hâlinde işler;
+                  {info.name} sesi {info.engine === "duyu" ? "12–15" : "30"} saniyelik parçalar hâlinde işler;
                   kelimeler her parça bitince gelir. Model seçimi üst çubukta.
                 </Hint>
               )}
@@ -219,6 +222,13 @@ export function Inspector({
                 <SectionActions>
                   {running ? (
                     <Button onClick={onCancel}>Durdur</Button>
+                  ) : onResume ? (
+                    <>
+                      <Button variant="primary" onClick={onResume}>
+                        Devam et
+                      </Button>
+                      <Button onClick={onRestart}>{restartLabel}</Button>
+                    </>
                   ) : (
                     <Button variant="primary" onClick={onRestart}>
                       {restartLabel}
@@ -360,7 +370,9 @@ export function Inspector({
                   <a href={info.link}>{info.spec}</a>
                   {info.engine === "seda"
                     ? ", Türkçe"
-                    : ", çok dilli (Türkçe seçili)"}
+                    : info.engine === "duyu"
+                      ? ", Türkçe ve İngilizce (Türkçe seçili)"
+                      : ", çok dilli (Türkçe seçili)"}
                 </dd>
                 <dt>Çalıştığı yer</dt>
                 <dd>
