@@ -23,7 +23,12 @@ Yeni sürümler en üstte.
 - **Yeni altyazı stilleri:** Akış, Tek kelime, Dolgu, Netleş, Cam ve Odak. Stiller Sakin, Vurgulu ve İri
   diye gruplara ayrıldı. Cam'da arkadaki video buzlu camla bulanıklaşır; Odak ve Netleş'te kelimeler
   bulanıktan netleşir.
-- **Sesle vurgula:** Yüksek sesle söylenen kelimeler altyazıda büyür ve vurgu renginde yazılır.
+- **Sesle vurgula:** Yüksek sesle söylenen kelimeler altyazıda büyür ve vurgu renginde yazılır. Yeni
+  projeler kapalı başlar.
+- **Stil değişince ayarlar korunur:** Elle değiştirdiğin zemin, renk, boyut gibi ayarlar başka stile
+  geçince kaybolmaz. **Stilin varsayılanlarına dön** ile stilin kendi görünümüne dönülür.
+- **Altyazı ortalaması:** Altyazı artık büyük harflerin yüksekliğine göre ortalanıyor; kutunun içinde aşağıda
+  durmuyor. Her yazı tipinde aynı şekilde çalışır.
 - **Yazı tipleri:** Bangers ve Luckiest Guy eklendi. Kendi yazı tipini de (TTF, OTF, WOFF, WOFF2)
   yükleyebilirsin.
 - **Sayı yazımı:** Sayılar kurala göre ya da hepsi rakamla yazılır; istersen hiç dokunulmaz. Ekler, sıra
@@ -34,6 +39,9 @@ Yeni sürümler en üstte.
 - **Daha isabetli kelime zamanları:** Seda'nın yaklaşık 150 ms'lik gecikmesi düzeltildi. Whisper cümle
   başındaki ve sonundaki sessizliği artık kelimeye katmıyor, altyazı konuşmaya daha iyi oturuyor.
 - **Noktalama:** Özel adlardaki kesme işareti kuralları düzeltildi, tanınan yer adı listesi genişletildi.
+- **Hakkında ve lisans:** Ayarlar'da sürümü ve bağlantıları gösteren Hakkında bölümü var. Harfiyen artık MIT
+  lisanslı.
+- **Mobil:** Telefonda model, işlemci ve ayarlar düğmeleri tek bir **⋯** menüsünde toplandı.
 - **Düzeltmeler:** Safari'de proje silinemiyordu, düzeltildi. Proje silme onayı artık tarayıcının açılır
   penceresinde değil, listenin içinde soruluyor. İndirilen model dosyaları kullanılmadan önce
   doğrulanıyor; bozuk ya da yarım kalmış bir dosya yeniden indiriliyor.

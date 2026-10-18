@@ -37,7 +37,8 @@ https://github.com/user-attachments/assets/72944ea4-75aa-4462-b5eb-b98a2f604bfc
 
 Harfiyen, [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) Türkçe konuşma tanıma modelini doğrudan
 tarayıcıda, ekran kartı üzerinde (**WebGPU**) çalıştırır. Daha yüksek doğruluk için
-[Whisper large-v3 turbo](https://huggingface.co/openai/whisper-large-v3-turbo) da seçilebilir. Bir video ya da ses dosyası yüklersin, kelimeler
+[Whisper large-v3 turbo](https://huggingface.co/openai/whisper-large-v3-turbo), ekran kartı olmayan cihazlarda da
+[Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small) seçilebilir. Bir video ya da ses dosyası yüklersin, kelimeler
 zaman kodlarıyla belirir, istediğin altyazı stilini seçersin ve altyazılı videoyu indirirsin. Mikrofonla
 konuşurken de canlı çalışır.
 
@@ -48,9 +49,16 @@ konuşurken de canlı çalışır.
 - Video ve ses dosyaları: MP4, MOV, MKV, WebM, MP3, M4A, WAV, FLAC, OGG. Uzun dosyaları parça parça işler,
   bellek şişmez.
 - Canlı mikrofon: kelimeler konuştuktan yaklaşık bir saniye sonra belirir, kayıt aynı anda saklanır.
-- İki model, üst çubuktan seçilir:
+- Durdur, devam et, iptal: döküm durdurulunca o ana kadar yazılan proje olarak kalır ve sonra kaldığı yerden
+  sürdürülebilir; sayfa yenilense de kalınan yer unutulmaz. Yanlış dosya **İptal** ile bırakılır, uzun işlerde
+  önce onay sorulur.
+- Döküm sürerken önizleme yazılanı takip eder: görüntü ve altyazı o an yazılan yeri gösterir. Oynatınca ya da
+  sarınca takip durur.
+- Üç model, üst çubuktan (telefonda **⋯** menüsünden) seçilir:
   - **Seda** (varsayılan, ~105 MB): küçük ve hızlı, canlı mikrofonda ve her cihazda çalışır. Üç doğruluk
     ayarı var: **Hızlı**, **Dengeli** ve dil modeliyle **En doğru**.
+  - **Duyu** (~85 MB): ekran kartı istemez, işlemcide çalışır; noktalamayı ve büyük harfleri kendisi yazar.
+    Yalnızca dosyalarda çalışır, canlı kayıtta kullanılmaz; sesi 12–15 saniyelik parçalar hâlinde işler.
   - **Whisper Turbo** (~1,5 GB) ve **Whisper Turbo Hafif** (~600 MB, 4 bit encoder): daha az hata,
     noktalamayı, büyük harfleri ve rakamları kendisi yazar. Hafif sürüm zor seste biraz daha fazla hata
     yapabilir. Yalnızca dosyalarda ve ekran kartında (WebGPU, `shader-f16`) çalışır; sesi 30 saniyelik
@@ -157,7 +165,8 @@ npm run dev        # http://localhost:5173
 ```
 
 İlk açılışta tarayıcı yaklaşık 105 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
-önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB) indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB, İngilizce çeviri yaklaşık 360 MB indirilir ve
+önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB), Duyu
+seçilirse yaklaşık 85 MB indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB, İngilizce çeviri yaklaşık 360 MB indirilir ve
 önbelleğe alınır. Modeller **Ayarlar → Modeller**'den önceden indirilebilir ya da silinebilir. Ses ve metin
 işlenmek için sunucuya gönderilmez.
 
@@ -183,6 +192,7 @@ güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarla
 | -------------------------- | ------------------------------------------------------------------------------------------ |
 | Dosya açmak                | **Dosya aç** ya da dosyayı pencereye sürükle                                               |
 | Mikrofonla kayıt           | Alttaki kırmızı düğme ya da **R**                                                          |
+| Dökümü durdurmak           | Alt çubukta **Durdur**; sürdürmek için **Devam et**, bırakmak için **İptal**               |
 | Oynat / duraklat           | **Boşluk** ya da görüntüye tıkla                                                           |
 | 5 sn geri / ileri          | **←** / **→**                                                                              |
 | Tam ekran                  | **F** ya da görüntüye çift tıkla                                                           |
@@ -195,6 +205,7 @@ güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarla
 | Proje adını değiştirmek    | Üstteki proje adına tıkla, **Enter** kaydeder, **Esc** vazgeçer                            |
 | Proje dosyası              | **Projeler → Projeyi dosya olarak indir**; açmak için **Dosya aç** ya da sürükle-bırak     |
 | Modelleri yönetmek         | Üst çubukta **Ayarlar → Modeller**                                                         |
+| Sürüm ve bağlantılar       | **Ayarlar → Hakkında**                                                                     |
 
 ## Performans
 
@@ -286,6 +297,7 @@ Harfiyen [MIT](LICENSE) lisanslıdır; dilediğin gibi kullanabilir, değiştire
 Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphaneler kendi lisanslarıyla gelir:
 
 - Konuşma tanıma modeli [atasoglu/seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1): Apache-2.0.
+- [KaanAydinli/Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small): Apache-2.0.
 - [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
   kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
