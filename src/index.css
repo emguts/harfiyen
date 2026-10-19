@@ -18,9 +18,11 @@
   --color-raised-hover: var(--raised-hover);
   --color-line: var(--line);
   --color-line-soft: var(--line-soft);
+  --color-line-strong: var(--line-strong);
   --color-fg: var(--text);
   --color-fg-2: var(--text-2);
   --color-fg-3: var(--text-3);
+  --color-fg-strong: var(--text-strong);
   --color-cini: var(--cini);
   --color-cini-press: var(--cini-press);
   --color-cini-wash: var(--cini-wash);
@@ -29,6 +31,11 @@
   --color-mercan: var(--mercan);
   --color-wave: var(--wave);
   --color-wave-played: var(--wave-played);
+  --color-mercan-text: var(--mercan-text);
+  --color-well: var(--well);
+  --color-popover: var(--popover);
+  --color-popover-line: var(--popover-line);
+  --color-tint: var(--tint);
 
   --font-ui: var(--ui);
   --font-sans: var(--ui);
@@ -61,6 +68,9 @@
 /* Hover as before the move to Tailwind: also on touch screens (a tap shows
    the transcript's edit tools), not only where a mouse can hover. */
 @custom-variant hover (&:hover);
+
+/* In the light theme (the brand images come in a version for each). */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 /* Range input: thin track, white thumb with a blue ring. */
 @utility slider {

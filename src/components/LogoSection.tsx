@@ -11,7 +11,7 @@ const CORNERS: { value: Corner; label: string; at: string }[] = [
 ];
 
 const CORNER_BTN =
-  "relative h-6 flex-1 cursor-pointer rounded-ui-sm border border-line bg-bg p-0 hover:not-disabled:border-[#3e4753] aria-pressed:border-cini";
+  "relative h-6 flex-1 cursor-pointer rounded-ui-sm border border-line bg-bg p-0 hover:not-disabled:border-line-strong aria-pressed:border-cini";
 
 /** The caption tab's logo: one image of the user's, in a corner, at a size and opacity. */
 export function LogoSection({

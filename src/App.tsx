@@ -88,10 +88,10 @@ import { DEFAULT_MODEL, modelInfo } from "./models";
 const EMPTY_BANDS = new Float32Array(0);
 /** Play and mute in the transport bar. */
 const TP_BTN =
-  "grid size-8 flex-none place-items-center rounded-ui border-0 bg-transparent text-fg transition-all duration-150 ease-[ease] hover:not-disabled:bg-raised hover:not-disabled:text-white disabled:opacity-35 max-[860px]:size-10";
+  "grid size-8 flex-none place-items-center rounded-ui border-0 bg-transparent text-fg transition-all duration-150 ease-[ease] hover:not-disabled:bg-raised hover:not-disabled:text-fg-strong disabled:opacity-35 max-[860px]:size-10";
 /** TR / EN in the transcript pane's head. */
 const LANG_BTN =
-  "h-5 rounded-[4px] border-0 bg-transparent px-1.5 text-[10.5px] font-semibold tracking-[0.02em] text-fg-3 hover:not-disabled:text-fg aria-pressed:bg-raised aria-pressed:text-white disabled:opacity-45";
+  "h-5 rounded-[4px] border-0 bg-transparent px-1.5 text-[10.5px] font-semibold tracking-[0.02em] text-fg-3 hover:not-disabled:text-fg aria-pressed:bg-raised aria-pressed:text-fg-strong disabled:opacity-45";
 /** Welcome-screen buttons: long file names are cut; full width on phones. */
 const DROP_BTN =
   "min-w-0 max-w-full truncate max-[480px]:h-11 max-[480px]:w-full [&_svg]:mr-1.5";
@@ -931,7 +931,8 @@ export function App() {
       <header className="flex items-center gap-2 border-b border-line-soft bg-pane pr-3 pl-3.5 select-none max-[860px]:h-11 max-[860px]:gap-1.5 max-[860px]:px-2.5 max-[860px]:*:shrink-0">
         <h1 className="m-0 mr-2.5 flex items-center max-[480px]:mr-1">
           {/* The mobile header has no room for the wordmark; show the H mark. */}
-          <picture>
+          {/* "-light" is the version for dark backgrounds. */}
+          <picture className="light:hidden">
             <source
               media="(max-width: 860px)"
               srcSet={`${import.meta.env.BASE_URL}brand/harfiyen-mark-light.png`}
@@ -941,6 +942,10 @@ export function App() {
               src={`${import.meta.env.BASE_URL}brand/harfiyen-logo-light.png`}
               alt="Harfiyen"
             />
+          </picture>
+          <picture className="hidden light:block">
+            <source media="(max-width: 860px)" srcSet={`${import.meta.env.BASE_URL}brand/harfiyen-mark.png`} />
+            <img className="block h-5 w-auto" src={`${import.meta.env.BASE_URL}brand/harfiyen-logo.png`} alt="Harfiyen" />
           </picture>
         </h1>
         <a
@@ -1041,7 +1046,7 @@ export function App() {
             <PaneTitle>Transkript</PaneTitle>
             {translation && (
               <span
-                className="mr-auto -my-1 flex gap-0.5 rounded-md border border-line-soft bg-[#101316] p-0.5"
+                className="mr-auto -my-1 flex gap-0.5 rounded-md border border-line-soft bg-well p-0.5"
                 role="group"
                 aria-label="Gösterilen dil"
               >

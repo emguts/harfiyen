@@ -17,7 +17,7 @@ import { StylePicker } from "./StylePicker";
 import { Hint, LinkButton, Range, Row, RowGroup, RowLabel, RowValue, Section, Switch } from "./ui";
 
 const SWATCH =
-  "relative size-[22px] cursor-pointer rounded-full border border-white/18 p-0 transition-[transform,outline-color] duration-150 ease-[ease] hover:scale-112";
+  "relative size-[22px] cursor-pointer rounded-full border border-line-strong p-0 transition-[transform,outline-color] duration-150 ease-[ease] hover:scale-112";
 
 /** Small preview tile at the start of an option. */
 const TILE = "grid h-6 w-[30px] flex-none place-items-center rounded-ui-sm";

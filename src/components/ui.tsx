@@ -6,9 +6,9 @@ import type { ComponentProps, ReactNode } from "react";
 
 const BUTTON_VARIANT = {
   danger:
-    "border-[rgba(239,100,78,0.55)] bg-[rgba(239,100,78,0.14)] text-[#ff8b78] hover:not-disabled:border-mercan hover:not-disabled:bg-mercan hover:not-disabled:text-white",
+    "border-[rgba(239,100,78,0.55)] bg-[rgba(239,100,78,0.14)] text-mercan-text hover:not-disabled:border-mercan hover:not-disabled:bg-mercan hover:not-disabled:text-white",
   default:
-    "border-line bg-raised text-fg hover:not-disabled:border-[#3f4752] hover:not-disabled:bg-raised-hover hover:not-disabled:text-white",
+    "border-line bg-raised text-fg hover:not-disabled:border-line-strong hover:not-disabled:bg-raised-hover hover:not-disabled:text-fg-strong",
   primary:
     "border-[rgba(71,109,230,0.7)] bg-linear-to-b from-[#4f74e8] to-[#3e63db] text-white shadow-[0_1px_2px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.2)] hover:not-disabled:border-cini hover:not-disabled:from-[#5b80f4] hover:not-disabled:to-[#466be5] hover:not-disabled:shadow-[0_2px_8px_rgba(71,109,230,0.35),inset_0_1px_0_rgba(255,255,255,0.25)]",
 };
@@ -52,7 +52,7 @@ export const IconButton = ({ className = "", ...props }: ComponentProps<"button"
 
 const TB_FILL = {
   default:
-    "border-line bg-pane-2 text-fg hover:not-disabled:border-[#3b444f] hover:not-disabled:bg-raised-hover hover:not-disabled:text-white",
+    "border-line bg-pane-2 text-fg hover:not-disabled:border-line-strong hover:not-disabled:bg-raised-hover hover:not-disabled:text-fg-strong",
   primary:
     "border-[rgba(71,109,230,0.6)] text-white shadow-[0_1px_2px_rgba(0,0,0,0.25),inset_0_1px_0_rgba(255,255,255,0.2)] hover:not-disabled:border-cini hover:not-disabled:shadow-[0_2px_6px_rgba(71,109,230,0.35),inset_0_1px_0_rgba(255,255,255,0.25)]",
 };
@@ -109,7 +109,7 @@ export const PaneTitle = ({ children }: { children: ReactNode }) => (
 
 /** Small pill next to a pane title, e.g. a word count. */
 export const PaneMeta = ({ children }: { children: ReactNode }) => (
-  <span className="rounded-[10px] border border-line-soft bg-white/5 px-[7px] py-px text-[11px] font-medium text-fg-3 tabular-nums">
+  <span className="rounded-[10px] border border-line-soft bg-tint px-[7px] py-px text-[11px] font-medium text-fg-3 tabular-nums">
     {children}
   </span>
 );

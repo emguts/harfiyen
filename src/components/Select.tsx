@@ -5,7 +5,7 @@ import { IconCheck, IconTrash, IconUpDown } from "./icons";
 // Building blocks for option renderings (an option title turns white once selected).
 export const OPT = "flex min-w-0 items-center gap-2.5";
 export const OPT_TEXT = "grid min-w-0";
-export const OPT_TITLE = "truncate font-[560] text-fg group-aria-selected/option:text-white";
+export const OPT_TITLE = "truncate font-[560] text-fg group-aria-selected/option:text-fg-strong";
 export const OPT_NOTE = "text-[11.5px] leading-[1.35] text-fg-3";
 
 export interface Option<T extends string> {
@@ -179,7 +179,7 @@ export function Select<T extends string>({
             tabIndex={-1}
             aria-label={label}
             aria-activedescendant={`${id}-${active}`}
-            className="fixed z-50 m-0 list-none overflow-auto rounded-lg border border-[#363e48] bg-[#20252b] p-1 shadow-[0_16px_36px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.05)] outline-none backdrop-blur-[12px] [scrollbar-width:thin]"
+            className="fixed z-50 m-0 list-none overflow-auto rounded-lg border border-popover-line bg-popover p-1 shadow-[0_16px_36px_var(--shadow-pop),0_0_0_1px_var(--tint)] outline-none backdrop-blur-[12px] [scrollbar-width:thin]"
             style={{
               left: pos.left,
               width: pos.width,

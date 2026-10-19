@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { About } from "./About";
+import { AppearanceSettings } from "./AppearanceSettings";
 import { IconClose } from "./icons";
 import { ModelSettings } from "./ModelSettings";
 import { IconButton } from "./ui";
@@ -7,10 +8,11 @@ import { IconButton } from "./ui";
 // The settings window: sections on the left, the chosen one on the right.
 // It stays mounted while closed, so a model download keeps going.
 
-type SectionId = "models" | "about";
+type SectionId = "models" | "appearance" | "about";
 
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "models", label: "Modeller" },
+  { id: "appearance", label: "Görünüm" },
   { id: "about", label: "Hakkında" },
 ];
 
@@ -27,6 +29,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
 
   const content: Record<SectionId, ReactNode> = {
     models: <ModelSettings active={open} />,
+    appearance: <AppearanceSettings />,
     about: <About />,
   };
 
@@ -37,7 +40,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
       onClose={onClose}
       // A click on the backdrop lands on the dialog itself.
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="m-auto h-[min(640px,calc(100dvh-32px))] w-[min(780px,calc(100vw-32px))] overflow-hidden rounded-xl border border-line bg-pane p-0 text-fg shadow-[0_24px_64px_rgba(0,0,0,0.6)] backdrop:bg-black/55 backdrop:backdrop-blur-[2px] open:flex open:flex-col"
+      className="m-auto h-[min(640px,calc(100dvh-32px))] w-[min(780px,calc(100vw-32px))] overflow-hidden rounded-xl border border-line bg-pane p-0 text-fg shadow-[0_24px_64px_var(--shadow-pop)] backdrop:bg-black/55 backdrop:backdrop-blur-[2px] open:flex open:flex-col"
     >
       <div className="flex items-center justify-between border-b border-line-soft px-4 py-3">
         <h2 className="m-0 text-[14px] font-semibold tracking-[-0.015em]">Ayarlar</h2>

@@ -4,6 +4,9 @@ Yeni sürümler en üstte.
 
 ## Yayımlanmadı
 
+- **Açık tema:** **Ayarlar → Görünüm**'den Sistem, Açık ya da Koyu seçilir. Varsayılan sistemin teması; sistem
+  teması değişince uygulama da değişir. Oynatıcının çevresi videonun renkleri doğru görünsün diye her iki temada da
+  koyu kalır.
 - **İngilizce seslendirme (voice-over):** Seslendirme sekmesinde dil İngilizce seçilince çeviri
   [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) ile okunur (203 MB, ilk kullanımda iner). Her
   cümle Türkçesinin başladığı anda başlar. On ses var: Alex, James, Robert, Sam, Daniel, Sarah, Lily, Jessica,

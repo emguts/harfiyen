@@ -323,6 +323,8 @@ export function Viewer({
   return (
     <div
       ref={stage}
+      // Video looks right on dark, whatever the theme; so does everything over it.
+      data-theme="dark"
       className={`group/stage relative grid min-h-0 min-w-0 flex-1 place-items-center overflow-hidden bg-black group-data-dragging/shell:outline-2 group-data-dragging/shell:-outline-offset-8 group-data-dragging/shell:outline-cini group-data-dragging/shell:outline-dashed ${
         fullscreen ? "rounded-none" : "rounded-ui"
       } ${hidden ? "cursor-none" : ""}`}

@@ -24,7 +24,7 @@ import {
 } from "./ui";
 
 const TAB =
-  "h-[26px] flex-1 rounded-[5px] border-0 bg-transparent text-[12px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-white aria-selected:shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)]";
+  "h-[26px] flex-1 rounded-[5px] border-0 bg-transparent text-[12px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-fg-strong aria-selected:shadow-[0_1px_3px_var(--shadow-pop),inset_0_1px_0_var(--tint)]";
 
 type Tab = "captions" | "transcribe" | "dub";
 
@@ -166,7 +166,7 @@ export function Inspector({
   return (
     <Pane side="right">
       <div
-        className="mx-3 mt-2.5 mb-1.5 flex gap-0.5 rounded-lg border border-line-soft bg-[#101316] p-0.75"
+        className="mx-3 mt-2.5 mb-1.5 flex gap-0.5 rounded-lg border border-line-soft bg-well p-0.75"
         role="tablist"
       >
         <button

@@ -3,13 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <meta name="description" content="Türkçe ses ve videoyu tarayıcında yazıya dök. Dosyan bilgisayarından çıkmaz." />
     <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#16191d" />
+    <!-- The saved theme (src/lib/theme.ts), before the first paint, so the page does not flash the other one. -->
+    <script>
+      try {
+        var t = localStorage.getItem("harfiyen.theme");
+        var light = t === "light" || (t !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.dataset.theme = light ? "light" : "dark";
+      } catch (e) {}
+    </script>
     <title>Harfiyen: Türkçe konuşmayı tarayıcıda yazıya dök</title>
   </head>
   <body>

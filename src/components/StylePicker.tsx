@@ -27,7 +27,7 @@ const FRAME = { w: 320, h: 180 };
 const BOOST = 2.1;
 
 const TAB =
-  "relative h-6 flex-1 rounded-[5px] border-0 bg-transparent text-[11.5px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-white aria-selected:shadow-[0_1px_3px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.06)]";
+  "relative h-6 flex-1 rounded-[5px] border-0 bg-transparent text-[11.5px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-fg-strong aria-selected:shadow-[0_1px_3px_var(--shadow-pop),inset_0_1px_0_var(--tint)]";
 
 /** Glass panel on a card, in CSS pixels of the card. */
 interface CardPanel {
@@ -137,7 +137,7 @@ function StyleCard({
         )}
       </span>
       <span
-        className={`pl-0.5 text-[12px] font-[550] tracking-[-0.01em] ${selected ? "text-white" : "text-fg-2"}`}
+        className={`pl-0.5 text-[12px] font-[550] tracking-[-0.01em] ${selected ? "text-fg-strong" : "text-fg-2"}`}
       >
         {label}
       </span>
@@ -161,7 +161,7 @@ export function StylePicker({
   return (
     <div className="grid gap-2">
       <div
-        className="flex gap-0.5 rounded-lg border border-line-soft bg-[#101316] p-0.75"
+        className="flex gap-0.5 rounded-lg border border-line-soft bg-well p-0.75"
         role="tablist"
         aria-label="Stil ailesi"
       >

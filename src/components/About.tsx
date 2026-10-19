@@ -13,9 +13,15 @@ const LINKS = [
 export function About() {
   return (
     <div className="grid justify-items-start gap-4">
+      {/* "-light" is the version for dark backgrounds. */}
       <img
-        className="block h-7 w-auto"
+        className="block h-7 w-auto light:hidden"
         src={`${import.meta.env.BASE_URL}brand/harfiyen-logo-light.png`}
+        alt="Harfiyen"
+      />
+      <img
+        className="hidden h-7 w-auto light:block"
+        src={`${import.meta.env.BASE_URL}brand/harfiyen-logo.png`}
         alt="Harfiyen"
       />
       <div className="grid gap-1.5">

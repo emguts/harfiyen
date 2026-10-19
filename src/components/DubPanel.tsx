@@ -98,7 +98,7 @@ const PITCHES = [
 ];
 
 const PRESET =
-  "h-[26px] flex-1 rounded-ui border border-line bg-raised text-[12px] text-fg-2 hover:not-disabled:text-fg aria-pressed:border-cini aria-pressed:text-white disabled:opacity-45";
+  "h-[26px] flex-1 rounded-ui border border-line bg-raised text-[12px] text-fg-2 hover:not-disabled:text-fg aria-pressed:border-cini aria-pressed:text-fg-strong disabled:opacity-45";
 
 function previewLabel(p: PreviewState) {
   if (p.status === "download")
@@ -276,7 +276,7 @@ export function DubPanel({
           )}
           {state.status === "done" && (
             <a
-              className="inline-flex h-7.25 items-center rounded-ui border border-line bg-raised px-3 text-[12.5px] font-medium text-fg no-underline hover:border-[#3f4752] hover:bg-raised-hover hover:text-white"
+              className="inline-flex h-7.25 items-center rounded-ui border border-line bg-raised px-3 text-[12.5px] font-medium text-fg no-underline hover:border-line-strong hover:bg-raised-hover hover:text-fg-strong"
               href={state.url}
               download={fileName}
             >

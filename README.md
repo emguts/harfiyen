@@ -173,6 +173,8 @@ canlı çalışır.
 
 ### Ayarlar ve modeller
 
+- **Ayarlar → Görünüm:** açık ya da koyu tema; varsayılan olarak bilgisayarın ya da telefonun teması izlenir.
+  Oynatıcının çevresi her iki temada da koyu kalır.
 - **Ayarlar → Modeller:** her modelin indirilip indirilmediği ve ne kadar yer kapladığı görünür. Modeller
   tek tek indirilip silinebilir; bu cihaza uygun olanların hepsi tek düğmeyle indirilir. Başka bir modelin
   de kullandığı dosyalar silinmez.

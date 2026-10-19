@@ -169,7 +169,7 @@ export function StatusBar({
 }) {
   const transcribing = job?.status === "running" && !job.live;
   return (
-    <footer className="flex items-center gap-[18px] border-t border-line-soft bg-[#111417] px-3.5 text-[11px] tracking-[-0.005em] whitespace-nowrap text-fg-2 max-[860px]:order-5 max-[860px]:mt-auto max-[860px]:h-[26px]">
+    <footer className="flex items-center gap-[18px] border-t border-line-soft bg-well px-3.5 text-[11px] tracking-[-0.005em] whitespace-nowrap text-fg-2 max-[860px]:order-5 max-[860px]:mt-auto max-[860px]:h-[26px]">
       {notice && (
         <span className={ERROR} role="alert">
           {notice}

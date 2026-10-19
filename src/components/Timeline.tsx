@@ -4,10 +4,11 @@ import type { Cue } from "../lib/cues";
 import { clock } from "../lib/format";
 import type { LiveMeter } from "../render/aura";
 import { PEAK_STEP } from "../worker/protocol";
+import { useTheme } from "../lib/theme";
 
 /** The timeline box; on phones it takes its own full-width row in the transport. */
 export const TIMELINE =
-  "relative my-2 ml-2 flex-1 touch-none self-stretch rounded-md border border-line-soft bg-[#101316] max-[860px]:-order-1 max-[860px]:m-0 max-[860px]:h-16 max-[860px]:flex-[1_0_100%]";
+  "relative my-2 ml-2 flex-1 touch-none self-stretch rounded-md border border-line-soft bg-well max-[860px]:-order-1 max-[860px]:m-0 max-[860px]:h-16 max-[860px]:flex-[1_0_100%]";
 
 /**
  * Editor timeline drawn on one canvas at display refresh rate.
@@ -63,6 +64,8 @@ export function Timeline({
   const editing = !!onRange;
   const props = useRef({ peaks, total, decoded, doneFrom, time, media, cues, live, range, editing });
   props.current = { peaks, total, decoded, doneFrom, time, media, cues, live, range, editing };
+  // The colours are read once per theme.
+  const theme = useTheme();
 
   useEffect(() => {
     const c = canvas.current!;
@@ -79,6 +82,8 @@ export function Timeline({
       cue: color("--raised"),
       cueOn: color("--cini"),
       rec: color("--mercan"),
+      dim: color("--dim"),
+      playhead: color("--playhead"),
     };
     let raf = 0;
     let shown = props.current.decoded; // animated frontier
@@ -183,7 +188,7 @@ export function Timeline({
 
       // Outside the trim: dimmed; while editing, the range framed in its colour.
       if (p.range) {
-        g.fillStyle = "rgba(10, 12, 14, 0.62)";
+        g.fillStyle = C.dim;
         g.fillRect(0, 0, rx0, h);
         g.fillRect(rx1, 0, w - rx1, h);
       }
@@ -194,13 +199,13 @@ export function Timeline({
       }
 
       if (t > 0 || p.media) {
-        g.fillStyle = "#fff";
+        g.fillStyle = C.playhead;
         g.fillRect(Math.min(w - 2, Math.max(0, playX - 1)), 0, 2, h);
       }
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [theme]);
 
   const seekAt = (clientX: number) => {
     if (live) return;
@@ -285,7 +290,7 @@ function TrimHandles({
         aria-valuenow={Math.round(value)}
         aria-valuetext={clock(value)}
         title={`${which === "start" ? "Başlangıç" : "Bitiş"} ${clock(value)} · sürükle ya da oynatırken ${which === "start" ? "I" : "O"}`}
-        className="absolute top-0 bottom-0 z-1 grid w-3 -translate-x-1/2 cursor-ew-resize touch-none place-items-center outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-white [@media(pointer:coarse)]:w-6"
+        className="absolute top-0 bottom-0 z-1 grid w-3 -translate-x-1/2 cursor-ew-resize touch-none place-items-center outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-fg-strong [@media(pointer:coarse)]:w-6"
         style={{ left: `${(value / total) * 100}%` }}
         onPointerDown={(e) => {
           e.stopPropagation();

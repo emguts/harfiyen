@@ -40,7 +40,7 @@ export function Menu({
       {trigger}
       {open && (
         <div
-          className={`absolute top-[calc(100%+6px)] z-20 max-h-[calc(100dvh-64px)] max-w-[calc(100vw-20px)] overflow-y-auto rounded-[10px] border border-[#363e48] bg-[rgba(34,39,46,0.96)] p-1.5 shadow-[0_16px_40px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.05)] backdrop-blur-[16px] ${align === "left" ? "left-0" : "right-0"} ${width}`}
+          className={`absolute top-[calc(100%+6px)] z-20 max-h-[calc(100dvh-64px)] max-w-[calc(100vw-20px)] overflow-y-auto rounded-[10px] border border-popover-line bg-popover p-1.5 shadow-[0_16px_40px_var(--shadow-pop),0_0_0_1px_var(--tint)] backdrop-blur-[16px] ${align === "left" ? "left-0" : "right-0"} ${width}`}
           role="menu"
         >
           {children}
