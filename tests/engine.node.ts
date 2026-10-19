@@ -15,7 +15,7 @@ import { OnlineFbank } from "../src/engine/fbank";
 
 const dir = process.argv[2];
 if (!dir) throw new Error("usage: tsx tests/engine.node.ts <ref-dir>");
-const models = join(import.meta.dirname, "..", "public", "models", "seda-v0.1");
+const models = join(import.meta.dirname, "..", "public", "models", "seda-v0.2");
 
 function readWav(path: string): { sampleRate: number; samples: Float32Array } {
   const b = readFileSync(path);

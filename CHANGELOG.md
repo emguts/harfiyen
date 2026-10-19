@@ -4,6 +4,10 @@ Yeni sürümler en üstte.
 
 ## Yayımlanmadı
 
+- **Seda v0.2:** Seda, [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2)'ye geçti. Daha çok veriyle eğitildi;
+  daha az hata yapıyor, özellikle gürültülü, yankılı ve telefon kalitesindeki seste. Parça boyu aynı (0,64 sn), dil
+  modeli daha büyük; ilk indirme yaklaşık 115 MB. Eski v0.1 dosyaları **Ayarlar**'dan silinebilir. Lisansı
+  CC BY-SA 4.0.
 - **İngilizce videolar:** Yazıya dökmeden önce videodaki dil (Türkçe ya da İngilizce) seçilir; İngilizce videolar
   Whisper ile İngilizce yazıya dökülür, altyazı ve SRT/VTT İngilizce olur, Supertonic ile İngilizce seslendirilebilir.
   Dil projeyle saklanır. Eskiden İngilizce konuşma Türkçe sanılıp bozuk yazılıyordu.

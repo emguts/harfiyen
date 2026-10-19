@@ -4,7 +4,7 @@ For every *.wav in DIR this writes <name>.greedy.json, <name>.beam.json and
 <name>.lm.json (original int8 model, same settings as the model card), and
 for the first file also <name>.feats.f32 (kaldi-native-fbank features).
 
-    python scripts/make_test_refs.py DIR [--model .cache/seda-v0.1]
+    python scripts/make_test_refs.py DIR [--model .cache/seda-v0.2]
 
 16 kHz mono 16-bit WAV files work best; a 44.1 kHz stereo file named
 long.wav exercises the resampler and endpointing (it is compared against
@@ -69,7 +69,7 @@ def features(audio: np.ndarray) -> np.ndarray:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("dir", type=Path)
-    ap.add_argument("--model", type=Path, default=ROOT / ".cache" / "seda-v0.1")
+    ap.add_argument("--model", type=Path, default=ROOT / ".cache" / "seda-v0.2")
     args = ap.parse_args()
     wavs = sorted(p for p in args.dir.glob("*.wav") if p.stem != "long")
     for method in ("greedy", "beam", "lm"):

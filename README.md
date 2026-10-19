@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/72944ea4-75aa-4462-b5eb-b98a2f604bfc
 
 ---
 
-Harfiyen, [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) Türkçe konuşma tanıma modelini doğrudan
+Harfiyen, [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2) Türkçe konuşma tanıma modelini doğrudan
 tarayıcıda, ekran kartı üzerinde (**WebGPU**) çalıştırır. Daha yüksek doğruluk için
 [Whisper large-v3 turbo](https://huggingface.co/openai/whisper-large-v3-turbo), ekran kartı olmayan cihazlarda da
 [Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small) seçilebilir. Bir video ya da ses dosyası yüklersin,
@@ -360,7 +360,7 @@ Harfiyen [MIT](LICENSE) lisanslıdır; dilediğin gibi kullanabilir, değiştire
 
 Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphaneler kendi lisanslarıyla gelir:
 
-- Konuşma tanıma modeli [atasoglu/seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1): Apache-2.0.
+- Konuşma tanıma modeli [atasoglu/seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2): CC BY-SA 4.0.
 - [KaanAydinli/Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small): Apache-2.0.
 - [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);

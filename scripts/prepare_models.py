@@ -1,6 +1,9 @@
-"""Download seda-v0.1 from Hugging Face and convert it for the browser.
+"""Download seda-v0.2 from Hugging Face and convert it for the browser.
 
-Outputs go to public/models/seda-v0.1/:
+The streaming model is the c32/ export (0.64 s chunks, the same as seda-v0.1),
+with the LSTM language model and the LODR bigram from lm/.
+
+Outputs go to public/models/seda-v0.2/:
 
   encoder.webgpu.onnx  int8 weights, but MatMulInteger -> DequantizeLinear + MatMul
                        so that every op runs on onnxruntime-web's WebGPU EP
@@ -48,23 +51,25 @@ import numpy as np
 import onnx
 from onnx import helper
 
-REPO = "atasoglu/seda-v0.1"
-FILES = [
-    "encoder.int8.onnx",
-    "decoder.onnx",
-    "joiner.int8.onnx",
-    "tokens.txt",
-    "lm/rnnlm.int8.onnx",
-    "lm/2gram.fst",
-]
+REPO = "atasoglu/seda-v0.2"
+# Path in the repo -> path in the cache. The c32 export is stored flat, so the
+# cache reads like the repo of seda-v0.1 (scripts/make_test_refs.py --model).
+FILES = {
+    "c32/encoder.int8.onnx": "encoder.int8.onnx",
+    "c32/decoder.onnx": "decoder.onnx",
+    "c32/joiner.int8.onnx": "joiner.int8.onnx",
+    "tokens.txt": "tokens.txt",
+    "lm/rnnlm.int8.onnx": "lm/rnnlm.int8.onnx",
+    "lm/2gram.fst": "lm/2gram.fst",
+}
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "public" / "models" / "seda-v0.1"
+OUT = ROOT / "public" / "models" / "seda-v0.2"
 
 
 def download(dst: Path) -> None:
-    for f in FILES:
-        p = dst / f
+    for f, local in FILES.items():
+        p = dst / local
         if p.exists():
             continue
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -357,7 +362,7 @@ def write_config(src: Path) -> None:
         ]
     }
     cfg = {
-        "name": "seda-v0.1",
+        "name": "seda-v0.2",
         "sampleRate": 16000,
         "featureDim": 80,
         "chunkSize": int(enc["T"]),
@@ -799,7 +804,7 @@ def prepare_duyu(cache: Path) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", type=Path, default=ROOT / ".cache" / "seda-v0.1")
+    ap.add_argument("--src", type=Path, default=ROOT / ".cache" / "seda-v0.2")
     ap.add_argument("--whisper-only", action="store_true", help="only (re)build the Whisper files")
     ap.add_argument("--tts-only", action="store_true", help="only download the dubbing voices")
     ap.add_argument("--mt-only", action="store_true", help="only (re)build the translation models")
