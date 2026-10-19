@@ -2,7 +2,7 @@
 
 Yeni sürümler en üstte.
 
-## Yayımlanmadı
+## v0.4.0 (19 Ekim 2026)
 
 - **Seda v0.2:** Seda, [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2)'ye geçti. Daha çok veriyle eğitildi;
   daha az hata yapıyor, özellikle gürültülü, yankılı ve telefon kalitesindeki seste. Dil modeli daha büyük. Eski v0.1
