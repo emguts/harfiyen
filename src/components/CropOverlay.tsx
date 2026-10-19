@@ -4,7 +4,7 @@ import { ASPECTS, cropFor, dragCrop, framing, wholeCrop, type Aspect, type Crop,
 /** A row of buttons, one of them pressed, on a dark pill over the video. */
 const GROUP = "inline-flex gap-0.5 rounded-full bg-black/70 p-0.5 shadow-[0_2px_10px_rgba(0,0,0,0.35)] backdrop-blur-md";
 const CHIP =
-  "h-7 rounded-full border-0 bg-transparent px-2.5 text-[12px] font-medium text-white/75 transition-colors duration-150 hover:not-disabled:text-white disabled:opacity-40 aria-pressed:bg-white aria-pressed:text-black max-[480px]:px-2";
+  "h-7 rounded-full border-0 bg-transparent px-2.5 text-[12px] font-medium text-white/75 transition-colors duration-150 not-aria-pressed:hover:not-disabled:text-white disabled:opacity-40 aria-pressed:bg-white aria-pressed:text-black aria-pressed:hover:bg-white/85 max-[480px]:px-2";
 const ACTION =
   "h-8 rounded-full border-0 px-4 text-[12.5px] font-medium shadow-[0_2px_10px_rgba(0,0,0,0.35)] backdrop-blur-md";
 

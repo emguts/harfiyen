@@ -1,5 +1,7 @@
 import {
   DEFAULT_VOICE,
+  MAX_ORIGINAL,
+  type DubLang,
   type DubState,
   type PreviewState,
   type Voice,
@@ -53,12 +55,41 @@ const MODELS: Record<
     note: "Ahenk (github.com/ozguradmin/ahenk-turkish-tts), CC BY 4.0; EMA Lightning (Apache-2.0) mimarisinde, Alania verilerinden (PatientDesk AI, CC BY 4.0) türeyen Ahenk sesinden öğrenmiş küçük model. Rakam, tarih ve kısaltmaları iyi okur; diğerlerinden biraz yavaş.",
     short: "Rakam, tarih ve kısaltmaları en iyi okur; biraz yavaş.",
   },
+  supertonic: {
+    name: "Supertonic 3",
+    size: "203 MB",
+    link: "https://huggingface.co/Supertone/supertonic-3",
+    note: "Supertone'un 31 dilde okuyan metin okuma modeli (OpenRAIL-M); on ses arasından seçilir.",
+    short: "İngilizce ve Türkçe, on ses; büyük indirme.",
+  },
 };
 
-const MODEL_OPTIONS = (Object.keys(MODELS) as VoiceModel[]).map((id) => ({
-  value: id,
-  label: MODELS[id].name,
-}));
+/** The models that read each language. */
+const LANG_MODELS: Record<DubLang, VoiceModel[]> = {
+  tr: ["ema", "mini", "ahenk", "supertonic"],
+  en: ["supertonic"],
+};
+
+const LANGS: { lang: DubLang; label: string }[] = [
+  { lang: "tr", label: "Türkçe" },
+  { lang: "en", label: "İngilizce" },
+];
+
+/** Supertonic's voices, with the names and notes its demo gives them. */
+const STYLES: Record<string, { name: string; note: string; group: string }> = {
+  M1: { name: "Alex", note: "Canlı, enerjik, net.", group: "Erkek" },
+  M2: { name: "James", note: "Kalın, sakin, ciddi.", group: "Erkek" },
+  M3: { name: "Robert", note: "Otoriter, sunucu sesi.", group: "Erkek" },
+  M4: { name: "Sam", note: "Yumuşak, genç, samimi.", group: "Erkek" },
+  M5: { name: "Daniel", note: "Sıcak, anlatıcı.", group: "Erkek" },
+  F1: { name: "Sarah", note: "Sakin, hafif pes.", group: "Kadın" },
+  F2: { name: "Lily", note: "Neşeli, genç.", group: "Kadın" },
+  F3: { name: "Jessica", note: "Net, spiker sesi.", group: "Kadın" },
+  F4: { name: "Olivia", note: "Kendinden emin, etkileyici.", group: "Kadın" },
+  F5: { name: "Emily", note: "Yumuşak, yatıştırıcı.", group: "Kadın" },
+};
+
+const STYLE_OPTIONS = Object.entries(STYLES).map(([value, s]) => ({ value, label: s.name, group: s.group }));
 
 const PITCHES = [
   { pitch: -2.5, label: "Kalın" },
@@ -87,11 +118,20 @@ export function DubPanel({
   onCancel,
   on,
   onOn,
+  original,
+  onOriginal,
+  onOverflow,
+  onExtendTrim,
   fileName,
   voice,
   onVoice,
   preview,
   onListen,
+  translation,
+  translationStale,
+  translating,
+  canTranslate,
+  onTranslate,
 }: {
   state: DubState;
   /** The transcript changed after the dub was made. */
@@ -103,23 +143,79 @@ export function DubPanel({
   onCancel: () => void;
   on: boolean;
   onOn: (on: boolean) => void;
+  /** How loud the file's own sound stays under the dub, 0 to MAX_ORIGINAL. */
+  original: number;
+  onOriginal: (v: number) => void;
+  /** Shows the line that runs past the end. */
+  onOverflow: () => void;
+  /** Lengthens the trim so the dub fits; null when there is no more video after it. */
+  onExtendTrim: (() => void) | null;
   fileName: string;
   voice: Voice;
   onVoice: (v: Voice) => void;
   preview: PreviewState;
   onListen: () => void;
+  /** The job has an English translation. */
+  translation: boolean;
+  /** The transcript changed after it was translated. */
+  translationStale: boolean;
+  translating: boolean;
+  canTranslate: boolean;
+  onTranslate: () => void;
 }) {
   const working = state.status === "download" || state.status === "running";
   const setVoice = (v: Partial<Voice>) => onVoice({ ...voice, ...v });
   const model = MODELS[voice.model];
+  const english = voice.lang === "en";
+  const setLang = (lang: DubLang) =>
+    setVoice({ lang, model: LANG_MODELS[lang].includes(voice.model) ? voice.model : LANG_MODELS[lang][0] });
+  const modelOptions = LANG_MODELS[voice.lang].map((id) => ({ value: id, label: MODELS[id].name }));
   return (
     <div className={STUDIO}>
       <Section title="Yapay sesle seslendirme">
         <Hint>
-          Transkript yapay bir sesle yeniden okunur. Her altyazı satırı kendi
-          zamanında başlar; yerine sığmayan satırlar biraz hızlı okunur. Seçili
-          ses ilk kullanımda yaklaşık {model.size} indirir.
+          {english
+            ? "İngilizce çeviri yapay bir sesle okunur. Her cümle Türkçesinin başladığı anda başlar; yerine sığmayan cümleler biraz hızlı okunur."
+            : "Transkript yapay bir sesle yeniden okunur. Her altyazı satırı kendi zamanında başlar; yerine sığmayan satırlar biraz hızlı okunur."}{" "}
+          Seçili ses ilk kullanımda yaklaşık {model.size} indirir.
         </Hint>
+        <RowGroup role="group" aria-label="Seslendirme dili">
+          <RowLabel>Dil</RowLabel>
+          {LANGS.map((l) => (
+            <button
+              key={l.lang}
+              type="button"
+              className={PRESET}
+              aria-pressed={voice.lang === l.lang}
+              disabled={working}
+              onClick={() => setLang(l.lang)}
+            >
+              {l.label}
+            </button>
+          ))}
+        </RowGroup>
+        {english && !translation && (
+          <>
+            <Hint>
+              İngilizce seslendirme için önce transkript İngilizceye çevrilir.
+            </Hint>
+            <SectionActions>
+              <Button
+                variant="primary"
+                disabled={!canTranslate || translating}
+                onClick={onTranslate}
+              >
+                {translating ? "Çevriliyor" : "İngilizceye çevir"}
+              </Button>
+            </SectionActions>
+          </>
+        )}
+        {english && translation && translationStale && (
+          <Hint>
+            Transkript çeviriden sonra değişti; seslendirme eski çeviriyi okur.
+            Yazıya dök sekmesinden yeniden çevrilebilir.
+          </Hint>
+        )}
         {state.status === "download" && (
           <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
             <span className="flex-1">
@@ -142,9 +238,26 @@ export function DubPanel({
         {state.status === "error" && (
           <Hint>Seslendirilemedi: {state.message}</Hint>
         )}
+        {state.status === "done" && state.overflow && !stale && (
+          <>
+            <Hint>
+              Son cümle videonun {onExtendTrim ? "seçili bölümünün " : ""}
+              sonuna sığmadı; erken başlatılıp hızlandırıldığı hâlde sonundaki{" "}
+              {state.overflow.seconds.toLocaleString("tr", { maximumFractionDigits: 1 })} sn
+              duyulmaz. Cümleyi kısaltıp yeniden seslendirebilirsin
+              {onExtendTrim ? " ya da bölümü uzatabilirsin." : "."}
+            </Hint>
+            <SectionActions>
+              <Button onClick={onOverflow}>Cümleye git</Button>
+              {onExtendTrim && (
+                <Button onClick={onExtendTrim}>Bölümü uzat</Button>
+              )}
+            </SectionActions>
+          </>
+        )}
         {state.status === "done" && stale && (
           <Hint>
-            Transkript ya da ses ayarları seslendirmeden sonra değişti.
+            {english ? "Çeviri" : "Transkript"}, ses ayarları ya da seçili bölüm seslendirmeden sonra değişti.
           </Hint>
         )}
         <SectionActions>
@@ -171,7 +284,7 @@ export function DubPanel({
             </a>
           )}
         </SectionActions>
-        {!canDub && state.status === "idle" && (
+        {!canDub && state.status === "idle" && !(english && !translation) && (
           <Hint>Önce bir dosyayı yazıya dök.</Hint>
         )}
       </Section>
@@ -181,7 +294,7 @@ export function DubPanel({
           <Select<VoiceModel>
             label="Ses modeli"
             value={voice.model}
-            options={MODEL_OPTIONS}
+            options={modelOptions}
             onChange={(id) => setVoice({ model: id })}
             disabled={working}
             render={(o, inList) => (
@@ -199,40 +312,65 @@ export function DubPanel({
             )}
           />
         </RowGroup>
-        <RowGroup role="group" aria-label="Hazır ses tonları">
-          <RowLabel>Ton</RowLabel>
-          {PITCHES.map((p) => (
-            <button
-              key={p.pitch}
-              type="button"
-              className={PRESET}
-              aria-pressed={voice.pitch === p.pitch}
+        {voice.model === "supertonic" && (
+          <RowGroup>
+            <RowLabel>Ses</RowLabel>
+            <Select<string>
+              label="Supertonic sesi"
+              value={voice.style}
+              options={STYLE_OPTIONS}
+              onChange={(style) => setVoice({ style })}
               disabled={working}
-              onClick={() => setVoice({ pitch: p.pitch })}
-            >
-              {p.label}
-            </button>
-          ))}
-        </RowGroup>
-        <Row>
-          <RowLabel>Yarım ton</RowLabel>
-          <Range
-            min={-4}
-            max={4}
-            step={0.5}
-            value={voice.pitch}
-            disabled={working}
-            onChange={(e) => setVoice({ pitch: Number(e.target.value) })}
-            onDoubleClick={() => setVoice({ pitch: DEFAULT_VOICE.pitch })}
-          />
-          <RowValue>
-            {voice.pitch > 0 ? `+${voice.pitch}` : voice.pitch}
-          </RowValue>
-        </Row>
-        <Hint>
-          Sesin perdesi değişir, hızı ve satırların zamanlaması aynı kalır.
-          ±3'ün ötesi yapay duyulur.
-        </Hint>
+              render={(o, inList) => (
+                <span className={OPT_TEXT}>
+                  <span className={OPT_TITLE}>{o.label}</span>
+                  {inList && (
+                    <span className={OPT_NOTE}>{STYLES[o.value].note}</span>
+                  )}
+                </span>
+              )}
+            />
+          </RowGroup>
+        )}
+        {/* Supertonic has ten voices instead, and its pitch shift would speed it up past where it stays clear. */}
+        {voice.model !== "supertonic" && (
+          <>
+            <RowGroup role="group" aria-label="Hazır ses tonları">
+              <RowLabel>Ton</RowLabel>
+              {PITCHES.map((p) => (
+                <button
+                  key={p.pitch}
+                  type="button"
+                  className={PRESET}
+                  aria-pressed={voice.pitch === p.pitch}
+                  disabled={working}
+                  onClick={() => setVoice({ pitch: p.pitch })}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </RowGroup>
+            <Row>
+              <RowLabel>Yarım ton</RowLabel>
+              <Range
+                min={-4}
+                max={4}
+                step={0.5}
+                value={voice.pitch}
+                disabled={working}
+                onChange={(e) => setVoice({ pitch: Number(e.target.value) })}
+                onDoubleClick={() => setVoice({ pitch: DEFAULT_VOICE.pitch })}
+              />
+              <RowValue>
+                {voice.pitch > 0 ? `+${voice.pitch}` : voice.pitch}
+              </RowValue>
+            </Row>
+            <Hint>
+              Sesin perdesi değişir, hızı ve satırların zamanlaması aynı kalır.
+              ±3'ün ötesi yapay duyulur.
+            </Hint>
+          </>
+        )}
         <RowGroup>
           <RowLabel>Seed</RowLabel>
           <input
@@ -276,9 +414,24 @@ export function DubPanel({
             onChange={(e) => onOn(e.target.checked)}
           />
         </Row>
+        <Row>
+          <RowLabel>Orijinal ses</RowLabel>
+          <Range
+            min={0}
+            max={MAX_ORIGINAL}
+            step={0.05}
+            value={original}
+            disabled={busy}
+            onChange={(e) => onOriginal(Number(e.target.value))}
+            onDoubleClick={() => onOriginal(0)}
+          />
+          <RowValue>%{Math.round(original * 100)}</RowValue>
+        </Row>
         <Hint>
-          Açıkken oynatıcı ve altyazılı video orijinal ses yerine yapay sesi
-          kullanır. Müzik ve ortam sesi de kalkar.
+          Açıkken oynatıcı ve altyazılı video yapay sesi kullanır. Orijinal ses
+          {original > 0
+            ? ` altta %${Math.round(original * 100)} seviyesinde duyulur; konuşma, müzik ve ortam sesi hafifçe kalır.`
+            : " hiç duyulmaz; müzik ve ortam sesi de kalkar."}
         </Hint>
       </Section>
       <Section title="Model">

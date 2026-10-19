@@ -197,6 +197,24 @@ export const VOICE_PACKS = {
     gpuOnly: false,
     needsF16: false,
   },
+  supertonic: {
+    id: "tts-supertonic",
+    kind: "tts",
+    name: "Supertonic 3",
+    note: "Seslendirme sesi; İngilizce ve Türkçe okur.",
+    dir: "supertonic-3",
+    manifest: "model.json",
+    files: [
+      "duration_predictor.onnx",
+      "text_encoder.w16.onnx",
+      "vector_estimator.w16.onnx",
+      "vocoder.w16.onnx",
+      "indexer.bin",
+      "styles.bin",
+    ],
+    gpuOnly: false,
+    needsF16: false,
+  },
 } satisfies Record<string, ModelPack>;
 
 export const PACKS: ModelPack[] = [
@@ -218,6 +236,7 @@ export const PACKS: ModelPack[] = [
   VOICE_PACKS.ema,
   VOICE_PACKS.mini,
   VOICE_PACKS.ahenk,
+  VOICE_PACKS.supertonic,
 ];
 
 export const packFileUrl = (p: ModelPack, file: string) => `${MODELS_BASE}/${p.dir}/${file}`;

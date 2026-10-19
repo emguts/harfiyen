@@ -3,14 +3,79 @@ import { buildCues, cueText, READING_RULES } from "./cues";
 import type { Word } from "../engine";
 import { dubWav, type DubClip } from "../tts/dub";
 import { RATE } from "../tts/ema";
-import type { FromTts, ToTts, Voice, VoiceModel } from "../worker/tts.worker";
+import { splitSentences } from "./translation";
+import type { DubLang, DubLine, DubOverflow, FromTts, ToTts, Voice, VoiceModel } from "../worker/tts.worker";
 
-export type { Voice, VoiceModel };
-export const DEFAULT_VOICE: Voice = { model: "ema", pitch: 0, seed: 0 };
+export type { DubLang, DubOverflow, Voice, VoiceModel };
+export const DEFAULT_VOICE: Voice = { lang: "tr", model: "ema", style: "M3", pitch: 0, seed: 0 };
 
-export const sameVoice = (a: Voice, b: Voice) => a.model === b.model && a.pitch === b.pitch && a.seed === b.seed;
+/** Only Supertonic reads English; a saved voice from before languages reads Turkish. */
+export function fitVoice(v: Voice): Voice {
+  const lang = v.lang === "en" ? "en" : "tr";
+  return { ...v, lang, model: lang === "en" ? "supertonic" : v.model };
+}
+
+export const sameVoice = (a: Voice, b: Voice) =>
+  a.lang === b.lang &&
+  a.model === b.model &&
+  a.style === b.style &&
+  a.pitch === b.pitch &&
+  a.seed === b.seed;
 /** Read when the transcript has no line yet. */
-const SAMPLE = "Merhaba, seslendirme bu sesle yapılacak.";
+const SAMPLE: Record<DubLang, string> = {
+  tr: "Merhaba, seslendirme bu sesle yapılacak.",
+  en: "Hello, the dub will be read in this voice.",
+};
+
+/**
+ * What the dub reads: the transcript a caption line at a time, or the translation a sentence at a time. A
+ * translated sentence keeps its source's start, but its words are not timed, so caption lines would cut it at
+ * made-up places; read whole, it also sounds like one sentence.
+ */
+function dubLines(words: Word[], lang: DubLang): SpokenLine[] {
+  if (lang === "en")
+    return splitSentences(words).map((s) => ({
+      start: words[s.first].start,
+      end: words[s.first + s.count - 1].end,
+      text: s.text,
+      first: s.first,
+      count: s.count,
+    }));
+  return buildCues(words, READING_RULES).map((c) => ({
+    start: c.start,
+    end: c.end,
+    text: cueText(c),
+    first: c.first,
+    count: c.words.length,
+  }));
+}
+
+/** A line of the dub, and the `count` words from `first` it reads. */
+interface SpokenLine extends DubLine {
+  first: number;
+  count: number;
+}
+
+/**
+ * The words as the dub says them: each line's words moved and stretched, in proportion, onto the span its clip
+ * takes. A translated line's words share its span by length, so they keep doing so. Words the dub has no clip
+ * for keep their times.
+ */
+function timeToDub(words: Word[], lines: SpokenLine[], clips: DubClip[]): Word[] {
+  const out = words.slice();
+  for (const c of clips) {
+    const l = lines[c.line];
+    if (!l?.count) continue;
+    const from = words[l.first].start;
+    const span = words[l.first + l.count - 1].end - from;
+    const scale = span > 0 ? c.audio.length / RATE / span : 0;
+    for (let i = l.first; i < l.first + l.count; i++) {
+      const w = words[i];
+      out[i] = { ...w, start: c.start + (w.start - from) * scale, end: c.start + (w.end - from) * scale };
+    }
+  }
+  return out;
+}
 
 /** A short sample of the voice: model download, then synthesis, then playback. */
 export type PreviewState =
@@ -23,15 +88,31 @@ export type DubState =
   | { status: "idle" }
   | { status: "download"; loaded: number; total: number }
   | { status: "running"; done: number; total: number }
-  /** `words` and `voice` are what it was made from, to tell when it is out of date. */
-  | { status: "done"; clips: DubClip[]; url: string; words: Word[]; voice: Voice; elapsed: number }
+  /**
+   * `words`, `voice` and `end` are what it was made from, to tell when it is out of date; `timed`, the same words
+   * at the times the dub says them, for captions that follow it. `overflow`: the last line heard still runs past
+   * `end`.
+   */
+  | {
+      status: "done";
+      clips: DubClip[];
+      url: string;
+      words: Word[];
+      timed: Word[];
+      voice: Voice;
+      end: number;
+      overflow: DubOverflow | null;
+      elapsed: number;
+    }
   | { status: "error"; message: string };
 
 /** Reads the transcript aloud with the chosen voice model in its own worker, one line at a time. */
 export function useDubber() {
   const worker = useRef<Worker | null>(null);
   const jobId = useRef(0);
-  const pending = useRef<{ words: Word[]; duration: number; voice: Voice } | null>(null);
+  const pending = useRef<{ words: Word[]; lines: SpokenLine[]; duration: number; end: number; voice: Voice } | null>(
+    null,
+  );
   const [state, setState] = useState<DubState>({ status: "idle" });
   // Previews run alongside a finished dub without touching it, so they count their own jobs; the worker sees
   // them as negative ids.
@@ -57,7 +138,7 @@ export function useDubber() {
         if (m.type === "download") setPreview({ status: "download", loaded: m.loaded, total: m.total });
         else if (m.type === "error") setPreview({ status: "idle" });
         else if (m.type === "preview") {
-          const a = new Audio(URL.createObjectURL(dubWav([{ start: 0, audio: m.audio }], m.audio.length / RATE)));
+          const a = new Audio(URL.createObjectURL(dubWav([{ line: 0, start: 0, audio: m.audio }], m.audio.length / RATE)));
           a.onended = () => {
             stopSample();
             setPreview({ status: "idle" });
@@ -77,9 +158,10 @@ export function useDubber() {
           setState({ status: "running", done: m.done, total: m.total });
           break;
         case "done": {
-          const { words, duration, voice } = pending.current!;
+          const { words, lines, duration, end, voice } = pending.current!;
           const url = URL.createObjectURL(dubWav(m.clips, duration));
-          setState({ status: "done", clips: m.clips, url, words, voice, elapsed: m.elapsed });
+          const timed = timeToDub(words, lines, m.clips);
+          setState({ status: "done", clips: m.clips, url, words, timed, voice, end, overflow: m.overflow, elapsed: m.elapsed });
           break;
         }
         case "cancelled":
@@ -106,18 +188,26 @@ export function useDubber() {
   const url = state.status === "done" ? state.url : null;
   useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
 
+  /** `end`: where the dub must be over by (the video's end, or the trim's). */
   const dub = useCallback(
-    (words: Word[], duration: number, voice: Voice) => {
+    (words: Word[], duration: number, end: number, voice: Voice) => {
       const id = ++jobId.current;
-      pending.current = { words, duration, voice };
+      const lines = dubLines(words, voice.lang);
+      pending.current = { words, lines, duration, end, voice };
       setState({ status: "running", done: 0, total: 0 });
-      const lines = buildCues(words, READING_RULES).map((c) => ({ start: c.start, end: c.end, text: cueText(c) }));
-      ensureWorker().postMessage({ type: "dub", jobId: id, lines, duration, voice } satisfies ToTts);
+      ensureWorker().postMessage({
+        type: "dub",
+        jobId: id,
+        lines: lines.map(({ start, end, text }) => ({ start, end, text })),
+        duration,
+        end,
+        voice,
+      } satisfies ToTts);
     },
     [ensureWorker],
   );
 
-  /** Reads the first line of the transcript with `voice`; a second call while one runs stops it. */
+  /** Reads the first line of `words` with `voice`; a second call while one runs stops it. */
   const listen = useCallback(
     (words: Word[], voice: Voice) => {
       stopSample();
@@ -127,8 +217,7 @@ export function useDubber() {
         setPreview({ status: "idle" });
         return;
       }
-      const first = buildCues(words, READING_RULES)[0];
-      const text = (first && cueText(first).trim()) || SAMPLE;
+      const text = dubLines(words, voice.lang)[0]?.text.trim() || SAMPLE[voice.lang];
       setPreview({ status: "running" });
       ensureWorker().postMessage({ type: "preview", jobId: -id, text, voice } satisfies ToTts);
     },
@@ -149,11 +238,14 @@ export function useDubber() {
   return { state, dub, cancel, reset, preview, listen };
 }
 
+/** How loud the file's own sound stays under the dub: from silent up to half. */
+export const MAX_ORIGINAL = 0.5;
+
 /**
- * Plays the dub in step with the media element, which goes silent meanwhile. The media element stays the clock:
- * the dub follows its play, pause, seek, rate and mute.
+ * Plays the dub in step with the media element, whose own sound is turned down to `original` (0 to 1)
+ * meanwhile. The media element stays the clock: the dub follows its play, pause, seek, rate and mute.
  */
-export function useDubPlayback(el: HTMLMediaElement | null, url: string | null, on: boolean) {
+export function useDubPlayback(el: HTMLMediaElement | null, url: string | null, on: boolean, original: number) {
   useEffect(() => {
     if (!el || !url || !on) return;
     const dub = new Audio(url);
@@ -166,7 +258,6 @@ export function useDubPlayback(el: HTMLMediaElement | null, url: string | null, 
     };
     const events = ["play", "pause", "ended", "seeked", "ratechange", "volumechange", "timeupdate"];
     events.forEach((e) => el.addEventListener(e, sync));
-    el.volume = 0;
     sync();
     return () => {
       events.forEach((e) => el.removeEventListener(e, sync));
@@ -175,4 +266,8 @@ export function useDubPlayback(el: HTMLMediaElement | null, url: string | null, 
       el.volume = 1;
     };
   }, [el, url, on]);
+  // Apart, so moving the level does not restart the dub.
+  useEffect(() => {
+    if (el && url && on) el.volume = Math.max(0, Math.min(1, original));
+  }, [el, url, on, original]);
 }

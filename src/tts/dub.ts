@@ -4,7 +4,15 @@ import { RATE } from "./ema";
 
 export { RATE as DUB_RATE };
 
+/** The dub as exported: its clips, and how loud the file's own sound stays under it (0 to 1). */
+export interface DubMix {
+  clips: DubClip[];
+  original: number;
+}
+
 export interface DubClip {
+  /** Index of the line it reads. */
+  line: number;
   /** Seconds from the start of the media. */
   start: number;
   /** Mono audio at DUB_RATE. */
@@ -21,6 +29,20 @@ export function dubSlice(clips: DubClip[], from: number, frames: number): Float3
     if (at + c.audio.length <= 0) continue;
     const src = Math.max(0, -at);
     out.set(c.audio.subarray(src, Math.min(c.audio.length, frames - at)), at + src);
+  }
+  return out;
+}
+
+/** dubSlice at another sample rate (linear interpolation): `frames` samples at `rate` from `from` seconds on. */
+export function dubAt(clips: DubClip[], from: number, frames: number, rate: number): Float32Array {
+  if (rate === RATE) return dubSlice(clips, from, frames);
+  const step = RATE / rate;
+  const src = dubSlice(clips, from, Math.ceil(frames * step) + 2);
+  const out = new Float32Array(frames);
+  for (let k = 0; k < frames; k++) {
+    const pos = k * step;
+    const i = Math.floor(pos);
+    out[k] = src[i] + (src[i + 1] - src[i]) * (pos - i);
   }
   return out;
 }

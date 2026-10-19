@@ -26,8 +26,8 @@ Duyu-small to public/models/duyu-small/:
   model.json           special tokens, refinement gates and pass embeddings, file sizes
 
 Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the three text-to-speech models for
-dubbing: EMA Lightning to public/models/ema-lightning/, Antalia Mini to public/models/antalia-mini/ and Ahenk Cep
-to public/models/ahenk-cep/,
+dubbing: EMA Lightning to public/models/ema-lightning/, Antalia Mini to public/models/antalia-mini/, Ahenk Cep
+to public/models/ahenk-cep/ and Supertonic 3 (English and Turkish) to public/models/supertonic-3/,
 and the Turkish -> English translation model to public/models/opus-mt-tc-big-tr-en/.
 
 Usage:  python scripts/prepare_models.py [--src DIR]
@@ -661,6 +661,85 @@ def prepare_ahenk() -> None:
     (AHENK_OUT / "model.json").write_text(json.dumps(ahenk, ensure_ascii=False, indent=2))
     print(f"ahenk cep: {sum(ahenk['files'].values()) / 1e6:.0f} MB")
 
+SUPERTONIC_URL = "https://huggingface.co/Supertone/supertonic-3/resolve/3cadd1ee6394adea1bd021217a0e650ede09a323"
+SUPERTONIC_OUT = ROOT / "public" / "models" / "supertonic-3"
+# Supertonic 3 (Supertone/supertonic-3, OpenRAIL-M), pinned: 31 languages, English and Turkish among them.
+# The graphs keep float32 arithmetic but store their weights as float16 (half the download); the duration
+# predictor stays float32, it is small and float16 weights move every line's length a little.
+SUPERTONIC_GRAPHS = ["duration_predictor", "text_encoder", "vector_estimator", "vocoder"]
+SUPERTONIC_STYLES = ["M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"]
+
+
+def store_float16(src: Path, dst: Path) -> None:
+    """Float32 weights stored as float16, each with a Cast back to float32 in front of its users."""
+    from onnx import numpy_helper
+
+    m = onnx.load(str(src))
+    casts = []
+    for init in m.graph.initializer:
+        if init.data_type != onnx.TensorProto.FLOAT or np.prod(init.dims) < 1024:
+            continue
+        half = init.name + "_f16"
+        casts.append(helper.make_node("Cast", [half], [init.name], to=onnx.TensorProto.FLOAT, name=half + "_cast"))
+        init.CopyFrom(numpy_helper.from_array(numpy_helper.to_array(init).astype(np.float16), half))
+    for n in reversed(casts):
+        m.graph.node.insert(0, n)
+    onnx.save(m, str(dst))
+
+
+def prepare_supertonic(cache: Path) -> None:
+    """Supertonic 3, the English (and multilingual) dubbing voice."""
+    sources = [
+        *(f"onnx/{g}.onnx" for g in SUPERTONIC_GRAPHS),
+        "onnx/tts.json",
+        "onnx/unicode_indexer.json",
+        *(f"voice_styles/{s}.json" for s in SUPERTONIC_STYLES),
+    ]
+    for f in sources:
+        p = cache / f
+        if not p.exists():
+            p.parent.mkdir(parents=True, exist_ok=True)
+            print("download", f"{SUPERTONIC_URL}/{f}")
+            urllib.request.urlretrieve(f"{SUPERTONIC_URL}/{f}", str(p) + ".part")
+            os.replace(str(p) + ".part", p)
+    SUPERTONIC_OUT.mkdir(parents=True, exist_ok=True)
+    graphs = []
+    for g in SUPERTONIC_GRAPHS:
+        if g == "duration_predictor":
+            name = f"{g}.onnx"
+            shutil.copy(cache / "onnx" / name, SUPERTONIC_OUT / name)
+        else:
+            name = f"{g}.w16.onnx"
+            store_float16(cache / "onnx" / f"{g}.onnx", SUPERTONIC_OUT / name)
+        graphs.append(name)
+    # The unicode indexer as a flat little-endian int32 array: code point -> token id (-1: none).
+    indexer = json.loads((cache / "onnx" / "unicode_indexer.json").read_text())
+    np.asarray(indexer, dtype="<i4").tofile(SUPERTONIC_OUT / "indexer.bin")
+    # Every voice style, float32, one after another: style_ttl then style_dp.
+    ttl_dims = dp_dims = None
+    with open(SUPERTONIC_OUT / "styles.bin", "wb") as out:
+        for s in SUPERTONIC_STYLES:
+            st = json.loads((cache / "voice_styles" / f"{s}.json").read_text())
+            ttl_dims, dp_dims = st["style_ttl"]["dims"], st["style_dp"]["dims"]
+            np.asarray(st["style_ttl"]["data"], dtype="<f4").tofile(out)
+            np.asarray(st["style_dp"]["data"], dtype="<f4").tofile(out)
+    cfg = json.loads((cache / "onnx" / "tts.json").read_text())
+    files = [*graphs, "indexer.bin", "styles.bin"]
+    meta = {
+        "name": "supertonic-3",
+        "sampleRate": cfg["ae"]["sample_rate"],
+        "baseChunkSize": cfg["ae"]["base_chunk_size"],
+        "chunkCompress": cfg["ttl"]["chunk_compress_factor"],
+        "latentDim": cfg["ttl"]["latent_dim"],
+        "styles": SUPERTONIC_STYLES,
+        "ttlDims": ttl_dims[1:],
+        "dpDims": dp_dims[1:],
+        "files": {f: (SUPERTONIC_OUT / f).stat().st_size for f in files},
+    }
+    (SUPERTONIC_OUT / "model.json").write_text(json.dumps(meta, indent=2))
+    print(f"supertonic 3: {sum(meta['files'].values()) / 1e6:.0f} MB")
+
+
 DUYU_REPO = "KaanAydinli/Duyu-small"
 DUYU_OUT = ROOT / "public" / "models" / "duyu-small"
 DUYU_GRAPHS = ["encoder_pre.onnx", "encoder_pass.onnx", "encoder_post.onnx", "decoder.onnx"]
@@ -719,9 +798,11 @@ def main() -> None:
     ap.add_argument("--mt-only", action="store_true", help="only (re)build the translation model")
     ap.add_argument("--ahenk-only", action="store_true", help="only download Ahenk Cep")
     ap.add_argument("--duyu-only", action="store_true", help="only (re)build Duyu-small")
+    ap.add_argument("--supertonic-only", action="store_true", help="only (re)build Supertonic 3")
     args = ap.parse_args()
     mt_cache = args.src.parent / "opus-mt-tc-big-tr-en"
     duyu_cache = args.src.parent / "duyu-small"
+    supertonic_cache = args.src.parent / "supertonic-3"
     if args.whisper_only:
         prepare_whisper()
         return
@@ -729,6 +810,7 @@ def main() -> None:
         prepare_ema()
         prepare_mini()
         prepare_ahenk()
+        prepare_supertonic(supertonic_cache)
         return
     if args.mt_only:
         prepare_mt(mt_cache)
@@ -738,6 +820,9 @@ def main() -> None:
         return
     if args.duyu_only:
         prepare_duyu(duyu_cache)
+        return
+    if args.supertonic_only:
+        prepare_supertonic(supertonic_cache)
         return
     args.src.mkdir(parents=True, exist_ok=True)
     download(args.src)
@@ -757,6 +842,7 @@ def main() -> None:
     prepare_ema()
     prepare_mini()
     prepare_ahenk()
+    prepare_supertonic(supertonic_cache)
     prepare_mt(mt_cache)
 
 

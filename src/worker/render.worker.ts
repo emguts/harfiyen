@@ -10,8 +10,8 @@
 // same one the player shows), rendered at 1080p30; the audio is re-encoded
 // to AAC (or Opus) for the MP4.
 //
-// With a dub, the sound in either case is the synthetic voice instead of the
-// file's own audio.
+// With a dub, the sound in either case is the synthetic voice over the file's
+// own audio, which is turned down to the chosen level (or out).
 //
 // With a trim only that part is written, its first moment at 0:00. Captions,
 // the aura and the dub are looked up at the file's own time (output time plus
@@ -45,7 +45,7 @@ import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput"
 import type { Placement } from "../lib/crop";
 import { createCompositor } from "../render/compositor";
 import type { LogoLayer } from "../render/logoLayer";
-import { DUB_RATE, dubSlice, type DubClip } from "../tts/dub";
+import { DUB_RATE, dubAt, type DubMix } from "../tts/dub";
 import { clearRenders, openSink, type Sink } from "./sink";
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -64,7 +64,7 @@ export type ToRender =
       loudness: Float32Array;
       /** Language of the words; decides how they are uppercased. */
       lang: string;
-      dub: DubClip[] | null;
+      dub: DubMix | null;
       /** The user's logo, a copy of the player's (transferred). */
       logo: LogoLayer | null;
       encode: Encode;
@@ -123,15 +123,28 @@ async function finish(jobId: number, sink: Sink, handle: FileSystemFileHandle | 
   post({ type: "done", jobId, file, saved: file ? null : handle!.name, size, elapsed: (performance.now() - started) / 1000 });
 }
 
-/** The dub from `from` seconds of the file, written at `timestamp` of the output. */
-const dubSample = (dub: DubClip[], from: number, frames: number, timestamp = from) =>
-  new AudioSample({
-    data: dubSlice(dub, from, frames),
-    format: "f32",
-    numberOfChannels: 1,
-    sampleRate: DUB_RATE,
-    timestamp,
+/**
+ * The sample with the dub mixed in, on every channel, and the file's own sound turned down to `dub.original`.
+ * `t0` is where the output starts in the file: the sample is at output time, the dub at the file's.
+ */
+function mixDub(sample: AudioSample, dub: DubMix, t0: number): AudioSample {
+  const n = sample.numberOfFrames;
+  const channels = sample.numberOfChannels;
+  const voice = dubAt(dub.clips, sample.timestamp + t0, n, sample.sampleRate);
+  const out = new Float32Array(n * channels);
+  for (let c = 0; c < channels; c++) {
+    const plane = out.subarray(c * n, (c + 1) * n);
+    if (dub.original > 0) sample.copyTo(plane, { planeIndex: c, format: "f32-planar" });
+    for (let i = 0; i < n; i++) plane[i] = Math.max(-1, Math.min(1, plane[i] * dub.original + voice[i]));
+  }
+  return new AudioSample({
+    data: out,
+    format: "f32-planar",
+    numberOfChannels: channels,
+    sampleRate: sample.sampleRate,
+    timestamp: sample.timestamp,
   });
+}
 
 async function burn(
   jobId: number,
@@ -141,7 +154,7 @@ async function burn(
   bands: Float32Array,
   loudness: Float32Array,
   lang: string,
-  dub: DubClip[] | null,
+  dub: DubMix | null,
   logo: LogoLayer | null,
   encode: Encode,
   sink: Sink,
@@ -172,6 +185,8 @@ async function burn(
   const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
+  // Mono stays mono; anything wider is mixed down to stereo, so the dub is not spread over surround channels.
+  const channels = Math.min(2, (await input.getPrimaryAudioTrack())?.numberOfChannels ?? 1);
   let frames = 0;
   // Samples reach process at output time; captions and the dub go by the file's.
   const t0 = encode.trim?.start ?? 0;
@@ -203,13 +218,13 @@ async function burn(
         return canvas;
       },
     },
-    // The file's audio, resampled to the dub's rate, only sets the pace; each sample is replaced by the dub.
+    // The file's audio, resampled to the dub's rate, with the dub mixed in.
     audio: dub
       ? {
-          numberOfChannels: 1,
+          numberOfChannels: channels,
           sampleRate: DUB_RATE,
           forceTranscode: true,
-          process: (sample) => dubSample(dub, sample.timestamp + t0, sample.numberOfFrames, sample.timestamp),
+          process: (sample) => mixDub(sample, dub, t0),
         }
       : undefined,
   });
@@ -247,7 +262,7 @@ async function burnAudio(
   bands: Float32Array,
   loudness: Float32Array,
   lang: string,
-  dub: DubClip[] | null,
+  dub: DubMix | null,
   logo: LogoLayer | null,
   encode: Encode,
   sink: Sink,
@@ -258,8 +273,8 @@ async function burnAudio(
   if (!audio) throw new Error("Bu dosyada ses yok.");
   if (!(await audio.canDecode())) throw new Error(`Sesin kodlaması (${audio.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
   const codec = await getFirstEncodableAudioCodec(["aac", "opus"], {
-    numberOfChannels: dub ? 1 : audio.numberOfChannels,
-    sampleRate: dub ? DUB_RATE : audio.sampleRate,
+    numberOfChannels: audio.numberOfChannels,
+    sampleRate: audio.sampleRate,
   });
   if (!codec) throw new Error("Bu tarayıcı MP4 için ses kodlayamıyor (AAC veya Opus gerekli).");
 
@@ -311,34 +326,26 @@ async function burnAudio(
   try {
     await output.start();
     // Interleave: draw the frames up to the end of each audio sample.
-    if (dub) {
-      // A second of dub at a time, over the length written.
-      for (let t = 0; t < duration && !stop; t++) {
-        const sample = dubSample(dub, t0 + t, Math.round(Math.min(1, duration - t) * DUB_RATE), t);
-        await sound.add(sample);
+    const trimmed = !!encode.trim;
+    for await (const sample of new AudioSampleSink(audio).samples(trimmed ? t0 : undefined, trimmed ? t1 : undefined)) {
+      // Cut to the trim at the sample: the first may begin before it, the last end after it.
+      const n = sample.numberOfFrames;
+      const a = Math.max(0, Math.min(n, Math.round((t0 - sample.timestamp) * sample.sampleRate)));
+      const b = Math.max(a, Math.min(n, Math.round((t1 - sample.timestamp) * sample.sampleRate)));
+      if (stop || a >= b) {
         sample.close();
-        await renderUntil(t + 1);
+        if (stop) break;
+        continue;
       }
-    } else {
-      const trimmed = !!encode.trim;
-      for await (const sample of new AudioSampleSink(audio).samples(trimmed ? t0 : undefined, trimmed ? t1 : undefined)) {
-        // Cut to the trim at the sample: the first may begin before it, the last end after it.
-        const n = sample.numberOfFrames;
-        const a = Math.max(0, Math.min(n, Math.round((t0 - sample.timestamp) * sample.sampleRate)));
-        const b = Math.max(a, Math.min(n, Math.round((t1 - sample.timestamp) * sample.sampleRate)));
-        if (stop || a >= b) {
-          sample.close();
-          if (stop) break;
-          continue;
-        }
-        const part = a > 0 || b < n ? sample.trim(a, b) : sample;
-        part.setTimestamp(Math.max(0, sample.timestamp + a / sample.sampleRate - t0));
-        const end = part.timestamp + part.duration;
-        await sound.add(part);
-        if (part !== sample) part.close();
-        sample.close();
-        await renderUntil(end);
-      }
+      const part = a > 0 || b < n ? sample.trim(a, b) : sample;
+      part.setTimestamp(Math.max(0, sample.timestamp + a / sample.sampleRate - t0));
+      const mixed = dub ? mixDub(part, dub, t0) : part;
+      const end = mixed.timestamp + mixed.duration;
+      await sound.add(mixed);
+      if (mixed !== part) mixed.close();
+      if (part !== sample) part.close();
+      sample.close();
+      await renderUntil(end);
     }
     if (!stop) await renderUntil(Infinity);
     if (stop) {

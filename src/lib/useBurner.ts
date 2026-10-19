@@ -3,7 +3,7 @@ import type { CaptionSettings } from "../captions/style";
 import { userFontById } from "../captions/userFonts";
 import type { Word } from "../engine";
 import type { LogoLayer } from "../render/logoLayer";
-import type { DubClip } from "../tts/dub";
+import type { DubMix } from "../tts/dub";
 import type { Encode, FromRender, ToRender } from "../worker/render.worker";
 
 export type BurnState =
@@ -115,7 +115,7 @@ export function useBurner() {
       loudness: Float32Array,
       lang: string,
       encode: Encode,
-      dub: DubClip[] | null,
+      dub: DubMix | null,
       logo: LogoLayer | null,
       name: string,
     ) => {

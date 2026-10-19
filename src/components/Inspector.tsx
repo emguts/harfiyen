@@ -73,6 +73,10 @@ export function Inspector({
   onCancelDub,
   dubOn,
   onDubOn,
+  dubOriginal,
+  onDubOriginal,
+  onDubOverflow,
+  onExtendTrim,
   dubName,
   voice,
   onVoice,
@@ -111,6 +115,13 @@ export function Inspector({
   onCancelDub: () => void;
   dubOn: boolean;
   onDubOn: (on: boolean) => void;
+  /** How loud the file's own sound stays under the dub. */
+  dubOriginal: number;
+  onDubOriginal: (v: number) => void;
+  /** Shows the line of the dub that runs past the end. */
+  onDubOverflow: () => void;
+  /** Lengthens the trim so the dub fits; null when that is not possible. */
+  onExtendTrim: (() => void) | null;
   dubName: string;
   voice: Voice;
   onVoice: (v: Voice) => void;
@@ -200,11 +211,20 @@ export function Inspector({
             onCancel={onCancelDub}
             on={dubOn}
             onOn={onDubOn}
+            original={dubOriginal}
+            onOriginal={onDubOriginal}
+            onOverflow={onDubOverflow}
+            onExtendTrim={onExtendTrim}
             fileName={dubName}
             voice={voice}
             onVoice={onVoice}
             preview={preview}
             onListen={onListen}
+            translation={translation}
+            translationStale={translationStale}
+            translating={translate.status === "download" || translate.status === "running"}
+            canTranslate={canTranslate && !running}
+            onTranslate={onTranslate}
           />
         ) : (
           <div className={STUDIO}>

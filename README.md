@@ -315,6 +315,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [x] **SRT / VTT içe aktarma:** hazır altyazıyı açıp stillendirme ve videoya yazma.
 - [x] **Dikey video ve bölüm seçme:** kadraj (Doldur / Sığdır), kesme ve yalnızca seçili bölümü yazıya dökme.
 - [ ] **Jump cut:** sessizlikleri ve dolgu kelimeleri ("ııı", "şey") kesme; transkriptten kesme.
+- [ ] **Değişken yazı tipleri için kalınlık ve italik:** yüklenen ve hazır değişken yazı tiplerinde kalınlık
+      kaydırıcısı (yazı tipinin kendi aralığında) ve italik anahtarı.
 
 ---
 

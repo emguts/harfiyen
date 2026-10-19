@@ -77,7 +77,7 @@ import {
 } from "./lib/videoOutput";
 import { usePlayer } from "./lib/usePlayer";
 import { useFollow } from "./lib/useFollow";
-import { DEFAULT_VOICE, sameVoice, useDubber, useDubPlayback, type Voice } from "./lib/useDubber";
+import { DEFAULT_VOICE, fitVoice, MAX_ORIGINAL, sameVoice, useDubber, useDubPlayback, type Voice } from "./lib/useDubber";
 import { useProjects } from "./lib/useProjects";
 import { canResume, modelIsCached, useTranscriber, type TimeRange } from "./lib/useTranscriber";
 import { useTranslator } from "./lib/useTranslator";
@@ -230,10 +230,16 @@ export function App() {
   const [dubOn, setDubOn] = useState(true);
   const dub = dubber.state.status === "done" ? dubber.state : null;
   const dubbing = dub && dubOn ? dub : null;
-  useDubPlayback(player.el, dub?.url ?? null, !!dubbing);
+  /** How loud the file's own sound stays under the dub, 0 to MAX_ORIGINAL. */
+  const [dubOriginal, setDubOriginal] = useState(() => {
+    const saved = Number(localStorage.getItem("harfiyen.dubOriginal"));
+    return Number.isFinite(saved) ? Math.max(0, Math.min(MAX_ORIGINAL, saved)) : 0;
+  });
+  useEffect(() => localStorage.setItem("harfiyen.dubOriginal", String(dubOriginal)), [dubOriginal]);
+  useDubPlayback(player.el, dub?.url ?? null, !!dubbing, dubOriginal);
   const [voice, setVoice] = useState<Voice>(() => {
     try {
-      return { ...DEFAULT_VOICE, ...JSON.parse(localStorage.getItem("harfiyen.voice") ?? "{}") };
+      return fitVoice({ ...DEFAULT_VOICE, ...JSON.parse(localStorage.getItem("harfiyen.voice") ?? "{}") });
     } catch {
       return DEFAULT_VOICE;
     }
@@ -277,7 +283,7 @@ export function App() {
   // A dub belongs to its job; an export made with or without it is out of date once that changes.
   const resetDub = dubber.reset;
   useEffect(() => resetDub(), [job?.id, resetDub]);
-  useEffect(() => resetBurn(), [dubbing, resetBurn]);
+  useEffect(() => resetBurn(), [dubbing, dubOriginal, resetBurn]);
   const openProject = useCallback(
     async (id: string) => {
       try {
@@ -565,10 +571,23 @@ export function App() {
           : (job?.words ?? []),
     [english, translation, job?.words, job?.tentative],
   );
+  /** What the dub reads: the transcript, or its translation for an English dub. */
+  const dubWords = voice.lang === "en" ? (translation?.words ?? []) : words;
+  const fileDuration = player.duration || job?.duration || 0;
+  /** Where the dub must be over by: the trim's end, or the file's. */
+  const dubEnd = trim?.end ?? fileDuration;
+  const dubStale = !!dub && (dub.words !== dubWords || !sameVoice(dub.voice, voice) || dub.end !== dubEnd);
+  /**
+   * With the dub on and captions in its language, the captions follow the dub: its words at the times it says
+   * them. The transcript pane and edits keep the spoken times.
+   */
+  const dubTimed = dubbing && !dubStale && dubbing.voice.lang === lang ? dubbing.timed : null;
+  /** What the player, the timeline and the exports caption with. */
+  const captionWords = dubTimed ?? liveWords;
   // Timeline blocks follow the grouping of the chosen caption style.
   const groups = useMemo(
-    () => buildCues(liveWords, presetById(settings.preset).grouping),
-    [liveWords, settings.preset],
+    () => buildCues(captionWords, presetById(settings.preset).grouping),
+    [captionWords, settings.preset],
   );
   const translationStale = useMemo(
     () => !!translation && translation.source !== sourceKey(words),
@@ -755,7 +774,7 @@ export function App() {
   // A picture this browser cannot decode (AV1 in Safari without the hardware for it): said up front, not at export.
   const badCodec = undecodable(sourceInfo);
   // Exports are of the trimmed part: subtitle times from its start, sizes for its length.
-  const exportWords = useMemo(() => wordsIn(shown, trim, true), [shown, trim]);
+  const exportWords = useMemo(() => wordsIn(dubTimed ?? shown, trim, true), [dubTimed, shown, trim]);
   const exportSource = useMemo(
     () => (sourceInfo && trim ? { ...sourceInfo, duration: trim.end - trim.start } : sourceInfo),
     [sourceInfo, trim],
@@ -785,10 +804,10 @@ export function App() {
       fit: framed && !framed.crop ? framed.placement : null,
       trim,
     };
-    // Translated words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
-    const loudness = english ? EMPTY_BANDS : job.loudness;
+    // Translated or dub-timed words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
+    const loudness = english || dubTimed ? EMPTY_BANDS : job.loudness;
     // Only the trimmed part's words, so no caption line reaches outside it.
-    void burner.burn(job.file, wordsIn(shown, trim), settings, job.bands, loudness, lang, encode, dubbing?.clips ?? null, logo, `${exportName}.altyazili.mp4`);
+    void burner.burn(job.file, wordsIn(dubTimed ?? shown, trim), settings, job.bands, loudness, lang, encode, dubbing && { clips: dubbing.clips, original: dubOriginal }, logo, `${exportName}.altyazili.mp4`);
   };
 
   const changeCrop = (c: Crop | null) => {
@@ -845,6 +864,13 @@ export function App() {
       : "canli-kayit";
   /** Exports of the translation say so in their name. */
   const exportName = english ? `${name}.en` : name;
+  /** What the dub reads: the transcript, or its translation for an English dub. */
+  const dubOverflow = dub?.overflow ?? null;
+  /** The trim, lengthened past the end so the last line of the dub fits; null when there is no more video. */
+  const longerTrim =
+    trim && dubOverflow && trim.end < fileDuration - 0.05
+      ? { start: trim.start, end: Math.min(fileDuration, trim.end + dubOverflow.seconds + 0.3) }
+      : null;
   const exportProject = () => {
     const text = exportText();
     if (text) download(`${name}${PROJECT_EXT}`, text, "application/json");
@@ -1141,7 +1167,7 @@ export function App() {
         <main className="flex min-h-0 min-w-0 bg-bg p-3.5 max-[860px]:order-1 max-[860px]:h-[56vw] max-[860px]:min-h-[220px] max-[860px]:has-data-dropzone:h-auto max-[480px]:p-2.5">
           <Viewer
             player={player}
-            words={liveWords}
+            words={captionWords}
             settings={settings}
             liveTime={job?.live && !job.file ? job.decoded : null}
             following={following}
@@ -1150,7 +1176,7 @@ export function App() {
             cropLocked={burner.state.status === "running"}
             logo={logo}
             bands={job?.bands ?? EMPTY_BANDS}
-            loudness={(!english && job?.loudness) || EMPTY_BANDS}
+            loudness={(!english && !dubTimed && job?.loudness) || EMPTY_BANDS}
             lang={lang}
             liveLevels={liveLevels}
             notice={
@@ -1295,19 +1321,28 @@ export function App() {
           punctBusy={punct.phase === "run" || punct.phase === "download"}
           onCancel={cancel}
           dub={dubber.state}
-          dubStale={!!dub && (dub.words !== words || !sameVoice(dub.voice, voice))}
-          canDub={editable && !!job?.file}
+          dubStale={dubStale}
+          canDub={editable && !!job?.file && dubWords.length > 0}
           onDub={() =>
-            dubber.dub(words, player.duration || job?.duration || 0, voice)
+            dubber.dub(dubWords, fileDuration, dubEnd, voice)
           }
           onCancelDub={dubber.cancel}
           dubOn={dubOn}
           onDubOn={setDubOn}
-          dubName={`${name}.seslendirme.wav`}
+          dubOriginal={dubOriginal}
+          onDubOriginal={setDubOriginal}
+          onDubOverflow={() => {
+            if (!dubOverflow) return;
+            // The line as it is read: in the translation for an English dub.
+            setShowEn(voice.lang === "en");
+            player.seek(dubOverflow.start);
+          }}
+          onExtendTrim={longerTrim && (() => changeTrim(longerTrim))}
+          dubName={`${voice.lang === "en" ? `${name}.en` : name}.seslendirme.wav`}
           voice={voice}
           onVoice={setVoice}
           preview={dubber.preview}
-          onListen={() => dubber.listen(words, voice)}
+          onListen={() => dubber.listen(dubWords, voice)}
           translate={translator.state}
           translation={!!translation}
           translationStale={translationStale}
