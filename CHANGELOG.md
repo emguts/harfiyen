@@ -4,6 +4,18 @@ Yeni sürümler en üstte.
 
 ## Yayımlanmadı
 
+- **İngilizce seslendirme (voice-over):** Seslendirme sekmesinde dil İngilizce seçilince çeviri
+  [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) ile okunur (203 MB, ilk kullanımda iner). Her
+  cümle Türkçesinin başladığı anda başlar. On ses var: Alex, James, Robert, Sam, Daniel, Sarah, Lily, Jessica,
+  Olivia, Emily. Supertonic Türkçe de okur; Türkçe seslendirmede dördüncü ses olarak seçilebilir.
+- **Orijinal ses seviyesi:** Seslendirme açıkken orijinal ses %0 ile %50 arasında altta duyulabilir; oynatıcıda ve
+  altyazılı MP4'te aynı karışım kullanılır.
+- **Altyazı seslendirmeyi takip eder:** Altyazı seslendirmeyle aynı dildeyse her cümle sesinin başladığı ve bittiği
+  anda görünür; SRT/VTT ve altyazılı MP4 de bu zamanları kullanır.
+- **Seslendirme videoya sığar:** Modellerin cümle başına ve sonuna koyduğu sessizlik kırpılıyor, seslendirme zamanla
+  geride kalmıyor. Videonun sonuna taşan cümleler geriye kayar ve gerekirse biraz hızlanır; yine sığmazsa uyarı
+  çıkar, **Cümleye git** ve seçili bölümde **Bölümü uzat** ile düzeltilir.
+- **Kırpma düğmeleri:** Seçili oranın ve modun üstüne gelince yazı artık kaybolmuyor.
 - **Logo:** Altyazı sekmesinden kendi logonu (PNG, SVG, WebP ya da JPEG) ekleyebilirsin. Seçtiğin köşede durur;
   boyutu ve saydamlığı ayarlanır. Önizlemede ve altyazılı videoda aynı görünür, kadrajlı videoda yeni kareye
   göre yerleşir. Logo bu tarayıcıda saklanır ve sonraki projelerde de hazırdır; her projede gizlenebilir.

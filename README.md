@@ -125,16 +125,29 @@ canlı çalışır.
 
 ### Seslendirme
 
-- Transkript, [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning),
-  [Antalia Mini](https://huggingface.co/cloud0day3/antalia-mini) ya da
-  [Ahenk Cep](https://huggingface.co/ozgurguler/ahenk-cep-tr) ile yapay bir Türkçe sesle yeniden okunur. Her
+- **Türkçe:** Transkript, [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning),
+  [Antalia Mini](https://huggingface.co/cloud0day3/antalia-mini),
+  [Ahenk Cep](https://huggingface.co/ozgurguler/ahenk-cep-tr) ya da
+  [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) ile yapay bir Türkçe sesle yeniden okunur. Her
   altyazı satırı kendi zamanında başlar; yerine sığmayan satır en fazla 1,35 kat hızlı okunur. Ahenk Cep rakamları,
   tarihleri ve kısaltmaları en iyi okuyan sestir; diğerlerinden biraz yavaştır.
-- Ses tonu yarım ton adımlarla kalınlaştırılıp inceltilebilir; satırların süresi değişmez. Seed aynı sesi farklı
-  bir vurguyla okutur. Ayarlar seslendirmeden önce ilk satırla dinlenebilir.
-- Açıkken oynatıcı ve altyazılı MP4 orijinal ses yerine yapay sesi kullanır. Ses ayrıca WAV olarak
-  indirilebilir. Modeller ilk kullanımda indirilir: EMA Lightning yaklaşık 36 MB, Antalia Mini 23 MB,
-  Ahenk Cep 18 MB.
+- **İngilizce (voice-over):** İngilizce çeviri Supertonic 3 ile okunur. Çeviri yoksa seslendirme sekmesinden
+  çevrilir. Her cümle Türkçesinin başladığı anda başlar; sığmayan cümle önündeki sessizliğe biraz erken başlar,
+  gerekirse en fazla 1,15 kat hızlı okunur (Supertonic daha hızlıda cümle sonunu yutuyor). On ses arasından
+  seçilir (Alex, James, Robert, Sam, Daniel, Sarah, Lily, Jessica, Olivia, Emily).
+- Modellerin cümle başına ve sonuna koyduğu sessizlik kırpılır; böylece cümleler birbirini itmez, seslendirme
+  videonun gerisinde kalmaz.
+- Videonun (ya da seçili bölümün) sonuna taşan son cümleler önlerindeki duraklamalara doğru geriye kayar, gerekirse
+  son 20 saniyedeki cümleler biraz hızlanır. Yine sığmazsa kaç saniye taştığı söylenir; **Cümleye git** ile cümle
+  kısaltılabilir, seçili bölüm varsa **Bölümü uzat** ile videonun devamı kullanılır.
+- Ses tonu yarım ton adımlarla kalınlaştırılıp inceltilebilir; satırların süresi değişmez (Supertonic'te yok, on
+  sesi var). Seed aynı sesi farklı bir vurguyla okutur. Ayarlar seslendirmeden önce ilk satırla dinlenebilir.
+- Açıkken oynatıcı ve altyazılı MP4 yapay sesi kullanır. **Orijinal ses** %0 ile %50 arasında ayarlanır: %0'da hiç
+  duyulmaz, üstünde yapay sesin altında kısık duyulur (konuşma, müzik ve ortam sesi hafifçe kalır).
+- Altyazı seslendirmeyle aynı dildeyse sesi takip eder: her cümle sesinin başladığı ve bittiği anda görünür.
+  Oynatıcı, zaman çizelgesi, SRT/VTT ve altyazılı MP4 bu zamanları kullanır; transkript orijinal zamanlarda kalır.
+- Yapay ses ayrıca WAV olarak indirilebilir (orijinal ses karışmadan). Modeller ilk kullanımda indirilir:
+  EMA Lightning yaklaşık 36 MB, Antalia Mini 23 MB, Ahenk Cep 18 MB, Supertonic 3 203 MB.
 
 ### İngilizce çeviri
 
@@ -142,6 +155,7 @@ canlı çalışır.
   İngilizceye çevrilir. Her cümle Türkçesinin zamanında görünür; kelimeleri o süreyi uzunluklarına göre paylaşır.
 - Transkriptin üstündeki **TR / EN** ile gösterilen dil seçilir: altyazı, zaman çizelgesi, SRT/VTT/metin ve
   altyazılı MP4 o dilde olur (dosya adına `.en` eklenir). Çeviri de düzenlenebilir, bulup değiştirilebilir.
+- Çeviri İngilizce seslendirmeyle sesli de okunabilir (bkz. Seslendirme).
 - Çeviri projeyle birlikte kaydedilir. Transkript sonradan değişirse çevirinin eskidiği söylenir.
   Model ilk kullanımda yaklaşık 360 MB indirir ve işlemcide (WASM) çalışır.
 
@@ -184,8 +198,8 @@ npm run dev        # http://localhost:5173
 
 İlk açılışta tarayıcı yaklaşık 105 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
 önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB), Duyu
-seçilirse yaklaşık 85 MB indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB, İngilizce çeviri yaklaşık 360 MB indirilir ve
-önbelleğe alınır. Modeller **Ayarlar → Modeller**'den önceden indirilebilir ya da silinebilir. Ses ve metin
+seçilirse yaklaşık 85 MB indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB, İngilizce çeviri yaklaşık 360 MB,
+İngilizce seslendirme (Supertonic 3) yaklaşık 203 MB indirilir ve önbelleğe alınır. Modeller **Ayarlar → Modeller**'den önceden indirilebilir ya da silinebilir. Ses ve metin
 işlenmek için sunucuya gönderilmez.
 
 ### Telefondan veya ağdaki başka bir cihazdan açmak
@@ -291,10 +305,13 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   kısım için yeniden yazıya dökmek gerekir.
 - Kadraj videonun tamamı için sabittir; zamanla kayan kadraj yok. **Sığdır**'da videonun karedeki boyutu ve
   konumu değiştirilemez.
-- Seslendirmede her modelin tek sesi var ve orijinal sesin tamamı (müzik, ortam sesi) kalkar. Konuşmacılar ayrılmaz,
-  dudak hareketleriyle eşleşmez. Seslendirme projeye kaydedilmez.
+- Seslendirmede Türkçe modellerin tek sesi var; konuşmacılar ayrılmaz, her konuşmacı aynı sesle okunur. Orijinal ses
+  yalnızca topluca kısılır; konuşma müzikten ayrılmaz. Dudak hareketleriyle eşleşmez. Seslendirme projeye
+  kaydedilmez.
+- İngilizce seslendirme Türkçeden uzun olabilir; sıkışık konuşmalarda cümleler Türkçesinden birkaç yüz
+  milisaniye geç başlayabilir. Seslendirmeyi takip eden altyazıda kelime zamanları harf sayısından tahmin edilir.
 - Çeviri yalnızca İngilizceye. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
-  çalışmaz. Yemek adları, özel adlar ve argo yanlış çevrilebilir. Seslendirme her zaman Türkçe transkripti okur.
+  çalışmaz. Yemek adları, özel adlar ve argo yanlış çevrilebilir.
 - Ses dosyalarından üretilen MP4'te ses AAC ile kodlanır; tarayıcı AAC kodlayamıyorsa Opus kullanılır.
   Opus'lu MP4'ü QuickTime ve iPhone Fotoğraflar açmayabilir (Chrome, VLC ve sosyal platformlar açar).
 
@@ -314,6 +331,9 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [x] **Transkriptte bul ve değiştir:** yanlış tanınan bir kelimeyi veya ismi bütün kayıtta düzeltme.
 - [x] **SRT / VTT içe aktarma:** hazır altyazıyı açıp stillendirme ve videoya yazma.
 - [x] **Dikey video ve bölüm seçme:** kadraj (Doldur / Sığdır), kesme ve yalnızca seçili bölümü yazıya dökme.
+- [x] **İngilizce seslendirme (voice-over):** çeviriyi yapay sesle okuma, orijinal sesi altta tutma, altyazıyı
+      sese hizalama.
+- [ ] **Konuşmacı ayırma:** konuşmacılara göre altyazı rengi ve etiket; seslendirmede konuşmacı başına ses.
 - [ ] **Jump cut:** sessizlikleri ve dolgu kelimeleri ("ııı", "şey") kesme; transkriptten kesme.
 - [ ] **Değişken yazı tipleri için kalınlık ve italik:** yüklenen ve hazır değişken yazı tiplerinde kalınlık
       kaydırıcısı (yazı tipinin kendi aralığında) ve italik anahtarı.
@@ -343,6 +363,9 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
   ağırlıklar CC BY 4.0. EMA Lightning (Apache-2.0) mimarisinde, Alania verilerinden (PatientDesk AI, CC BY 4.0)
   türeyen Ahenk sesinden öğrenmiş küçük model. Okuma adımları ve metin normalleştirme (`src/tts/trnorm/`)
   [ozguradmin/ahenk-turkish-tts](https://github.com/ozguradmin/ahenk-turkish-tts)'ten (Apache-2.0) uyarlandı.
+- Dördüncü seslendirme modeli (İngilizce ve Türkçe) [Supertone/supertonic-3](https://huggingface.co/Supertone/supertonic-3):
+  BigScience OpenRAIL-M. Ağırlıklar `scripts/prepare_models.py` ile float16 saklanacak şekilde küçültülür (hesap
+  float32 kalır); çalıştırma adımları modelin web örneğinden uyarlandı.
 - Dil modeli dosyaları (`rnnlm`, `2gram`): CC BY-SA 4.0 (Türkçe Vikipedi üzerinde eğitildi).
 - Noktalama ölçüm metinleri (`tests/data/`): Türkçe Vikipedi, CC BY-SA 4.0; kaynak makaleler dosyalarda.
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.
