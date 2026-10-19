@@ -28,7 +28,8 @@ Duyu-small to public/models/duyu-small/:
 Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the three text-to-speech models for
 dubbing: EMA Lightning to public/models/ema-lightning/, Antalia Mini to public/models/antalia-mini/, Ahenk Cep
 to public/models/ahenk-cep/ and Supertonic 3 (English and Turkish) to public/models/supertonic-3/,
-and the Turkish -> English translation model to public/models/opus-mt-tc-big-tr-en/.
+and the translation models, Turkish -> English to public/models/opus-mt-tc-big-tr-en/ and English -> Turkish
+to public/models/opus-mt-tc-big-en-tr/.
 
 Usage:  python scripts/prepare_models.py [--src DIR]
 """
@@ -519,14 +520,20 @@ def prepare_whisper() -> None:
     print(f"whisper: {sum(whisper['files'].values()) / 1e6:.0f} MB")
 
 
-MT_REPO = "Helsinki-NLP/opus-mt-tc-big-tr-en"
-MT_OUT = ROOT / "public" / "models" / "opus-mt-tc-big-tr-en"
+# Translation, both ways: Turkish -> English, and English -> Turkish for English videos. Same architecture.
+MT_REPOS = ["Helsinki-NLP/opus-mt-tc-big-tr-en", "Helsinki-NLP/opus-mt-tc-big-en-tr"]
 MT_FILES = ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"]
 
 
-def prepare_mt(cache: Path) -> None:
-    """Turkish -> English translation (Marian, CC-BY-4.0), exported here: the published ONNX conversions
-    (Xenova/, onnx-community/) of this model put out repeated junk ("connectconnect...") at every precision."""
+def prepare_mts(caches: Path) -> None:
+    for repo in MT_REPOS:
+        name = repo.split("/")[1]
+        prepare_mt(repo, caches / name, ROOT / "public" / "models" / name)
+
+
+def prepare_mt(MT_REPO: str, cache: Path, MT_OUT: Path) -> None:
+    """Translation (Marian, CC-BY-4.0), exported here: the published ONNX conversions (Xenova/, onnx-community/)
+    of the Turkish -> English model put out repeated junk ("connectconnect...") at every precision."""
     from onnxruntime.quantization import QuantType, quantize_dynamic
     from optimum.exporters.onnx import main_export
 
@@ -557,7 +564,7 @@ def prepare_mt(cache: Path) -> None:
 
     cfg = json.loads((cache / "config.json").read_text())
     mt = {
-        "name": "opus-mt-tc-big-tr-en",
+        "name": MT_REPO.split("/")[1],
         "decoderLayers": cfg["decoder_layers"],
         "heads": cfg["decoder_attention_heads"],
         "headDim": cfg["d_model"] // cfg["decoder_attention_heads"],
@@ -569,7 +576,7 @@ def prepare_mt(cache: Path) -> None:
         "files": {f: (MT_OUT / f).stat().st_size for f in MT_FILES},
     }
     (MT_OUT / "model.json").write_text(json.dumps(mt, indent=2))
-    print(f"translation: {sum(mt['files'].values()) / 1e6:.0f} MB")
+    print(f"{mt['name']}: {sum(mt['files'].values()) / 1e6:.0f} MB")
 
 
 EMA_URL = "https://ema-lightning-web.vercel.app/models"
@@ -795,12 +802,11 @@ def main() -> None:
     ap.add_argument("--src", type=Path, default=ROOT / ".cache" / "seda-v0.1")
     ap.add_argument("--whisper-only", action="store_true", help="only (re)build the Whisper files")
     ap.add_argument("--tts-only", action="store_true", help="only download the dubbing voices")
-    ap.add_argument("--mt-only", action="store_true", help="only (re)build the translation model")
+    ap.add_argument("--mt-only", action="store_true", help="only (re)build the translation models")
     ap.add_argument("--ahenk-only", action="store_true", help="only download Ahenk Cep")
     ap.add_argument("--duyu-only", action="store_true", help="only (re)build Duyu-small")
     ap.add_argument("--supertonic-only", action="store_true", help="only (re)build Supertonic 3")
     args = ap.parse_args()
-    mt_cache = args.src.parent / "opus-mt-tc-big-tr-en"
     duyu_cache = args.src.parent / "duyu-small"
     supertonic_cache = args.src.parent / "supertonic-3"
     if args.whisper_only:
@@ -813,7 +819,7 @@ def main() -> None:
         prepare_supertonic(supertonic_cache)
         return
     if args.mt_only:
-        prepare_mt(mt_cache)
+        prepare_mts(args.src.parent)
         return
     if args.ahenk_only:
         prepare_ahenk()
@@ -843,7 +849,7 @@ def main() -> None:
     prepare_mini()
     prepare_ahenk()
     prepare_supertonic(supertonic_cache)
-    prepare_mt(mt_cache)
+    prepare_mts(args.src.parent)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@
 import { OnlineFbank } from "../engine/fbank";
 import type { SmallProvider } from "../engine";
 import type { EncoderProvider, Ort } from "../engine/models";
+import type { DecodeOptions } from "../engine/config";
 import type { SpeechEngine, SpeechStream } from "../engine/stream";
 import type { Word } from "../engine/tokens";
 import { alignWords, FRAME_SEC, tokenFrames } from "./alignment";
@@ -55,7 +56,8 @@ export class WhisperEngine implements SpeechEngine {
     return this.model.provider;
   }
 
-  createRecognizer(): SpeechStream {
+  createRecognizer(opts?: DecodeOptions): SpeechStream {
+    this.model.setLanguage(opts?.lang ?? "tr");
     this.vad.reset();
     return new WhisperRecognizer(this.model, this.tok, this.vad);
   }

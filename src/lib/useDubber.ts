@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { buildCues, cueText, READING_RULES } from "./cues";
 import type { Word } from "../engine";
 import { dubWav, type DubClip } from "../tts/dub";
+import type { StoredDub } from "./projectStore";
 import { RATE } from "../tts/ema";
 import { splitSentences } from "./translation";
 import type { DubLang, DubLine, DubOverflow, FromTts, ToTts, Voice, VoiceModel } from "../worker/tts.worker";
@@ -28,12 +29,16 @@ const SAMPLE: Record<DubLang, string> = {
 };
 
 /**
- * What the dub reads: the transcript a caption line at a time, or the translation a sentence at a time. A
- * translated sentence keeps its source's start, but its words are not timed, so caption lines would cut it at
- * made-up places; read whole, it also sounds like one sentence.
+ * Read a sentence at a time: a translation (into either language), and English. A translated sentence keeps its
+ * source's start, but its words are not timed, so caption lines would cut it at made-up places; read whole, it
+ * also sounds like one sentence. A Turkish transcript is read a caption line at a time.
  */
-function dubLines(words: Word[], lang: DubLang): SpokenLine[] {
-  if (lang === "en")
+export const dubBySentence = (voiceLang: DubLang, transcriptLang: DubLang) =>
+  voiceLang !== transcriptLang || voiceLang === "en";
+
+/** What the dub reads: `words` a sentence or a caption line at a time (dubBySentence). */
+function dubLines(words: Word[], bySentence: boolean): SpokenLine[] {
+  if (bySentence)
     return splitSentences(words).map((s) => ({
       start: words[s.first].start,
       end: words[s.first + s.count - 1].end,
@@ -77,6 +82,36 @@ function timeToDub(words: Word[], lines: SpokenLine[], clips: DubClip[]): Word[]
   return out;
 }
 
+/**
+ * A fingerprint of the words a dub reads (FNV-1a over their text and start times): the dub is out of date once
+ * it changes. Kept with the project, so a reopened dub knows too.
+ */
+export function dubKey(words: Word[]): string {
+  let h = 0x811c9dc5;
+  for (const w of words) {
+    const s = `${w.text}@${Math.round(w.start * 1000)} `;
+    for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  }
+  return `${words.length}:${(h >>> 0).toString(16)}`;
+}
+
+/** A finished dub as the project keeps it: the speech in 16 bits, half the room. */
+export function storedDub(d: Extract<DubState, { status: "done" }>): StoredDub {
+  return {
+    voice: d.voice,
+    key: d.key,
+    end: d.end,
+    duration: d.duration,
+    overflow: d.overflow,
+    elapsed: d.elapsed,
+    clips: d.clips.map((c) => ({
+      line: c.line,
+      start: c.start,
+      audio: Int16Array.from(c.audio, (v) => Math.round(Math.max(-1, Math.min(1, v)) * 32767)),
+    })),
+  };
+}
+
 /** A short sample of the voice: model download, then synthesis, then playback. */
 export type PreviewState =
   | { status: "idle" }
@@ -89,16 +124,18 @@ export type DubState =
   | { status: "download"; loaded: number; total: number }
   | { status: "running"; done: number; total: number }
   /**
-   * `words`, `voice` and `end` are what it was made from, to tell when it is out of date; `timed`, the same words
-   * at the times the dub says them, for captions that follow it. `overflow`: the last line heard still runs past
-   * `end`.
+   * `key` (dubKey of the words read), `voice` and `end` are what it was made from, to tell when it is out of
+   * date; `timed`, the words at the times the dub says them, for captions that follow it. `overflow`: the last
+   * line heard still runs past `end`. `restored`: read back from the project, not made now.
    */
   | {
       status: "done";
       clips: DubClip[];
       url: string;
-      words: Word[];
+      key: string;
+      duration: number;
       timed: Word[];
+      restored?: boolean;
       voice: Voice;
       end: number;
       overflow: DubOverflow | null;
@@ -161,7 +198,18 @@ export function useDubber() {
           const { words, lines, duration, end, voice } = pending.current!;
           const url = URL.createObjectURL(dubWav(m.clips, duration));
           const timed = timeToDub(words, lines, m.clips);
-          setState({ status: "done", clips: m.clips, url, words, timed, voice, end, overflow: m.overflow, elapsed: m.elapsed });
+          setState({
+            status: "done",
+            clips: m.clips,
+            url,
+            key: dubKey(words),
+            duration,
+            timed,
+            voice,
+            end,
+            overflow: m.overflow,
+            elapsed: m.elapsed,
+          });
           break;
         }
         case "cancelled":
@@ -190,9 +238,9 @@ export function useDubber() {
 
   /** `end`: where the dub must be over by (the video's end, or the trim's). */
   const dub = useCallback(
-    (words: Word[], duration: number, end: number, voice: Voice) => {
+    (words: Word[], duration: number, end: number, voice: Voice, bySentence: boolean) => {
       const id = ++jobId.current;
-      const lines = dubLines(words, voice.lang);
+      const lines = dubLines(words, bySentence);
       pending.current = { words, lines, duration, end, voice };
       setState({ status: "running", done: 0, total: 0 });
       ensureWorker().postMessage({
@@ -209,7 +257,7 @@ export function useDubber() {
 
   /** Reads the first line of `words` with `voice`; a second call while one runs stops it. */
   const listen = useCallback(
-    (words: Word[], voice: Voice) => {
+    (words: Word[], voice: Voice, bySentence: boolean) => {
       stopSample();
       const id = ++previewId.current;
       // A sample already on its way is dropped when it arrives: its id is out of date.
@@ -217,7 +265,7 @@ export function useDubber() {
         setPreview({ status: "idle" });
         return;
       }
-      const text = dubLines(words, voice.lang)[0]?.text.trim() || SAMPLE[voice.lang];
+      const text = dubLines(words, bySentence)[0]?.text.trim() || SAMPLE[voice.lang];
       setPreview({ status: "running" });
       ensureWorker().postMessage({ type: "preview", jobId: -id, text, voice } satisfies ToTts);
     },
@@ -235,7 +283,32 @@ export function useDubber() {
     setState({ status: "idle" });
   }, []);
 
-  return { state, dub, cancel, reset, preview, listen };
+  /** A dub kept with the project; `words` are those it should read now, for its captions' times. */
+  const restore = useCallback((d: StoredDub, words: Word[], bySentence: boolean) => {
+    jobId.current++;
+    const clips: DubClip[] = d.clips.map((c) => ({
+      line: c.line,
+      start: c.start,
+      audio: Float32Array.from(c.audio, (v) => v / 32768),
+    }));
+    // Out of date (the words changed since): shown as such, its captions not used.
+    const timed = d.key === dubKey(words) ? timeToDub(words, dubLines(words, bySentence), clips) : words;
+    setState({
+      status: "done",
+      clips,
+      url: URL.createObjectURL(dubWav(clips, d.duration)),
+      key: d.key,
+      duration: d.duration,
+      timed,
+      restored: true,
+      voice: d.voice,
+      end: d.end,
+      overflow: d.overflow,
+      elapsed: d.elapsed,
+    });
+  }, []);
+
+  return { state, dub, cancel, reset, restore, preview, listen };
 }
 
 /** How loud the file's own sound stays under the dub: from silent up to half. */

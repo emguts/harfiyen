@@ -1,6 +1,8 @@
 // The speech models the user can choose from. Files live under
 // VITE_MODELS_BASE_URL (default /models) in each model's directory.
 
+import type { SpeechLang } from "./engine/config";
+
 export type ModelId = "seda" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
 
 export const MODELS_BASE = (import.meta.env.VITE_MODELS_BASE_URL || `${import.meta.env.BASE_URL}models`).replace(/\/+$/, "");
@@ -34,6 +36,8 @@ export interface ModelInfo {
   needsF16: boolean;
   /** Writes punctuation and capitals itself. */
   punctuates: boolean;
+  /** The languages it transcribes. */
+  langs: SpeechLang[];
 }
 
 /** Lightest first, as the menu lists them. */
@@ -54,6 +58,7 @@ export const MODELS: ModelInfo[] = [
     cpuOnly: false,
     needsF16: false,
     punctuates: false,
+    langs: ["tr"],
   },
   {
     id: "duyu",
@@ -71,6 +76,7 @@ export const MODELS: ModelInfo[] = [
     cpuOnly: true,
     needsF16: false,
     punctuates: true,
+    langs: ["tr"],
   },
   {
     id: "whisper-turbo-q4",
@@ -88,6 +94,7 @@ export const MODELS: ModelInfo[] = [
     cpuOnly: false,
     needsF16: true,
     punctuates: true,
+    langs: ["tr", "en"],
   },
   {
     id: "whisper-turbo",
@@ -105,6 +112,7 @@ export const MODELS: ModelInfo[] = [
     cpuOnly: false,
     needsF16: true,
     punctuates: true,
+    langs: ["tr", "en"],
   },
 ];
 
@@ -150,16 +158,32 @@ export const PUNCT_PACK: ModelPack = {
   needsF16: false,
 };
 
-export const MT_PACK: ModelPack = {
-  id: "mt",
-  kind: "mt",
-  name: "İngilizce çeviri",
-  note: "opus-mt-tc-big-tr-en; transkripti cümle cümle İngilizceye çevirir.",
-  dir: "opus-mt-tc-big-tr-en",
-  manifest: "model.json",
-  files: ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"],
-  gpuOnly: false,
-  needsF16: false,
+/** Translation directions: from the transcript's language to the other. */
+export type MtPair = "tr-en" | "en-tr";
+
+export const MT_PACKS: Record<MtPair, ModelPack> = {
+  "tr-en": {
+    id: "mt",
+    kind: "mt",
+    name: "İngilizce çeviri",
+    note: "opus-mt-tc-big-tr-en; Türkçe transkripti cümle cümle İngilizceye çevirir.",
+    dir: "opus-mt-tc-big-tr-en",
+    manifest: "model.json",
+    files: ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"],
+    gpuOnly: false,
+    needsF16: false,
+  },
+  "en-tr": {
+    id: "mt-en-tr",
+    kind: "mt",
+    name: "Türkçe çeviri",
+    note: "opus-mt-tc-big-en-tr; İngilizce transkripti cümle cümle Türkçeye çevirir.",
+    dir: "opus-mt-tc-big-en-tr",
+    manifest: "model.json",
+    files: ["encoder.int8.onnx", "decoder.int8.onnx", "spm.json"],
+    gpuOnly: false,
+    needsF16: false,
+  },
 };
 
 /** Dubbing voices; the file order is the order the TTS worker takes them in. */
@@ -232,7 +256,8 @@ export const PACKS: ModelPack[] = [
     }),
   ),
   PUNCT_PACK,
-  MT_PACK,
+  MT_PACKS["tr-en"],
+  MT_PACKS["en-tr"],
   VOICE_PACKS.ema,
   VOICE_PACKS.mini,
   VOICE_PACKS.ahenk,

@@ -77,6 +77,7 @@ export class CaptionRenderer {
 
   /** Caption for time t (seconds), or null when nothing is on screen. */
   frame(t: number): CaptionImage | null {
+    if (this.s.hidden) return null;
     const gi = this.groupAt(t);
     if (gi < 0) return null;
     const g = this.groups[gi];

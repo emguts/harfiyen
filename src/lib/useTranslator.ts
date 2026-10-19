@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Word } from "../engine";
 import type { FromMt, ToMt } from "../worker/mt.worker";
-import { placeTranslation, sourceKey, splitSentences, type Translation } from "./translation";
+import type { SpeechLang } from "../engine";
+import { placeTranslation, sourceKey, splitSentences, type Translation, type TranslationLang } from "./translation";
 
 export type TranslateState =
   | { status: "idle" }
@@ -9,11 +10,14 @@ export type TranslateState =
   | { status: "running"; done: number; total: number }
   | { status: "error"; message: string };
 
-/** Translates the transcript into English in its own worker, a sentence at a time. */
+/** The language a transcript in `from` is translated into: the other one. */
+export const translationLang = (from: SpeechLang): TranslationLang => (from === "en" ? "tr" : "en");
+
+/** Translates the transcript into its other language in its own worker, a sentence at a time. */
 export function useTranslator() {
   const worker = useRef<Worker | null>(null);
   const jobId = useRef(0);
-  const pending = useRef<{ words: Word[]; onDone: (t: Translation) => void } | null>(null);
+  const pending = useRef<{ words: Word[]; lang: TranslationLang; onDone: (t: Translation) => void } | null>(null);
   const sentences = useRef<ReturnType<typeof splitSentences>>([]);
   const [state, setState] = useState<TranslateState>({ status: "idle" });
 
@@ -31,11 +35,11 @@ export function useTranslator() {
           setState({ status: "running", done: m.done, total: m.total });
           break;
         case "done": {
-          const { words, onDone } = pending.current!;
+          const { words, lang, onDone } = pending.current!;
           pending.current = null;
           setState({ status: "idle" });
           onDone({
-            lang: "en",
+            lang,
             words: placeTranslation(words, sentences.current, m.texts),
             source: sourceKey(words),
           });
@@ -55,16 +59,22 @@ export function useTranslator() {
 
   useEffect(() => () => worker.current?.terminate(), []);
 
-  /** `onDone` gets the translation, unless another call or cancel() came first. */
+  /** `words` are in `from`. `onDone` gets the translation, unless another call or cancel() came first. */
   const translate = useCallback(
-    (words: Word[], onDone: (t: Translation) => void) => {
+    (words: Word[], from: SpeechLang, onDone: (t: Translation) => void) => {
       const w = ensureWorker();
       w.postMessage({ type: "cancel", jobId: jobId.current } satisfies ToMt);
       const id = ++jobId.current;
-      pending.current = { words, onDone };
+      const lang = translationLang(from);
+      pending.current = { words, lang, onDone };
       sentences.current = splitSentences(words);
       setState({ status: "running", done: 0, total: sentences.current.length });
-      w.postMessage({ type: "translate", jobId: id, sentences: sentences.current.map((s) => s.text) } satisfies ToMt);
+      w.postMessage({
+        type: "translate",
+        jobId: id,
+        pair: from === "en" ? "en-tr" : "tr-en",
+        sentences: sentences.current.map((s) => s.text),
+      } satisfies ToMt);
     },
     [ensureWorker],
   );

@@ -4,7 +4,8 @@
 
 import type { Word } from "../engine";
 
-export type TranslationLang = "en";
+/** The language translated into: the transcript's other one. */
+export type TranslationLang = "en" | "tr";
 
 export interface Translation {
   lang: TranslationLang;
@@ -82,5 +83,3 @@ export function sourceKey(words: Word[]): string {
   }
   return `${words.length}:${(h >>> 0).toString(16)}`;
 }
-
-export const LANG_NAMES: Record<TranslationLang, string> = { en: "İngilizce" };

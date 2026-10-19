@@ -90,10 +90,13 @@ export function CaptionStudio({
   settings,
   onChange,
   disabled,
+  lang = TRANSCRIPT_LANG,
 }: {
   settings: CaptionSettings;
   onChange: (s: CaptionSettings) => void;
   disabled?: boolean;
+  /** The captions' language; decides how they are uppercased. */
+  lang?: string;
 }) {
   const userFonts = useUserFonts();
   const fontFile = useRef<HTMLInputElement>(null);
@@ -110,7 +113,7 @@ export function CaptionStudio({
   const resetLook = () => onChange(settingsFor(settings.preset, { ...settings, overrides: [] }));
   const preset = presetById(settings.preset);
   const font = fontById(settings.font);
-  const capsOnly = !!font.capsOnly && hasDottedI(TRANSCRIPT_LANG);
+  const capsOnly = !!font.capsOnly && hasDottedI(lang);
   const added = userFonts.fonts.find((f) => f.id === settings.font);
   // A project whose added font was deleted, or opened in another browser.
   const lost = userFonts.ready && font.id !== settings.font;
@@ -135,6 +138,18 @@ export function CaptionStudio({
 
   return (
     <fieldset className={STUDIO} disabled={disabled}>
+      <Section title="Altyazı">
+        <Row>
+          <RowLabel wide>Altyazıyı göster</RowLabel>
+          <Switch checked={!settings.hidden} onChange={(e) => onChange({ ...settings, hidden: !e.target.checked })} />
+        </Row>
+        {settings.hidden && (
+          <Hint>
+            Oynatıcıda ve dışa aktarılan videoda altyazı yok; varsa kadraj, logo ve seslendirme kalır. SRT, VTT ve metin
+            dışa aktarımları etkilenmez. Aşağıdaki ayarlar altyazı yeniden açılınca kullanılır.
+          </Hint>
+        )}
+      </Section>
       <Section title="Stil">
         <StylePicker settings={settings} onChange={onChange} />
         <Hint>{preset.note}</Hint>

@@ -61,6 +61,8 @@ export interface CaptionSettings {
   voiceEmphasis: boolean;
   /** Missing in settings saved before there was a logo. */
   logo?: LogoSettings;
+  /** No captions in the player or the video (a dub-only video, say); kept with the project. */
+  hidden?: boolean;
   /** Settings the user changed by hand: switching preset keeps them. Missing before there was this. */
   overrides?: StyleKey[];
 }
@@ -81,7 +83,7 @@ export interface Preset {
   pop: boolean;
   /** How each word comes in as it is spoken: fade and grow, or out of blur (rising, or shrinking into place). */
   wordIn?: "grow" | "focus" | "sharpen";
-  defaults: Omit<CaptionSettings, "preset" | "aura" | "voiceEmphasis" | "logo" | "overrides">;
+  defaults: Omit<CaptionSettings, "preset" | "aura" | "voiceEmphasis" | "logo" | "hidden" | "overrides">;
 }
 
 export const PRESETS: Preset[] = [
@@ -309,6 +311,7 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
     aura: prev?.aura ?? "cini",
     voiceEmphasis: prev?.voiceEmphasis ?? false,
     logo: prev?.logo ?? DEFAULT_LOGO,
+    hidden: prev?.hidden ?? false,
     ...presetById(id).defaults,
     ...Object.fromEntries(overrides.map((k) => [k, prev![k]])),
     overrides,

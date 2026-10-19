@@ -1,7 +1,8 @@
 // Projects live in IndexedDB: the transcript, style and waveform in one
 // store, the media in another, so the project list never loads a video.
 // Fonts the user adds sit in a third store, shared by every project; the
-// user's logo in a fourth, also shared.
+// user's logo in a fourth, also shared. A project's dub has a fifth, so
+// neither the list nor the project itself loads its audio.
 //
 // Media is kept one of two ways: a file handle (Chromium; no copy, the file
 // stays where it is) or a copy of the file (other browsers, recordings).
@@ -9,11 +10,12 @@
 
 import type { UserFont } from "../captions/fonts";
 import type { CaptionSettings } from "../captions/style";
-import type { DecodingMethod, Word } from "../engine";
+import type { DecodingMethod, SpeechLang, Word } from "../engine";
 import { readCrop, type Crop } from "./crop";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
 import type { Translation } from "./translation";
 import type { TimeRange } from "./useTranscriber";
+import type { DubOverflow, Voice } from "../worker/tts.worker";
 
 export interface MediaInfo {
   name: string;
@@ -36,6 +38,8 @@ export interface Project {
   /** Made from this subtitle file, not transcribed. */
   imported?: string;
   method: DecodingMethod;
+  /** The language spoken in the media; missing in projects from before there was a choice (Turkish). */
+  lang?: SpeechLang;
   duration: number | null;
   elapsed: number | null;
   /** The transcription was stopped here and can be continued; missing when it finished. */
@@ -67,12 +71,13 @@ const MEDIA = "media";
 const FONTS = "fonts";
 /** Single files kept by name (the logo). */
 const ASSETS = "assets";
+const DUBS = "dubs";
 
 let db: Promise<IDBDatabase> | null = null;
 
 function open(): Promise<IDBDatabase> {
   db ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 3);
+    const req = indexedDB.open(DB_NAME, 4);
     req.onupgradeneeded = (e) => {
       if (e.oldVersion < 1) {
         req.result.createObjectStore(PROJECTS, { keyPath: "id" });
@@ -80,6 +85,7 @@ function open(): Promise<IDBDatabase> {
       }
       if (e.oldVersion < 2) req.result.createObjectStore(FONTS, { keyPath: "id" });
       if (e.oldVersion < 3) req.result.createObjectStore(ASSETS);
+      if (e.oldVersion < 4) req.result.createObjectStore(DUBS);
     };
     req.onsuccess = () => {
       // A newer tab wants to upgrade: step aside, open again on next use.
@@ -139,10 +145,30 @@ export const saveMedia = (p: Project, m: StoredMedia) =>
   });
 
 export const deleteProject = (id: string) =>
-  tx([PROJECTS, MEDIA], "readwrite", (t) => {
+  tx([PROJECTS, MEDIA, DUBS], "readwrite", (t) => {
     t.objectStore(PROJECTS).delete(id);
     t.objectStore(MEDIA).delete(id);
+    t.objectStore(DUBS).delete(id);
   });
+
+/** A project's dub as stored: its speech at DUB_RATE in 16 bits, and what it was made from (see useDubber). */
+export interface StoredDub {
+  voice: Voice;
+  /** dubKey() of the words it reads. */
+  key: string;
+  end: number;
+  duration: number;
+  overflow: DubOverflow | null;
+  elapsed: number;
+  clips: { line: number; start: number; audio: Int16Array }[];
+}
+
+export async function getDub(id: string): Promise<StoredDub | undefined> {
+  const t = (await open()).transaction(DUBS);
+  return done(t.objectStore(DUBS).get(id) as IDBRequest<StoredDub | undefined>);
+}
+
+export const saveDub = (id: string, d: StoredDub) => tx([DUBS], "readwrite", (t) => t.objectStore(DUBS).put(d, id));
 
 export async function listFonts(): Promise<UserFont[]> {
   const t = (await open()).transaction(FONTS);
@@ -263,6 +289,7 @@ export function projectToFile(p: Project): string {
     model: p.model,
     imported: p.imported,
     method: p.method,
+    ...(p.lang && p.lang !== "tr" && { lang: p.lang }),
     duration: p.duration,
     elapsed: p.elapsed,
     ...(p.stoppedAt !== undefined && { stoppedAt: p.stoppedAt }),
@@ -315,7 +342,9 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
   const words = readWords(d.words);
   const t = d.translation as Record<string, unknown> | undefined;
   const translation: Translation | undefined =
-    t?.lang === "en" && typeof t.source === "string" ? { lang: "en", source: t.source, words: readWords(t.words) } : undefined;
+    (t?.lang === "en" || t?.lang === "tr") && typeof t.source === "string"
+      ? { lang: t.lang, source: t.source, words: readWords(t.words) }
+      : undefined;
   const media = d.media as MediaInfo | null;
   const now = Date.now();
   return {
@@ -327,6 +356,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     model: isModelId(d.model) ? d.model : DEFAULT_MODEL,
     imported: typeof d.imported === "string" ? d.imported : undefined,
     method: (d.method as DecodingMethod) ?? "beam-lm",
+    lang: d.lang === "en" ? "en" : undefined,
     duration: num(d.duration),
     elapsed: num(d.elapsed),
     stoppedAt: num(d.stoppedAt) ?? undefined,

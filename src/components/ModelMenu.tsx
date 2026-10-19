@@ -1,4 +1,6 @@
 import { useState } from "react";
+import type { SpeechLang } from "../engine";
+import { LANG_NAMES } from "../lib/lang";
 import { MODELS, modelInfo, type ModelId } from "../models";
 import { IconCheck, IconChevron, IconWave } from "./icons";
 import { Menu, MenuFoot, MenuGroup, MenuItem, MenuNote, MenuTitle } from "./Menu";
@@ -11,6 +13,8 @@ export interface ModelProps {
   gpuReason: string | null;
   /** A transcription is running; switching would abort it. */
   locked: boolean;
+  /** The language spoken in the media: models that do not know it are not offered. */
+  lang: SpeechLang;
 }
 
 /** Toolbar control: which speech model transcribes. */
@@ -45,13 +49,17 @@ export function ModelMenu(props: ModelProps) {
 }
 
 /** The models to pick from; also in the phone toolbar's "⋯" menu. */
-export function ModelChoices({ value, onChange, gpuReason, locked, onDone }: ModelProps & { onDone: () => void }) {
+export function ModelChoices({ value, onChange, gpuReason, locked, lang, onDone }: ModelProps & { onDone: () => void }) {
   return (
     <>
       <MenuGroup>
         <MenuTitle>Yazıya döken model</MenuTitle>
         {MODELS.map((m) => {
-          const unavailable = m.gpuOnly ? gpuReason : null;
+          const unavailable = !m.langs.includes(lang)
+            ? `Yalnızca ${m.langs.map((l) => LANG_NAMES[l]).join(" ve ")}; videodaki dil ${LANG_NAMES[lang]}.`
+            : m.gpuOnly
+              ? gpuReason
+              : null;
           return (
             <MenuItem
               key={m.id}

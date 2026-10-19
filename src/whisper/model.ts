@@ -3,6 +3,7 @@
 // On WebGPU the encoder output and the KV cache stay on the GPU.
 
 import type * as OrtWeb from "onnxruntime-web";
+import type { SpeechLang } from "../engine/config";
 import type { EncoderProvider, Ort } from "../engine/models";
 
 type Session = OrtWeb.InferenceSession;
@@ -45,7 +46,13 @@ export interface Generation {
 /** Repeats of a tail block that count as a loop, by block length. */
 const loopRepeats = (len: number) => (len <= 2 ? 8 : 4);
 
+/** Whisper's language tokens follow start-of-transcript in its own order: English first, Turkish tenth. */
+const LANG_TOKEN: Record<SpeechLang, number> = { en: 1, tr: 10 };
+
 export class WhisperModel {
+  /** The language token the prompt asks for; Turkish unless a recognizer says otherwise. */
+  language: number;
+
   private constructor(
     private ort: Ort,
     readonly config: WhisperConfig,
@@ -53,7 +60,14 @@ export class WhisperModel {
     private decoder: Session,
     readonly provider: EncoderProvider,
     private suppressMask: Uint8Array,
-  ) {}
+  ) {
+    this.language = config.tokens.language;
+  }
+
+  /** Transcribe `lang` from now on. */
+  setLanguage(lang: SpeechLang) {
+    this.language = this.config.tokens.sot + LANG_TOKEN[lang];
+  }
 
   static async create(
     ort: Ort,
@@ -90,7 +104,7 @@ export class WhisperModel {
 
   get prompt(): number[] {
     const t = this.config.tokens;
-    return [t.sot, t.language, t.transcribe];
+    return [t.sot, this.language, t.transcribe];
   }
 
   /** mel: [numMel, 3000]. The result must be released with release(). */

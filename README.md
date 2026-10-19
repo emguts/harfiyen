@@ -59,6 +59,10 @@ canlı çalışır.
   önce onay sorulur.
 - Döküm sürerken önizleme yazılanı takip eder: görüntü ve altyazı o an yazılan yeri gösterir. Oynatınca ya da
   sarınca takip durur.
+- **Videodaki dil:** Türkçe ya da İngilizce, yazıya dökmeden önce seçilir ve projeyle saklanır. İngilizceyi
+  yalnızca Whisper anlar (ekran kartı gerekir); İngilizce seçilince model Whisper Turbo Hafif'e geçer. İngilizce
+  transkriptte Türkçe sayı kuralları uygulanmaz; İngilizce seslendirme doğrudan transkripti okur. İngilizce video
+  Türkçeye çevrilip Türkçe altyazı ve Türkçe seslendirme (voice-over) yapılabilir.
 - Üç model, üst çubuktan (telefonda **⋯** menüsünden) seçilir:
   - **Seda** (varsayılan, ~105 MB): küçük ve hızlı, canlı mikrofonda ve her cihazda çalışır. Üç doğruluk
     ayarı var: **Hızlı**, **Dengeli** ve dil modeliyle **En doğru**.
@@ -101,6 +105,8 @@ canlı çalışır.
   eklenebilir; tarayıcıda saklanır.
 - Boyut, konum, zemin (kutu, kontur, gölge), yazı ve vurgu rengi, Türkçe kurallarına uygun büyük harf
   (i → İ).
+- **Altyazıyı göster** kapatılırsa oynatıcıda ve videoda altyazı olmaz; seslendirmeli ama altyazısız video çıkarmak
+  için. Seçim projeyle saklanır, yeni projeler altyazılı başlar. SRT/VTT etkilenmez.
 - Logo: kendi logon (PNG, SVG, WebP, JPEG) seçtiğin köşede, istediğin boyut ve saydamlıkta durur. Bu
   tarayıcıda saklanır, sonraki projelerde de hazırdır; her projede gizlenebilir.
 
@@ -146,18 +152,24 @@ canlı çalışır.
   duyulmaz, üstünde yapay sesin altında kısık duyulur (konuşma, müzik ve ortam sesi hafifçe kalır).
 - Altyazı seslendirmeyle aynı dildeyse sesi takip eder: her cümle sesinin başladığı ve bittiği anda görünür.
   Oynatıcı, zaman çizelgesi, SRT/VTT ve altyazılı MP4 bu zamanları kullanır; transkript orijinal zamanlarda kalır.
+- Seslendirme projeyle birlikte tarayıcıda saklanır: proje yeniden açılınca hazırdır, ses ayarı da onunla gelir.
+  Transkript ya da çeviri sonradan değiştiyse eskidiği söylenir. 10 dakikalık bir video için yaklaşık 40 MB yer tutar.
 - Yapay ses ayrıca WAV olarak indirilebilir (orijinal ses karışmadan). Modeller ilk kullanımda indirilir:
   EMA Lightning yaklaşık 36 MB, Antalia Mini 23 MB, Ahenk Cep 18 MB, Supertonic 3 203 MB.
 
-### İngilizce çeviri
+### Çeviri
 
-- Transkript, [opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en) ile cümle cümle
-  İngilizceye çevrilir. Her cümle Türkçesinin zamanında görünür; kelimeleri o süreyi uzunluklarına göre paylaşır.
+- Türkçe transkript [opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en) ile
+  İngilizceye, İngilizce transkript [opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr)
+  ile Türkçeye, cümle cümle çevrilir. Her cümle aslının zamanında görünür; kelimeleri o süreyi uzunluklarına göre
+  paylaşır.
 - Transkriptin üstündeki **TR / EN** ile gösterilen dil seçilir: altyazı, zaman çizelgesi, SRT/VTT/metin ve
-  altyazılı MP4 o dilde olur (dosya adına `.en` eklenir). Çeviri de düzenlenebilir, bulup değiştirilebilir.
-- Çeviri İngilizce seslendirmeyle sesli de okunabilir (bkz. Seslendirme).
+  altyazılı MP4 o dilde olur (çeviride dosya adına `.en` ya da `.tr` eklenir). Çeviri de düzenlenebilir, bulup
+  değiştirilebilir.
+- Çeviri seslendirmeyle sesli de okunabilir: Türkçe videoya İngilizce, İngilizce videoya Türkçe voice-over
+  (bkz. Seslendirme).
 - Çeviri projeyle birlikte kaydedilir. Transkript sonradan değişirse çevirinin eskidiği söylenir.
-  Model ilk kullanımda yaklaşık 360 MB indirir ve işlemcide (WASM) çalışır.
+  Her yönün modeli ilk kullanımda yaklaşık 360 MB indirir ve işlemcide (WASM) çalışır.
 
 ### Projeler
 
@@ -308,8 +320,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - Kadraj videonun tamamı için sabittir; zamanla kayan kadraj yok. **Sığdır**'da videonun karedeki boyutu ve
   konumu değiştirilemez.
 - Seslendirmede Türkçe modellerin tek sesi var; konuşmacılar ayrılmaz, her konuşmacı aynı sesle okunur. Orijinal ses
-  yalnızca topluca kısılır; konuşma müzikten ayrılmaz. Dudak hareketleriyle eşleşmez. Seslendirme projeye
-  kaydedilmez.
+  yalnızca topluca kısılır; konuşma müzikten ayrılmaz. Dudak hareketleriyle eşleşmez. Seslendirme
+  **.harfiyen** proje dosyasına girmez; yalnızca bu tarayıcıda projeyle birlikte saklanır.
 - İngilizce seslendirme Türkçeden uzun olabilir; sıkışık konuşmalarda cümleler Türkçesinden birkaç yüz
   milisaniye geç başlayabilir. Seslendirmeyi takip eden altyazıda kelime zamanları harf sayısından tahmin edilir.
 - Çeviri yalnızca İngilizceye. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
@@ -354,8 +366,9 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
   kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
 - [Silero VAD](https://github.com/snakers4/silero-vad) v5: MIT.
-- Çeviri modeli [Helsinki-NLP/opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en)
-  (OPUS-MT, Tatoeba Challenge): CC-BY 4.0. ONNX'e `scripts/prepare_models.py` ile dönüştürülür.
+- Çeviri modelleri [Helsinki-NLP/opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en)
+  ve [Helsinki-NLP/opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr) (OPUS-MT,
+  Tatoeba Challenge): CC-BY 4.0. ONNX'e `scripts/prepare_models.py` ile dönüştürülür.
 - Seslendirme modeli [canberkkkkkk/ema-lightning](https://huggingface.co/canberkkkkkk/ema-lightning):
   Apache-2.0; metin normalleştirme [normalizer-tr](https://github.com/erdemtuna/normalizer-tr) (Apache-2.0).
 - İkinci seslendirme modeli Antalia-2 Mini, Patientdesk.ai,

@@ -1,3 +1,6 @@
+import type { SpeechLang } from "../engine";
+import { LANG_NAMES } from "../lib/lang";
+import { translationLang as targetOf } from "../lib/useTranslator";
 import {
   DEFAULT_VOICE,
   MAX_ORIGINAL,
@@ -128,6 +131,8 @@ export function DubPanel({
   preview,
   onListen,
   translation,
+  translationLang,
+  sourceLang,
   translationStale,
   translating,
   canTranslate,
@@ -155,8 +160,11 @@ export function DubPanel({
   onVoice: (v: Voice) => void;
   preview: PreviewState;
   onListen: () => void;
-  /** The job has an English translation. */
+  /** The job has a translation, into `translationLang`. */
   translation: boolean;
+  translationLang: string | null;
+  /** The transcript's language. */
+  sourceLang: SpeechLang;
   /** The transcript changed after it was translated. */
   translationStale: boolean;
   translating: boolean;
@@ -166,7 +174,11 @@ export function DubPanel({
   const working = state.status === "download" || state.status === "running";
   const setVoice = (v: Partial<Voice>) => onVoice({ ...voice, ...v });
   const model = MODELS[voice.model];
-  const english = voice.lang === "en";
+  // A dub in the other language reads the translation into it.
+  const fromTranslation = voice.lang !== sourceLang;
+  const hasTranslation = translation && translationLang === voice.lang;
+  // The transcript is translated into its other language only.
+  const translatable = targetOf(sourceLang) === voice.lang;
   const setLang = (lang: DubLang) =>
     setVoice({ lang, model: LANG_MODELS[lang].includes(voice.model) ? voice.model : LANG_MODELS[lang][0] });
   const modelOptions = LANG_MODELS[voice.lang].map((id) => ({ value: id, label: MODELS[id].name }));
@@ -174,8 +186,8 @@ export function DubPanel({
     <div className={STUDIO}>
       <Section title="Yapay sesle seslendirme">
         <Hint>
-          {english
-            ? "İngilizce çeviri yapay bir sesle okunur. Her cümle Türkçesinin başladığı anda başlar; yerine sığmayan cümleler biraz hızlı okunur."
+          {fromTranslation
+            ? `${LANG_NAMES[voice.lang]} çeviri yapay bir sesle okunur. Her cümle aslının başladığı anda başlar; yerine sığmayan cümleler biraz hızlı okunur.`
             : "Transkript yapay bir sesle yeniden okunur. Her altyazı satırı kendi zamanında başlar; yerine sığmayan satırlar biraz hızlı okunur."}{" "}
           Seçili ses ilk kullanımda yaklaşık {model.size} indirir.
         </Hint>
@@ -194,10 +206,16 @@ export function DubPanel({
             </button>
           ))}
         </RowGroup>
-        {english && !translation && (
+        {fromTranslation && !hasTranslation && !translatable && (
+          <Hint>
+            {LANG_NAMES[voice.lang]} seslendirme için {LANG_NAMES[sourceLang]} transkriptin çevirisi gerekir;{" "}
+            {LANG_NAMES[sourceLang]}den {LANG_NAMES[voice.lang]}ye çeviri yok.
+          </Hint>
+        )}
+        {fromTranslation && !hasTranslation && translatable && (
           <>
             <Hint>
-              İngilizce seslendirme için önce transkript İngilizceye çevrilir.
+              {LANG_NAMES[voice.lang]} seslendirme için önce transkript {LANG_NAMES[voice.lang]}ye çevrilir.
             </Hint>
             <SectionActions>
               <Button
@@ -205,12 +223,12 @@ export function DubPanel({
                 disabled={!canTranslate || translating}
                 onClick={onTranslate}
               >
-                {translating ? "Çevriliyor" : "İngilizceye çevir"}
+                {translating ? "Çevriliyor" : `${LANG_NAMES[voice.lang]}ye çevir`}
               </Button>
             </SectionActions>
           </>
         )}
-        {english && translation && translationStale && (
+        {fromTranslation && hasTranslation && translationStale && (
           <Hint>
             Transkript çeviriden sonra değişti; seslendirme eski çeviriyi okur.
             Yazıya dök sekmesinden yeniden çevrilebilir.
@@ -257,7 +275,7 @@ export function DubPanel({
         )}
         {state.status === "done" && stale && (
           <Hint>
-            {english ? "Çeviri" : "Transkript"}, ses ayarları ya da seçili bölüm seslendirmeden sonra değişti.
+            {fromTranslation ? "Çeviri" : "Transkript"}, ses ayarları ya da seçili bölüm seslendirmeden sonra değişti.
           </Hint>
         )}
         <SectionActions>
@@ -284,7 +302,7 @@ export function DubPanel({
             </a>
           )}
         </SectionActions>
-        {!canDub && state.status === "idle" && !(english && !translation) && (
+        {!canDub && state.status === "idle" && !(fromTranslation && !hasTranslation) && (
           <Hint>Önce bir dosyayı yazıya dök.</Hint>
         )}
       </Section>

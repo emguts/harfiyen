@@ -4,6 +4,18 @@ Yeni sürümler en üstte.
 
 ## Yayımlanmadı
 
+- **İngilizce videolar:** Yazıya dökmeden önce videodaki dil (Türkçe ya da İngilizce) seçilir; İngilizce videolar
+  Whisper ile İngilizce yazıya dökülür, altyazı ve SRT/VTT İngilizce olur, Supertonic ile İngilizce seslendirilebilir.
+  Dil projeyle saklanır. Eskiden İngilizce konuşma Türkçe sanılıp bozuk yazılıyordu.
+- **İngilizceden Türkçeye çeviri:** İngilizce videonun transkripti
+  [opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr) ile Türkçeye çevrilir (yaklaşık
+  360 MB, ilk kullanımda iner). Türkçe altyazı ve Türkçe seslendirme (voice-over) yapılabilir.
+- **Seslendirme projeyle saklanır:** Proje yeniden açılınca seslendirme yeniden yapılmadan hazırdır; ses ayarı da
+  onunla gelir. Transkript ya da çeviri sonradan değiştiyse eskidiği söylenir. Proje silinince seslendirmesi de
+  silinir.
+- **Altyazısız video:** Altyazı sekmesindeki **Altyazıyı göster** kapatılınca oynatıcıda ve dışa aktarılan videoda
+  altyazı olmaz; varsa kadraj, logo ve seslendirme kalır. Dosya adı `.altyazili.mp4` yerine `.seslendirme.mp4` (ya da
+  `.mp4`) olur. Seçim projeyle saklanır; yeni projeler altyazılı başlar.
 - **Açık tema:** **Ayarlar → Görünüm**'den Sistem, Açık ya da Koyu seçilir. Varsayılan sistemin teması; sistem
   teması değişince uygulama da değişir. Oynatıcının çevresi videonun renkleri doğru görünsün diye her iki temada da
   koyu kalır.

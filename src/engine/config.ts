@@ -31,7 +31,12 @@ export interface ModelConfig {
 
 export type DecodingMethod = "greedy" | "beam" | "beam-lm";
 
+/** The language spoken in the media. Only Whisper knows English. */
+export type SpeechLang = "tr" | "en";
+
 export interface DecodeOptions {
+  /** Missing in jobs and projects from before there was a choice: Turkish. */
+  lang?: SpeechLang;
   method: DecodingMethod;
   /** Beam size for modified beam search. */
   maxActivePaths: number;

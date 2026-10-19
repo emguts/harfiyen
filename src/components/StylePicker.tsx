@@ -74,7 +74,8 @@ function StyleCard({
     c.height = Math.round(c.clientHeight * dpr);
     const g = c.getContext("2d")!;
     g.clearRect(0, 0, c.width, c.height);
-    const boosted = { ...s, size: Math.min(0.17, s.size * BOOST) };
+    // The card shows the style even while captions are hidden.
+    const boosted = { ...s, size: Math.min(0.17, s.size * BOOST), hidden: false };
     const r = new CaptionRenderer(SAMPLE, boosted, FRAME.w, FRAME.h);
     const img = r.frame(0.6);
     if (!img) return;

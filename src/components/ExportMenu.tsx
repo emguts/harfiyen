@@ -59,6 +59,8 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 export function ExportMenu({
   words,
   baseName,
+  videoName,
+  captions,
   meta,
   complete,
   isVideo,
@@ -73,6 +75,10 @@ export function ExportMenu({
 }: {
   words: Word[];
   baseName: string;
+  /** File name of the exported video. */
+  videoName: string;
+  /** Captions are drawn into the video (they can be hidden). */
+  captions: boolean;
   meta: Record<string, unknown>;
   /** The transcript is final (subtitle files and video need it). */
   complete: boolean;
@@ -132,7 +138,7 @@ export function ExportMenu({
       }
     >
       <MenuGroup>
-        <MenuTitle>Altyazılı video</MenuTitle>
+        <MenuTitle>{captions ? "Altyazılı video" : "Video (altyazısız)"}</MenuTitle>
         {burn.status === "running" ? (
           <div className="grid gap-2 px-2 pt-1 pb-2">
             <Meter value={burn.progress} className="w-full" />
@@ -149,7 +155,7 @@ export function ExportMenu({
         ) : burn.status === "done" ? (
           <div className="grid gap-2 px-2 pt-1 pb-2">
             {burn.url ? (
-              <a className={wide} href={burn.url} download={`${baseName}.altyazili.mp4`}>
+              <a className={wide} href={burn.url} download={videoName}>
                 <IconDownload /> Videoyu indir
               </a>
             ) : (
@@ -243,7 +249,14 @@ export function ExportMenu({
                 <MenuNote>Bu tarayıcı {badCodec} kodlamasını çözemiyor; video Chrome'da oluşturulabilir.</MenuNote>
               ) : (
                 <MenuNote>
-                  {isVideo ? "Altyazı görüntüye yazılır" : "Ses, hareketli aura ve altyazı"}, MP4
+                  {isVideo
+                    ? captions
+                      ? "Altyazı görüntüye yazılır"
+                      : "Altyazısız; varsa kadraj ve logoyla"
+                    : captions
+                      ? "Ses, hareketli aura ve altyazı"
+                      : "Ses ve hareketli aura, altyazısız; varsa logoyla"}
+                  , MP4
                   {source && `, yaklaşık ${size(out)}`}.
                 </MenuNote>
               )}

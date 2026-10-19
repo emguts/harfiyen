@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import type { CaptionSettings } from "../captions/style";
-import type { DecodingMethod } from "../engine";
+import type { DecodingMethod, SpeechLang } from "../engine";
+import { LANG_NAMES } from "../lib/lang";
 import { writeNumbers, type NumberMode } from "../lib/numbers";
 import type { DubState, PreviewState, Voice } from "../lib/useDubber";
 import type { EngineState, Job } from "../lib/useTranscriber";
-import type { TranslateState } from "../lib/useTranslator";
+import { translationLang as targetOf, type TranslateState } from "../lib/useTranslator";
 import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
+import { VideoLang } from "./VideoLang";
 import { Meter } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
@@ -84,10 +86,16 @@ export function Inspector({
   onListen,
   translate,
   translation,
+  translationLang,
   translationStale,
   canTranslate,
   onTranslate,
   onCancelTranslate,
+  sourceLang,
+  videoLang,
+  onVideoLang,
+  langIssue,
+  captionLang,
 }: {
   settings: CaptionSettings;
   onSettings: (s: CaptionSettings) => void;
@@ -135,6 +143,16 @@ export function Inspector({
   canTranslate: boolean;
   onTranslate: () => void;
   onCancelTranslate: () => void;
+  /** The language of the open transcript, and of its translation if there is one. */
+  sourceLang: SpeechLang;
+  translationLang: string | null;
+  /** The language spoken in the media, for the next transcription. */
+  videoLang: SpeechLang;
+  onVideoLang: (l: SpeechLang) => void;
+  /** Why the chosen model cannot transcribe `videoLang`, if it cannot. */
+  langIssue: string | null;
+  /** The language of the captions shown. */
+  captionLang: string;
 }) {
   const [tab, setTab] = useState<Tab>("captions");
   const running = job?.status === "running";
@@ -149,19 +167,26 @@ export function Inspector({
     return writeNumbers(job.words, numberMode).filter((w) => !before.has(w))
       .length;
   }, [job, numberMode]);
-  // What a new run would change: the model, or (seda only) the method.
+  const otherLang = !!job && sourceLang !== videoLang;
+  // What a new run would change: the language, the model, or (seda only) the method.
   const differs =
     job &&
-    (model !== job.model ||
+    (otherLang ||
+      model !== job.model ||
       (model === "seda" && method !== job.options.method));
   const restartLabel =
     job?.status === "idle"
       ? "Yazıya dök"
       : !differs
         ? "Yeniden yazıya dök"
-        : model !== job.model
-          ? `${info.name} ile yeniden dök`
-          : `${methodTitle(method)} ile yeniden dök`;
+        : otherLang
+          ? `${LANG_NAMES[videoLang]} olarak yeniden dök`
+          : model !== job.model
+            ? `${info.name} ile yeniden dök`
+            : `${methodTitle(method)} ile yeniden dök`;
+  const numbersApply = sourceLang === "tr";
+  const targetLang = targetOf(sourceLang);
+  const mtModel = `opus-mt-tc-big-${sourceLang}-${targetLang}`;
 
   return (
     <Pane side="right">
@@ -200,6 +225,7 @@ export function Inspector({
             settings={settings}
             onChange={onSettings}
             disabled={burning}
+            lang={captionLang}
           />
         ) : tab === "dub" ? (
           <DubPanel
@@ -221,6 +247,8 @@ export function Inspector({
             preview={preview}
             onListen={onListen}
             translation={translation}
+            translationLang={translationLang}
+            sourceLang={sourceLang}
             translationStale={translationStale}
             translating={translate.status === "download" || translate.status === "running"}
             canTranslate={canTranslate && !running}
@@ -228,6 +256,16 @@ export function Inspector({
           />
         ) : (
           <div className={STUDIO}>
+            <Section title="Dil">
+              <VideoLang value={videoLang} onChange={onVideoLang} disabled={running} />
+              {langIssue ? (
+                <Hint>{langIssue}</Hint>
+              ) : (
+                <Hint>
+                  Videoda konuşulan dil. İngilizceyi yalnızca Whisper anlar; İngilizce seçilince model Whisper'a geçer.
+                </Hint>
+              )}
+            </Section>
             <Section title="Doğruluk">
               {info.id === "seda" ? (
                 <MethodPicker
@@ -250,10 +288,12 @@ export function Inspector({
                       <Button variant="primary" onClick={onResume}>
                         Devam et
                       </Button>
-                      <Button onClick={onRestart}>{restartLabel}</Button>
+                      <Button disabled={!!langIssue} onClick={onRestart}>
+                        {restartLabel}
+                      </Button>
                     </>
                   ) : (
-                    <Button variant="primary" onClick={onRestart}>
+                    <Button variant="primary" disabled={!!langIssue} onClick={onRestart}>
                       {restartLabel}
                     </Button>
                   )}
@@ -288,54 +328,57 @@ export function Inspector({
                 )}
               </Section>
             )}
-            <Section title="Sayı yazımı">
-              <Select<NumberMode>
-                label="Sayı yazımı"
-                value={numberMode}
-                options={NUMBER_MODES}
-                onChange={onNumberMode}
-                render={(o, inList) => (
-                  <span className={OPT}>
-                    <span className={OPT_TEXT}>
-                      <span className={OPT_TITLE}>{o.label}</span>
-                      {inList && (
-                        <span className={OPT_NOTE}>
-                          {
-                            NUMBER_MODES.find((m) => m.value === o.value)!
-                              .sample
-                          }
-                        </span>
-                      )}
+            {/* The number rules are Turkish. */}
+            {numbersApply && (
+              <Section title="Sayı yazımı">
+                <Select<NumberMode>
+                  label="Sayı yazımı"
+                  value={numberMode}
+                  options={NUMBER_MODES}
+                  onChange={onNumberMode}
+                  render={(o, inList) => (
+                    <span className={OPT}>
+                      <span className={OPT_TEXT}>
+                        <span className={OPT_TITLE}>{o.label}</span>
+                        {inList && (
+                          <span className={OPT_NOTE}>
+                            {
+                              NUMBER_MODES.find((m) => m.value === o.value)!
+                                .sample
+                            }
+                          </span>
+                        )}
+                      </span>
                     </span>
-                  </span>
+                  )}
+                />
+                <Hint>
+                  {NUMBER_MODES.find((m) => m.value === numberMode)!.sample}
+                  {numberMode !== "keep" &&
+                    ' Döküm bitince her modelde uygulanır; tarih ve saat hep rakamla yazılır ("23 Nisan", "saat 15.30"). ⌘Z ile geri alınır.'}
+                </Hint>
+                {job && numberMode !== "keep" && (
+                  <SectionActions>
+                    <Button
+                      disabled={running || !numberChanges}
+                      onClick={onNumbers}
+                    >
+                      {running
+                        ? "Şimdi uygula"
+                        : numberChanges
+                          ? `${numberChanges} sayıyı düzenle`
+                          : "Değişecek sayı yok"}
+                    </Button>
+                  </SectionActions>
                 )}
-              />
+              </Section>
+            )}
+            <Section title={`${LANG_NAMES[targetLang]} çeviri`}>
               <Hint>
-                {NUMBER_MODES.find((m) => m.value === numberMode)!.sample}
-                {numberMode !== "keep" &&
-                  ' Döküm bitince her modelde uygulanır; tarih ve saat hep rakamla yazılır ("23 Nisan", "saat 15.30"). ⌘Z ile geri alınır.'}
-              </Hint>
-              {job && numberMode !== "keep" && (
-                <SectionActions>
-                  <Button
-                    disabled={running || !numberChanges}
-                    onClick={onNumbers}
-                  >
-                    {running
-                      ? "Şimdi uygula"
-                      : numberChanges
-                        ? `${numberChanges} sayıyı düzenle`
-                        : "Değişecek sayı yok"}
-                  </Button>
-                </SectionActions>
-              )}
-            </Section>
-            <Section title="İngilizce çeviri">
-              <Hint>
-                Transkript cümle cümle İngilizceye çevrilir; her cümle Türkçesinin
-                zamanında görünür. Transkriptin üstündeki TR / EN ile altyazı,
-                dışa aktarma ve video için dil seçilir; çeviri de düzenlenebilir.
-                İlk kullanımda yaklaşık 360 MB model indirilir.
+                Transkript cümle cümle {LANG_NAMES[targetLang]}ye çevrilir; her cümle aslının
+                zamanında görünür. Transkriptin üstündeki {sourceLang.toUpperCase()} / {targetLang.toUpperCase()} ile
+                altyazı, dışa aktarma ve video için dil seçilir; çeviri de düzenlenebilir. İlk kullanımda yaklaşık 360 MB
+                model indirilir.
               </Hint>
               {translate.status === "download" && (
                 <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
@@ -374,16 +417,13 @@ export function Inspector({
                     disabled={!canTranslate || running}
                     onClick={onTranslate}
                   >
-                    {translation ? "Yeniden çevir" : "İngilizceye çevir"}
+                    {translation ? "Yeniden çevir" : `${LANG_NAMES[targetLang]}ye çevir`}
                   </Button>
                 )}
               </SectionActions>
               <Hint>
-                <a href="https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en">
-                  opus-mt-tc-big-tr-en
-                </a>{" "}
-                (Helsinki-NLP, CC-BY 4.0), bu bilgisayarda çalışır. Yemek adları,
-                özel adlar ve argo yanlış çevrilebilir; paylaşmadan önce göz at.
+                <a href={`https://huggingface.co/Helsinki-NLP/${mtModel}`}>{mtModel}</a> (Helsinki-NLP, CC-BY 4.0), bu
+                bilgisayarda çalışır. Yemek adları, özel adlar ve argo yanlış çevrilebilir; paylaşmadan önce göz at.
               </Hint>
             </Section>
             <Section title="Model">
