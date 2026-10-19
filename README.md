@@ -38,9 +38,10 @@ https://github.com/user-attachments/assets/72944ea4-75aa-4462-b5eb-b98a2f604bfc
 Harfiyen, [seda-v0.1](https://huggingface.co/atasoglu/seda-v0.1) Türkçe konuşma tanıma modelini doğrudan
 tarayıcıda, ekran kartı üzerinde (**WebGPU**) çalıştırır. Daha yüksek doğruluk için
 [Whisper large-v3 turbo](https://huggingface.co/openai/whisper-large-v3-turbo), ekran kartı olmayan cihazlarda da
-[Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small) seçilebilir. Bir video ya da ses dosyası yüklersin, kelimeler
-zaman kodlarıyla belirir, istediğin altyazı stilini seçersin ve altyazılı videoyu indirirsin. Mikrofonla
-konuşurken de canlı çalışır.
+[Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small) seçilebilir. Bir video ya da ses dosyası yüklersin,
+istersen kadrajını (örneğin dikey 9:16) ve kullanacağın bölümü seçip **Yazıya dök** dersin; kelimeler zaman
+kodlarıyla belirir, istediğin altyazı stilini seçersin ve altyazılı videoyu indirirsin. Mikrofonla konuşurken de
+canlı çalışır.
 
 ## Neler yapabilir
 
@@ -48,6 +49,10 @@ konuşurken de canlı çalışır.
 
 - Video ve ses dosyaları: MP4, MOV, MKV, WebM, MP3, M4A, WAV, FLAC, OGG. Uzun dosyaları parça parça işler,
   bellek şişmez.
+- Döküm düğmeyle başlar: dosya açılınca ses grafiği çizilir, döküm beklemede kalır. Önce istersen kadraj ve
+  bölüm seçilir, sonra **Yazıya dök**. Bölüm seçildiyse yalnızca o kısım dökülür; 20 dakikalık videodan
+  30 saniye seçilince yalnızca 30 saniye işlenir. Döküm ilerledikçe ses grafiğinde dökülen kısım rengine
+  kavuşur.
 - Canlı mikrofon: kelimeler konuştuktan yaklaşık bir saniye sonra belirir, kayıt aynı anda saklanır.
 - Durdur, devam et, iptal: döküm durdurulunca o ana kadar yazılan proje olarak kalır ve sonra kaldığı yerden
   sürdürülebilir; sayfa yenilense de kalınan yer unutulmaz. Yanlış dosya **İptal** ile bırakılır, uzun işlerde
@@ -100,6 +105,14 @@ konuşurken de canlı çalışır.
 ### Görüntü ve dışa aktarma
 
 - WebGPU oynatıcı: önizlemede gördüğün, dışa aktarılan videonun birebir aynısıdır.
+- Kadraj: oynatıcının üstündeki kırpma düğmesiyle (ya da **C**) 9:16, 4:5, 1:1, 16:9 ya da serbest oran.
+  **Doldur** kareyi kaplar; kutu sürüklenir, köşelerinden boyutlandırılır, taşan kısım kesilir. **Sığdır**
+  videonun tamamını karenin içine sığdırır; boşluklar bulanık ya da siyah olur. Altyazı yeni kareye göre
+  yerleşir. 4K yatay videodan 9:16 kadrajla 1080×1920 dikey video (Reels, Shorts) çıkar; dışa aktarma menüsü
+  9:16'da 1080p'yi önerir.
+- Kesme: zaman çizelgesinin sonundaki **Kes** ile videonun bir bölümü seçilir; seçilen kısım renklenir, uçlar
+  sürüklenince oynatıcı o kareyi gösterir. Yalnızca o bölüm yazıya dökülür, oynatılır ve dışa aktarılır; video,
+  SRT ve VTT zamanları 0:00'dan başlar.
 - Altyazılı MP4: kareler ekran kartında birleştirilir, video H.264 ya da HEVC olarak kodlanır, ses kopyalanır.
   Tarayıcı destekliyorsa ekran kartı, desteklemiyorsa işlemci kullanılır; menü hangisinin kullanılacağını gösterir.
 - Dışa aktarırken çözünürlük (kaynakla aynı ya da daha küçük: 1080p, 720p) ve kalite seçilir; tahmini dosya
@@ -132,8 +145,8 @@ konuşurken de canlı çalışır.
 
 ### Projeler
 
-- Otomatik kayıt: transkript, düzeltmeler, altyazı stili ve dalga formu tarayıcıda (IndexedDB) saklanır;
-  sekme kapansa da kaybolmaz.
+- Otomatik kayıt: transkript, düzeltmeler, altyazı stili, kadraj, seçilen bölüm ve dalga formu tarayıcıda
+  (IndexedDB) saklanır; sekme kapansa da kaybolmaz. Henüz yazıya dökülmemiş dosyalar da projelerde durur.
 - Son projeler **Projeler** menüsünde ve boş ekranda listelenir; tek tıkla model yeniden çalışmadan açılır.
   Projeler yeniden adlandırılabilir ve silinebilir.
 - Medya kopyalanmadan bağlanır: Chrome ve Edge dosyanın kendisine erişim izni saklar, diğer tarayıcılar
@@ -194,11 +207,14 @@ güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarla
 | İşlem                      | Nasıl yapılır                                                                              |
 | -------------------------- | ------------------------------------------------------------------------------------------ |
 | Dosya açmak                | **Dosya aç** ya da dosyayı pencereye sürükle                                               |
+| Yazıya dökmek              | Transkript panelinde **Yazıya dök**; dosya açılınca kendiliğinden başlamaz                 |
 | Mikrofonla kayıt           | Alttaki kırmızı düğme ya da **R**                                                          |
 | Dökümü durdurmak           | Alt çubukta **Durdur**; sürdürmek için **Devam et**, bırakmak için **İptal**               |
 | Oynat / duraklat           | **Boşluk** ya da görüntüye tıkla                                                           |
 | 5 sn geri / ileri          | **←** / **→**                                                                              |
 | Tam ekran                  | **F** ya da görüntüye çift tıkla                                                           |
+| Kadraj                     | Oynatıcının üstünde kırpma düğmesi ya da **C**; **Enter** uygular, **Esc** vazgeçer        |
+| Bölüm seçmek (kesme)       | Zaman çizelgesinin sonunda **Kes**, uçları sürükle, **Tamam**; oynatırken **I** / **O**    |
 | Satırı düzenlemek          | Satıra çift tıkla, **Enter** kaydeder, **Esc** vazgeçer                                    |
 | Geri al                    | **⌘Z** / **Ctrl+Z**                                                                        |
 | Otomatik noktalama         | Sağ panelde **Noktalama ve büyük harf → Otomatik ekle** (varsayılan açık; tercih saklanır) |
@@ -268,6 +284,10 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   yeri sorar, diğer tarayıcılar videoyu tarayıcının kendi disk alanında hazırlayıp indirir. Sayfa ağdan `http://`
   ile açıldığında bu ikisi de kullanılamaz, video bellekte oluşturulur.
 - Düzenleme metinle sınırlı; kelime zamanlarını elle kaydırmak yok.
+- Kesme tek bölümle sınırlı; aradan parça çıkarmak (jump cut) yok. Bölüm dökümden sonra genişletilirse eksik
+  kısım için yeniden yazıya dökmek gerekir.
+- Kadraj videonun tamamı için sabittir; zamanla kayan kadraj yok. **Sığdır**'da videonun karedeki boyutu ve
+  konumu değiştirilemez.
 - Seslendirmede her modelin tek sesi var ve orijinal sesin tamamı (müzik, ortam sesi) kalkar. Konuşmacılar ayrılmaz,
   dudak hareketleriyle eşleşmez. Seslendirme projeye kaydedilmez.
 - Çeviri yalnızca İngilizceye. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
@@ -290,6 +310,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
       kurala göre, hepsi rakamla ya da dokunma; tarih ve saat her zaman rakamla.
 - [x] **Transkriptte bul ve değiştir:** yanlış tanınan bir kelimeyi veya ismi bütün kayıtta düzeltme.
 - [x] **SRT / VTT içe aktarma:** hazır altyazıyı açıp stillendirme ve videoya yazma.
+- [x] **Dikey video ve bölüm seçme:** kadraj (Doldur / Sığdır), kesme ve yalnızca seçili bölümü yazıya dökme.
+- [ ] **Jump cut:** sessizlikleri ve dolgu kelimeleri ("ııı", "şey") kesme; transkriptten kesme.
 
 ---
 

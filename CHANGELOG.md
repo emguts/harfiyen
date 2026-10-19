@@ -4,6 +4,20 @@ Yeni sürümler en üstte.
 
 ## Yayımlanmadı
 
+- **Kadraj:** Oynatıcının üstündeki kırpma düğmesiyle (ya da **C**) video 9:16, 4:5, 1:1, 16:9 ya da serbest
+  oranda kadrajlanır. **Doldur** kareyi kaplar; kutu sürüklenir, köşelerinden boyutlandırılır, taşan kısım
+  kesilir. **Sığdır** videonun tamamını karenin içine sığdırır; boşluklar bulanık ya da siyah olur. Altyazı
+  yeni kareye göre yerleşir, kadraj projeyle birlikte saklanır. 4K yatay videodan dikey Reels çıkarmak için:
+  9:16'da dışa aktarma 1080×1920 önerir.
+- **Kes:** Zaman çizelgesinin sonundaki **Kes** düğmesiyle videonun kullanılacak bölümü seçilir; uçlar
+  sürüklenir ya da oynatırken **I** ve **O** ile işaretlenir. Yalnızca o bölüm yazıya dökülür, oynatılır ve dışa
+  aktarılır; video ve SRT/VTT zamanları 0:00'dan başlar. 20 dakikalık videodan 30 saniye seçilince yalnızca
+  30 saniye işlenir.
+- **Yazıya döküm düğmeyle başlar:** Dosya açılınca hemen dökülmez; önce kadraj ve bölüm seçilebilir, sonra
+  **Yazıya dök**. Yeniden dökmek yeni proje açmaz; eski transkript ⌘Z ile geri gelir.
+- **Ses grafiği hemen görünür:** Dosya açılınca ses grafiği çizilir, bölüm seçerken konuşmanın yeri görülür.
+  Henüz dökülmemiş kısım soluk, döküm ilerledikçe dökülen kısım rengine kavuşur.
+- **Seslendirme modeli** açılır listeden seçiliyor; listede her sesin boyutu ve kısa açıklaması görünür.
 - **Yeni ses Ahenk Cep:** Seslendirmeye üçüncü ses olarak
   [Ahenk Cep](https://huggingface.co/ozgurguler/ahenk-cep-tr) eklendi. 18 MB, ekran kartı istemez. Rakamları,
   tarihleri ve kısaltmaları diğer seslerden daha doğru okur ("Dr.", "TBMM'de"); biraz daha yavaştır.
