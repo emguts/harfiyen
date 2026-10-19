@@ -7,6 +7,7 @@ import {
 } from "../lib/useDubber";
 import { STUDIO } from "./CaptionStudio";
 import { Meter } from "./Indicators";
+import { OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import {
   Button,
   Hint,
@@ -22,27 +23,42 @@ import {
 
 const MODELS: Record<
   VoiceModel,
-  { name: string; size: string; link: string; note: string }
+  {
+    name: string;
+    size: string;
+    link: string;
+    note: string;
+    /** One line in the model list. */
+    short: string;
+  }
 > = {
   ema: {
     name: "EMA Lightning",
     size: "36 MB",
     link: "https://huggingface.co/canberkkkkkk/ema-lightning",
     note: "Türkçe metin okuma modeli (Apache-2.0).",
+    short: "Varsayılan ses, hızlı.",
   },
   mini: {
     name: "Antalia Mini",
     size: "23 MB",
     link: "https://huggingface.co/cloud0day3/antalia-mini",
-    note: "Patientdesk.ai'nin Türkçe metin okuma modeli Antalia-2 Mini (Apache-2.0); tek ses, ekran kartı olmadan da hızlı.",
+    note: "Patientdesk.ai'nin Türkçe metin okuma modeli Antalia-2 Mini (Apache-2.0); 7,6 milyon parametreli, tek ses.",
+    short: "Tek ses; EMA'dan biraz yavaş, Ahenk'ten hızlı.",
   },
   ahenk: {
     name: "Ahenk Cep",
     size: "18 MB",
     link: "https://huggingface.co/ozgurguler/ahenk-cep-tr",
     note: "Ahenk (github.com/ozguradmin/ahenk-turkish-tts), CC BY 4.0; EMA Lightning (Apache-2.0) mimarisinde, Alania verilerinden (PatientDesk AI, CC BY 4.0) türeyen Ahenk sesinden öğrenmiş küçük model. Rakam, tarih ve kısaltmaları iyi okur; diğerlerinden biraz yavaş.",
+    short: "Rakam, tarih ve kısaltmaları en iyi okur; biraz yavaş.",
   },
 };
+
+const MODEL_OPTIONS = (Object.keys(MODELS) as VoiceModel[]).map((id) => ({
+  value: id,
+  label: MODELS[id].name,
+}));
 
 const PITCHES = [
   { pitch: -2.5, label: "Kalın" },
@@ -160,22 +176,28 @@ export function DubPanel({
         )}
       </Section>
       <Section title="Ses">
-        <RowGroup role="radiogroup" aria-label="Ses modeli">
+        <RowGroup>
           <RowLabel>Model</RowLabel>
-          {(Object.keys(MODELS) as VoiceModel[]).map((id) => (
-            <button
-              key={id}
-              type="button"
-              className={PRESET}
-              role="radio"
-              aria-checked={voice.model === id}
-              aria-pressed={voice.model === id}
-              disabled={working}
-              onClick={() => setVoice({ model: id })}
-            >
-              {MODELS[id].name}
-            </button>
-          ))}
+          <Select<VoiceModel>
+            label="Ses modeli"
+            value={voice.model}
+            options={MODEL_OPTIONS}
+            onChange={(id) => setVoice({ model: id })}
+            disabled={working}
+            render={(o, inList) => (
+              <span className="flex min-w-0 items-baseline justify-between gap-3">
+                <span className={OPT_TEXT}>
+                  <span className={OPT_TITLE}>{o.label}</span>
+                  {inList && (
+                    <span className={OPT_NOTE}>{MODELS[o.value].short}</span>
+                  )}
+                </span>
+                <span className={`${OPT_NOTE} flex-none tabular-nums`}>
+                  {MODELS[o.value].size}
+                </span>
+              </span>
+            )}
+          />
         </RowGroup>
         <RowGroup role="group" aria-label="Hazır ses tonları">
           <RowLabel>Ton</RowLabel>

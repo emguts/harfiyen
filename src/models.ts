@@ -179,7 +179,7 @@ export const VOICE_PACKS = {
     id: "tts-mini",
     kind: "tts",
     name: "Antalia Mini",
-    note: "Seslendirme sesi; ekran kartı olmadan da hızlı.",
+    note: "Seslendirme sesi.",
     dir: "antalia-mini",
     manifest: "model.json",
     files: ["text.onnx", "cond.onnx", "flow.onnx", "vocoder.fp16.onnx", "frontend-data.json.gz"],
