@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CaptionSettings } from "../captions/style";
 import { userFontById } from "../captions/userFonts";
 import type { Word } from "../engine";
+import type { LogoLayer } from "../render/logoLayer";
 import type { DubClip } from "../tts/dub";
 import type { Encode, FromRender, ToRender } from "../worker/render.worker";
 
@@ -115,6 +116,7 @@ export function useBurner() {
       lang: string,
       encode: Encode,
       dub: DubClip[] | null,
+      logo: LogoLayer | null,
       name: string,
     ) => {
       // The dialog must open straight from the click, before anything else waits.
@@ -124,8 +126,24 @@ export function useBurner() {
       startedAt.current = performance.now();
       setState({ status: "running", progress: 0, fps: 0, remaining: null });
       const userFont = userFontById(settings.font);
-      const msg: ToRender = { type: "burn", jobId: id, file, words, settings, userFont, bands, loudness, lang, dub, encode, handle };
-      ensureWorker().postMessage(msg);
+      // The worker gets its own copy of the logo: the player keeps drawing the original.
+      const ownLogo = logo && { ...logo, image: await createImageBitmap(logo.image) };
+      const msg: ToRender = {
+        type: "burn",
+        jobId: id,
+        file,
+        words,
+        settings,
+        userFont,
+        bands,
+        loudness,
+        lang,
+        dub,
+        logo: ownLogo,
+        encode,
+        handle,
+      };
+      ensureWorker().postMessage(msg, ownLogo ? [ownLogo.image] : []);
     },
     [ensureWorker],
   );

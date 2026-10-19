@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  DEFAULT_LOGO,
   DEFAULT_SETTINGS,
   presetById,
   type CaptionSettings,
@@ -61,6 +62,8 @@ import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
+import { useLogo } from "./lib/logo";
+import type { LogoLayer } from "./render/logoLayer";
 import { framing, type Crop } from "./lib/crop";
 import { wordsIn } from "./lib/trim";
 import {
@@ -206,6 +209,18 @@ export function App() {
   // While picking, playback keeps to the range being picked.
   const player = usePlayer(job?.file ?? null, trimming ? trimDraft : trim);
   const wave = useWaveform(job?.live ? null : (job?.file ?? null));
+  const { logo: logoImage } = useLogo();
+  // A video made with another logo (or none) is out of date.
+  useEffect(() => burner.reset(), [logoImage, burner.reset]);
+  /** The logo as drawn, when there is one and this project shows it. */
+  const logoSettings = settings.logo ?? DEFAULT_LOGO;
+  const logo = useMemo<LogoLayer | null>(
+    () =>
+      logoImage && logoSettings.on
+        ? { image: logoImage.bitmap, corner: logoSettings.corner, size: logoSettings.size, opacity: logoSettings.opacity }
+        : null,
+    [logoImage, logoSettings],
+  );
   const following = useFollow(player, job);
   const dubber = useDubber();
   const translator = useTranslator();
@@ -773,7 +788,7 @@ export function App() {
     // Translated words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
     const loudness = english ? EMPTY_BANDS : job.loudness;
     // Only the trimmed part's words, so no caption line reaches outside it.
-    void burner.burn(job.file, wordsIn(shown, trim), settings, job.bands, loudness, lang, encode, dubbing?.clips ?? null, `${exportName}.altyazili.mp4`);
+    void burner.burn(job.file, wordsIn(shown, trim), settings, job.bands, loudness, lang, encode, dubbing?.clips ?? null, logo, `${exportName}.altyazili.mp4`);
   };
 
   const changeCrop = (c: Crop | null) => {
@@ -1133,6 +1148,7 @@ export function App() {
             crop={crop}
             onCrop={changeCrop}
             cropLocked={burner.state.status === "running"}
+            logo={logo}
             bands={job?.bands ?? EMPTY_BANDS}
             loudness={(!english && job?.loudness) || EMPTY_BANDS}
             lang={lang}

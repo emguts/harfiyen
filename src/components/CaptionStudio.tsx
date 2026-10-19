@@ -12,6 +12,7 @@ import { addFontFile, removeFont, useUserFonts } from "../captions/userFonts";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
 import { AURA_PALETTES, paletteById, type AuraPaletteId } from "../render/aura";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
+import { LogoSection } from "./LogoSection";
 import { StylePicker } from "./StylePicker";
 import { Hint, LinkButton, Range, Row, RowGroup, RowLabel, RowValue, Section, Switch } from "./ui";
 
@@ -314,6 +315,8 @@ export function CaptionStudio({
         />
         <Hint>Sadece ses olan dosyalarda ve mikrofon kayıtlarında, görüntü yerine sesle hareket eden bir aura çizilir.</Hint>
       </Section>
+
+      <LogoSection value={settings.logo} onChange={(logo) => set({ logo })} />
     </fieldset>
   );
 }

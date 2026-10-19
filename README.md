@@ -101,6 +101,8 @@ canlı çalışır.
   eklenebilir; tarayıcıda saklanır.
 - Boyut, konum, zemin (kutu, kontur, gölge), yazı ve vurgu rengi, Türkçe kurallarına uygun büyük harf
   (i → İ).
+- Logo: kendi logon (PNG, SVG, WebP, JPEG) seçtiğin köşede, istediğin boyut ve saydamlıkta durur. Bu
+  tarayıcıda saklanır, sonraki projelerde de hazırdır; her projede gizlenebilir.
 
 ### Görüntü ve dışa aktarma
 
@@ -213,6 +215,7 @@ güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarla
 | Oynat / duraklat           | **Boşluk** ya da görüntüye tıkla                                                           |
 | 5 sn geri / ileri          | **←** / **→**                                                                              |
 | Tam ekran                  | **F** ya da görüntüye çift tıkla                                                           |
+| Logo eklemek               | Sağ panelde **Altyazı → Logo → Bilgisayarından logo ekle**                                 |
 | Kadraj                     | Oynatıcının üstünde kırpma düğmesi ya da **C**; **Enter** uygular, **Esc** vazgeçer        |
 | Bölüm seçmek (kesme)       | Zaman çizelgesinin sonunda **Kes**, uçları sürükle, **Tamam**; oynatırken **I** / **O**    |
 | Satırı düzenlemek          | Satıra çift tıkla, **Enter** kaydeder, **Esc** vazgeçer                                    |

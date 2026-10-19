@@ -29,6 +29,21 @@ export const FAMILIES: { id: PresetFamily; label: string }[] = [
 /** "fill" paints the accent across each word, left to right, while it is spoken. */
 export type WordEffect = "none" | "karaoke" | "fill" | "reveal" | "box" | "color";
 
+/** A corner of the frame: top left, top right, bottom left, bottom right. */
+export type Corner = "tl" | "tr" | "bl" | "br";
+
+/** Where and how the user's logo sits (the image itself is kept apart, see lib/logo.ts). */
+export interface LogoSettings {
+  on: boolean;
+  corner: Corner;
+  /** The logo's long side, relative to the shorter side of the frame. */
+  size: number;
+  /** 1 is solid. */
+  opacity: number;
+}
+
+export const DEFAULT_LOGO: LogoSettings = { on: true, corner: "tr", size: 0.14, opacity: 1 };
+
 export interface CaptionSettings {
   preset: PresetId;
   font: FontId;
@@ -44,6 +59,8 @@ export interface CaptionSettings {
   aura: AuraPaletteId;
   /** "Sesle vurgula": words said louder than those around them are larger and in the accent colour. */
   voiceEmphasis: boolean;
+  /** Missing in settings saved before there was a logo. */
+  logo?: LogoSettings;
   /** Settings the user changed by hand: switching preset keeps them. Missing before there was this. */
   overrides?: StyleKey[];
 }
@@ -64,7 +81,7 @@ export interface Preset {
   pop: boolean;
   /** How each word comes in as it is spoken: fade and grow, or out of blur (rising, or shrinking into place). */
   wordIn?: "grow" | "focus" | "sharpen";
-  defaults: Omit<CaptionSettings, "preset" | "aura" | "voiceEmphasis" | "overrides">;
+  defaults: Omit<CaptionSettings, "preset" | "aura" | "voiceEmphasis" | "logo" | "overrides">;
 }
 
 export const PRESETS: Preset[] = [
@@ -291,6 +308,7 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
     preset: id,
     aura: prev?.aura ?? "cini",
     voiceEmphasis: prev?.voiceEmphasis ?? false,
+    logo: prev?.logo ?? DEFAULT_LOGO,
     ...presetById(id).defaults,
     ...Object.fromEntries(overrides.map((k) => [k, prev![k]])),
     overrides,

@@ -4,6 +4,9 @@ Yeni sürümler en üstte.
 
 ## Yayımlanmadı
 
+- **Logo:** Altyazı sekmesinden kendi logonu (PNG, SVG, WebP ya da JPEG) ekleyebilirsin. Seçtiğin köşede durur;
+  boyutu ve saydamlığı ayarlanır. Önizlemede ve altyazılı videoda aynı görünür, kadrajlı videoda yeni kareye
+  göre yerleşir. Logo bu tarayıcıda saklanır ve sonraki projelerde de hazırdır; her projede gizlenebilir.
 - **Kadraj:** Oynatıcının üstündeki kırpma düğmesiyle (ya da **C**) video 9:16, 4:5, 1:1, 16:9 ya da serbest
   oranda kadrajlanır. **Doldur** kareyi kaplar; kutu sürüklenir, köşelerinden boyutlandırılır, taşan kısım
   kesilir. **Sığdır** videonun tamamını karenin içine sığdırır; boşluklar bulanık ya da siyah olur. Altyazı

@@ -8,6 +8,7 @@ import { clock } from "../lib/format";
 import type { Player } from "../lib/usePlayer";
 import { levelsAt, paletteById, type AuraFrame, type AuraLevels } from "../render/aura";
 import { createCompositor, type Compositor } from "../render/compositor";
+import type { LogoLayer } from "../render/logoLayer";
 import { CropOverlay } from "./CropOverlay";
 import { IconCollapse, IconCrop, IconExpand, IconPause, IconPlay } from "./icons";
 import { RecDot } from "./Indicators";
@@ -40,6 +41,7 @@ export function Viewer({
   crop = null,
   onCrop,
   cropLocked = false,
+  logo = null,
 }: {
   /** Raw microphone levels while recording (updated in place). */
   liveLevels?: React.RefObject<AuraLevels | null>;
@@ -66,6 +68,8 @@ export function Viewer({
   onCrop?: (c: Crop | null) => void;
   /** An export is running: the framing cannot change. */
   cropLocked?: boolean;
+  /** The user's logo in its corner; null for none. */
+  logo?: LogoLayer | null;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -141,6 +145,9 @@ export function Viewer({
   const frame = useMemo(() => ({ w: fw, h: fh }), [fw, fh]);
 
   useEffect(() => compositor?.setPlacement(placement), [compositor, placement]);
+  // Not while cropping: the frame is still being decided.
+  const shownLogo = draft ? null : logo;
+  useEffect(() => compositor?.setLogo(shownLogo), [compositor, shownLogo]);
 
   // Where the canvas shows on the stage (object-contain), for the crop overlay.
   useEffect(() => {
@@ -197,7 +204,7 @@ export function Viewer({
     let last = "";
     /** A video frame has been drawn: from then on a seek keeps it up until the new one is decoded. */
     let drawn = false;
-    const cropKey = placement ? JSON.stringify(placement) : "";
+    const cropKey = `${placement ? JSON.stringify(placement) : ""}|${shownLogo ? `${shownLogo.corner}${shownLogo.size}${shownLogo.opacity}` : ""}`;
     const loop = () => {
       const dpr = window.devicePixelRatio || 1;
       const fit = Math.min(1, (st.clientWidth * dpr) / frame.w, (st.clientHeight * dpr) / frame.h);
@@ -243,7 +250,7 @@ export function Viewer({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [compositor, el, isVideo, frame, live, liveLevels, placement]);
+  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo]);
 
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === stage.current);

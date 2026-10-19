@@ -44,6 +44,7 @@ import type { Word } from "../engine";
 import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
 import type { Placement } from "../lib/crop";
 import { createCompositor } from "../render/compositor";
+import type { LogoLayer } from "../render/logoLayer";
 import { DUB_RATE, dubSlice, type DubClip } from "../tts/dub";
 import { clearRenders, openSink, type Sink } from "./sink";
 
@@ -64,6 +65,8 @@ export type ToRender =
       /** Language of the words; decides how they are uppercased. */
       lang: string;
       dub: DubClip[] | null;
+      /** The user's logo, a copy of the player's (transferred). */
+      logo: LogoLayer | null;
       encode: Encode;
       /** The file the user picked to save into; null renders to the private disk (or memory). */
       handle: FileSystemFileHandle | null;
@@ -139,6 +142,7 @@ async function burn(
   loudness: Float32Array,
   lang: string,
   dub: DubClip[] | null,
+  logo: LogoLayer | null,
   encode: Encode,
   sink: Sink,
   handle: FileSystemFileHandle | null,
@@ -148,7 +152,7 @@ async function burn(
   await loadCaptionFont(settings.font, self.fonts);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
-  if (!track) return burnAudio(jobId, input, words, settings, bands, loudness, lang, dub, encode, sink, handle, started);
+  if (!track) return burnAudio(jobId, input, words, settings, bands, loudness, lang, dub, logo, encode, sink, handle, started);
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -164,6 +168,7 @@ async function burn(
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas, false);
   compositor.setPlacement(fit);
+  compositor.setLogo(logo);
   const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
@@ -243,6 +248,7 @@ async function burnAudio(
   loudness: Float32Array,
   lang: string,
   dub: DubClip[] | null,
+  logo: LogoLayer | null,
   encode: Encode,
   sink: Sink,
   handle: FileSystemFileHandle | null,
@@ -261,6 +267,7 @@ async function burnAudio(
   const { fps } = AUDIO_VIDEO;
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas, false);
+  compositor.setLogo(logo);
   const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
   const palette = paletteById(settings.aura).colors;
   // The part written: t0..t1 of the file, written from 0:00.
@@ -365,7 +372,11 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
     sinks.set(m.jobId, sink);
     if (cancelled.has(m.jobId)) sink.cancel();
     if (m.userFont) addUserFont(m.userFont);
-    await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.loudness, m.lang, m.dub, m.encode, sink, m.handle);
+    try {
+      await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.loudness, m.lang, m.dub, m.logo, m.encode, sink, m.handle);
+    } finally {
+      m.logo?.image.close();
+    }
   };
   run()
     .catch(async (e) => {

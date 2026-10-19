@@ -1,6 +1,7 @@
 // Projects live in IndexedDB: the transcript, style and waveform in one
 // store, the media in another, so the project list never loads a video.
-// Fonts the user adds sit in a third store, shared by every project.
+// Fonts the user adds sit in a third store, shared by every project; the
+// user's logo in a fourth, also shared.
 //
 // Media is kept one of two ways: a file handle (Chromium; no copy, the file
 // stays where it is) or a copy of the file (other browsers, recordings).
@@ -64,18 +65,21 @@ const DB_NAME = "harfiyen";
 const PROJECTS = "projects";
 const MEDIA = "media";
 const FONTS = "fonts";
+/** Single files kept by name (the logo). */
+const ASSETS = "assets";
 
 let db: Promise<IDBDatabase> | null = null;
 
 function open(): Promise<IDBDatabase> {
   db ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
+    const req = indexedDB.open(DB_NAME, 3);
     req.onupgradeneeded = (e) => {
       if (e.oldVersion < 1) {
         req.result.createObjectStore(PROJECTS, { keyPath: "id" });
         req.result.createObjectStore(MEDIA);
       }
       if (e.oldVersion < 2) req.result.createObjectStore(FONTS, { keyPath: "id" });
+      if (e.oldVersion < 3) req.result.createObjectStore(ASSETS);
     };
     req.onsuccess = () => {
       // A newer tab wants to upgrade: step aside, open again on next use.
@@ -149,6 +153,21 @@ export async function listFonts(): Promise<UserFont[]> {
 export const saveFont = (f: UserFont) => tx([FONTS], "readwrite", (t) => t.objectStore(FONTS).put(f));
 
 export const deleteFont = (id: string) => tx([FONTS], "readwrite", (t) => t.objectStore(FONTS).delete(id));
+
+/** The user's logo: the file as added, by name. */
+export interface StoredLogo {
+  name: string;
+  blob: Blob;
+}
+
+export async function getLogo(): Promise<StoredLogo | undefined> {
+  const t = (await open()).transaction(ASSETS);
+  return done(t.objectStore(ASSETS).get("logo") as IDBRequest<StoredLogo | undefined>);
+}
+
+export const saveLogo = (l: StoredLogo) => tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).put(l, "logo"));
+
+export const deleteLogo = () => tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).delete("logo"));
 
 /** Room for a copy of `bytes`, leaving some headroom. */
 export async function canCopy(bytes: number): Promise<boolean> {

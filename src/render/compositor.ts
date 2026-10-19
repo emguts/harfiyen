@@ -2,6 +2,7 @@ import type { CaptionImage } from "../captions/renderer";
 import type { Placement, Rect } from "../lib/crop";
 import { AURA_SHADER, auraUniforms, type AuraFrame } from "./aura";
 import { GlassBlur } from "./glass";
+import { logoRect, type LogoLayer } from "./logoLayer";
 
 // Draws a video picture with its caption on top. The same code renders the
 // on-screen player (HTMLVideoElement -> <canvas>) and the burn-in encoder
@@ -13,7 +14,8 @@ import { GlassBlur } from "./glass";
 // when its pixels change and blended on top, with placement and pop-in scale
 // as a uniform. A placement (crop.ts) says which part of the picture goes
 // where on the frame: a slice that fills it, or the whole picture fitted in
-// over black or over a blurred copy of itself. With a glass caption the frame is blurred under the caption
+// over black or over a blurred copy of itself. The user's logo goes in its
+// corner under the caption, uploaded once like it. With a glass caption the frame is blurred under the caption
 // (glass.ts) before the text goes on. A 2D-canvas path covers browsers
 // without WebGPU.
 
@@ -27,6 +29,8 @@ export interface Compositor {
   resize(width: number, height: number): void;
   /** Where video pictures go on the frame; null fills the frame with all of the picture. */
   setPlacement(placement: Placement | null): void;
+  /** The logo drawn on every frame from now on; null for none. */
+  setLogo(logo: LogoLayer | null): void;
   /** Draw a picture (black when null) and an optional caption. */
   render(picture: Picture, caption: CaptionImage | null): void;
   destroy(): void;
@@ -64,13 +68,15 @@ struct Place { src: vec4f, dst: vec4f };
   return vec4f(c.rgb, 1);
 }
 
-// Subtitle quad; rect = (x0, y0, x1, y1) in clip space.
-@group(0) @binding(2) var<uniform> rect: vec4f;
+// An image quad (the caption, the logo); rect = (x0, y0, x1, y1) in clip space, alpha.x its opacity.
+struct Quad { rect: vec4f, alpha: vec4f };
+@group(0) @binding(2) var<uniform> quad: Quad;
 @group(0) @binding(3) var overlay: texture_2d<f32>;
 
 @vertex fn vs_overlay(@builtin(vertex_index) i: u32) -> VsOut {
   var c = array<vec2f, 6>(vec2f(0, 0), vec2f(1, 0), vec2f(0, 1), vec2f(0, 1), vec2f(1, 0), vec2f(1, 1));
   let t = c[i];
+  let rect = quad.rect;
   var o: VsOut;
   o.pos = vec4f(mix(rect.x, rect.z, t.x), mix(rect.y, rect.w, t.y), 0, 1);
   o.uv = vec2f(t.x, 1 - t.y);
@@ -78,7 +84,7 @@ struct Place { src: vec4f, dst: vec4f };
 }
 
 @fragment fn fs_overlay(in: VsOut) -> @location(0) vec4f {
-  return textureSample(overlay, samp, in.uv); // premultiplied alpha
+  return textureSample(overlay, samp, in.uv) * quad.alpha.x; // premultiplied alpha
 }
 `;
 
@@ -122,6 +128,8 @@ class GpuCompositor implements Compositor {
   private coverBuffer: GPUBuffer;
   private backdrop: Placement["backdrop"] = null;
   private overlay: { key: string; texture: GPUTexture; bind: GPUBindGroup } | null = null;
+  private logo: { layer: LogoLayer; texture: GPUTexture; bind: GPUBindGroup } | null = null;
+  private logoBuffer: GPUBuffer;
   private auraPipeline: GPURenderPipeline;
   private auraBuffer: GPUBuffer;
   private auraBind: GPUBindGroup;
@@ -164,7 +172,10 @@ class GpuCompositor implements Compositor {
       },
     });
     this.sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
-    this.rectBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    // The caption's quad: its rect changes every frame, its opacity is always 1.
+    this.rectBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(this.rectBuffer, 16, new Float32Array([1, 0, 0, 0]));
+    this.logoBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.placeBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.coverBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.setPlacement(null);
@@ -193,6 +204,53 @@ class GpuCompositor implements Compositor {
     this.device.queue.writeBuffer(this.placeBuffer, 0, rects(p?.src ?? whole, p?.dst ?? whole));
     this.device.queue.writeBuffer(this.coverBuffer, 0, rects(p?.cover ?? whole, whole));
     this.backdrop = p?.backdrop ?? null;
+  }
+
+  setLogo(layer: LogoLayer | null) {
+    if (!layer) {
+      this.logo?.texture.destroy();
+      this.logo = null;
+      return;
+    }
+    // A new image is uploaded; new settings only change the quad.
+    if (this.logo?.layer.image !== layer.image) {
+      this.logo?.texture.destroy();
+      const { width, height } = layer.image;
+      const texture = this.device.createTexture({
+        size: [width, height],
+        format: "rgba8unorm",
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.device.queue.copyExternalImageToTexture({ source: layer.image }, { texture, premultipliedAlpha: true }, [
+        width,
+        height,
+      ]);
+      const bind = this.device.createBindGroup({
+        layout: this.overlayPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 2, resource: { buffer: this.logoBuffer } },
+          { binding: 3, resource: texture.createView() },
+        ],
+      });
+      this.logo = { layer, texture, bind };
+    } else this.logo.layer = layer;
+  }
+
+  /** The logo's quad on this canvas: clip-space rect and opacity. */
+  private logoQuad(layer: LogoLayer) {
+    const { width: W, height: H } = this.canvas;
+    const r = logoRect(W, H, layer.image, layer.corner, layer.size);
+    return new Float32Array([
+      (r.x / W) * 2 - 1,
+      1 - ((r.y + r.h) / H) * 2,
+      ((r.x + r.w) / W) * 2 - 1,
+      1 - (r.y / H) * 2,
+      layer.opacity,
+      0,
+      0,
+      0,
+    ]);
   }
 
   render(picture: Picture, caption: CaptionImage | null) {
@@ -260,6 +318,13 @@ class GpuCompositor implements Compositor {
       glass.draw(enc, view, W, H, rect, w, h, Math.min(radius, w / 2, h / 2));
       pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
     }
+    // The logo, under the caption should they meet.
+    if (this.logo) {
+      d.queue.writeBuffer(this.logoBuffer, 0, this.logoQuad(this.logo.layer));
+      pass.setPipeline(this.overlayPipeline);
+      pass.setBindGroup(0, this.logo.bind);
+      pass.draw(6);
+    }
     if (overlayBind) {
       pass.setPipeline(this.overlayPipeline);
       pass.setBindGroup(0, overlayBind);
@@ -320,6 +385,8 @@ class GpuCompositor implements Compositor {
   destroy() {
     this.overlay?.texture.destroy();
     this.rectBuffer.destroy();
+    this.logoBuffer.destroy();
+    this.logo?.texture.destroy();
     this.placeBuffer.destroy();
     this.coverBuffer.destroy();
     this.auraBuffer.destroy();
@@ -333,6 +400,7 @@ class CanvasCompositor implements Compositor {
   readonly kind = "2d" as const;
   private g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
   private placement: Placement | null = null;
+  private logo: LogoLayer | null = null;
 
   constructor(readonly canvas: AnyCanvas) {
     this.g = canvas.getContext("2d") as CanvasRenderingContext2D;
@@ -345,6 +413,10 @@ class CanvasCompositor implements Compositor {
 
   setPlacement(placement: Placement | null) {
     this.placement = placement;
+  }
+
+  setLogo(logo: LogoLayer | null) {
+    this.logo = logo;
   }
 
   /** The picture laid out on the canvas: its backdrop, then its placement. */
@@ -370,6 +442,13 @@ class CanvasCompositor implements Compositor {
     this.g.fillRect(0, 0, W, H);
     if (isAura(picture)) this.drawAura(picture);
     else if (pictureReady(picture)) this.drawPicture(picture);
+    if (this.logo) {
+      const l = this.logo;
+      const r = logoRect(W, H, l.image, l.corner, l.size);
+      this.g.globalAlpha = l.opacity;
+      this.g.drawImage(l.image, r.x, r.y, r.w, r.h);
+      this.g.globalAlpha = 1;
+    }
     if (c) {
       const sx = W / c.frameW;
       const sy = H / c.frameH;
