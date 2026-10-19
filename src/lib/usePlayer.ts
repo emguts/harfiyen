@@ -24,8 +24,12 @@ export interface Player {
 export const isVideoFile = (f: File) =>
   f.type ? f.type.startsWith("video/") : /\.(mp4|mov|mkv|webm|m4v)$/i.test(f.name);
 
-/** Media element state for the custom WebGPU player. */
-export function usePlayer(file: File | null): Player {
+/**
+ * Media element state for the custom WebGPU player. With a `range` (the
+ * trim), playback stops at its end, and playing from outside it starts at
+ * its beginning; seeking anywhere still works, to look around.
+ */
+export function usePlayer(file: File | null, range: { start: number; end: number } | null = null): Player {
   const [el, setEl] = useState<HTMLMediaElement | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [time, setTime] = useState(0);
@@ -40,6 +44,8 @@ export function usePlayer(file: File | null): Player {
   const scrubTo = useRef(0);
   const scrubFrame = useRef(0);
   const touches = useRef(0);
+  const rangeRef = useRef(range);
+  rangeRef.current = range;
 
   // Object URL tied to the effect, so StrictMode's re-run cannot revoke one in use.
   useEffect(() => {
@@ -84,6 +90,11 @@ export function usePlayer(file: File | null): Player {
     let raf = 0;
     let last = -1;
     const tick = () => {
+      const r = rangeRef.current;
+      if (r && !el.paused && el.currentTime >= r.end) {
+        el.pause();
+        el.currentTime = r.end;
+      }
       if (!el.paused && Math.abs(el.currentTime - last) >= 0.04) {
         last = el.currentTime;
         setTime(last);
@@ -102,8 +113,11 @@ export function usePlayer(file: File | null): Player {
   const toggle = useCallback(() => {
     if (!el) return;
     touches.current++;
-    if (el.paused) void el.play();
-    else el.pause();
+    if (!el.paused) return el.pause();
+    const r = rangeRef.current;
+    // Within a few frames of the end counts as the end, else play would stop at once.
+    if (r && (el.currentTime < r.start || el.currentTime >= r.end - 0.05)) el.currentTime = r.start;
+    void el.play();
   }, [el]);
 
   // Scrubbing sets a new time on every pointer move. Each one cancels the seek

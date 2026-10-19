@@ -19,16 +19,16 @@ import {
   type StoredMedia,
 } from "./projectStore";
 import type { Crop } from "./crop";
-import type { Job } from "./useTranscriber";
+import type { Job, TimeRange } from "./useTranscriber";
 
 const LIVE_NAME = "Canlı kayıt";
 
-/** Something to save: a finished (or stopped) transcript. */
+/** Something to save: a finished (or stopped) transcript, or a file waiting to be transcribed. */
 const saveable = (j: Job | null): j is Job =>
-  !!j && (j.status === "done" || j.status === "cancelled") && (j.words.length > 0 || !!j.file);
+  !!j && (j.status === "done" || j.status === "cancelled" || j.status === "idle") && (j.words.length > 0 || !!j.file);
 
 /** Saves the current job as a project as it changes, and opens saved ones. */
-export function useProjects(job: Job | null, settings: CaptionSettings, crop: Crop | null) {
+export function useProjects(job: Job | null, settings: CaptionSettings, crop: Crop | null, trim: TimeRange | null) {
   const [projects, setProjects] = useState<Project[]>([]);
   /** The project behind each job. */
   const byJob = useRef(new Map<number, Project>());
@@ -110,6 +110,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings, crop: Cr
       translation: job.translation,
       settings,
       crop: crop ?? undefined,
+      trim: trim ?? undefined,
     });
     const project = p;
     const file = job.file;
@@ -123,7 +124,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings, crop: Cr
         .catch(() => {});
     }, 400);
     return () => clearTimeout(timer);
-  }, [job, settings, crop, writeMedia, remember]);
+  }, [job, settings, crop, trim, writeMedia, remember]);
 
   /** A picked or dropped file came with a handle: keep it instead of a copy. */
   const noteHandle = useCallback((file: File, handle: FileSystemFileHandle) => {

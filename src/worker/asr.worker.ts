@@ -342,7 +342,7 @@ class Job {
   }
 }
 
-async function transcribeFile(job: Job, file: File) {
+async function transcribeFile(job: Job, file: File, endAt?: number) {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   let track;
   try {
@@ -358,31 +358,35 @@ async function transcribeFile(job: Job, file: File) {
 
   const sink = new AudioSampleSink(track);
   const from = job.offset;
-  for await (const sample of sink.samples(from || undefined)) {
+  for await (const sample of sink.samples(from || undefined, endAt)) {
     if (job.isCancelled) {
       sample.close();
       break;
     }
-    // A continued job starts exactly at its offset: the first sample may begin before it.
-    const skip = Math.max(0, Math.min(sample.numberOfFrames, Math.round((from - sample.timestamp) * sample.sampleRate)));
+    // A range starts and ends exactly where asked: the first sample may begin before it, the last end after it.
+    const frames = sample.numberOfFrames;
+    const skip = Math.max(0, Math.min(frames, Math.round((from - sample.timestamp) * sample.sampleRate)));
+    const stop =
+      endAt === undefined ? frames : Math.max(skip, Math.min(frames, Math.round((endAt - sample.timestamp) * sample.sampleRate)));
     const channels: Float32Array[] = [];
     for (let ch = 0; ch < sample.numberOfChannels; ch++) {
-      const buf = new Float32Array(sample.numberOfFrames);
+      const buf = new Float32Array(frames);
       sample.copyTo(buf, { planeIndex: ch, format: "f32-planar" });
-      channels.push(skip ? buf.subarray(skip) : buf);
+      channels.push(skip || stop < frames ? buf.subarray(skip, stop) : buf);
     }
     sample.close();
-    if (skip < sample.numberOfFrames) await job.push(downmix(channels));
+    if (skip < stop) await job.push(downmix(channels));
   }
   input.dispose();
 }
 
-async function transcribePcm(job: Job, pcm: Float32Array, sampleRate: number) {
+async function transcribePcm(job: Job, pcm: Float32Array, sampleRate: number, endAt?: number) {
   post({ type: "meta", jobId: job.id, duration: pcm.length / sampleRate });
   job.setSampleRate(sampleRate);
   const step = sampleRate * 2;
-  for (let i = Math.round(job.offset * sampleRate); i < pcm.length && !job.isCancelled; i += step) {
-    await job.push(pcm.subarray(i, i + step));
+  const end = endAt === undefined ? pcm.length : Math.min(pcm.length, Math.round(endAt * sampleRate));
+  for (let i = Math.round(job.offset * sampleRate); i < end && !job.isCancelled; i += step) {
+    await job.push(pcm.subarray(i, Math.min(end, i + step)));
   }
 }
 
@@ -480,11 +484,11 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
       );
       break;
     case "transcribe":
-      queue = queue.then(() => runJob(m.jobId, m.options, (job) => transcribeFile(job, m.file), m.startAt));
+      queue = queue.then(() => runJob(m.jobId, m.options, (job) => transcribeFile(job, m.file, m.endAt), m.startAt));
       break;
     case "transcribe-pcm":
       queue = queue.then(() =>
-        runJob(m.jobId, m.options, (job) => transcribePcm(job, m.pcm, m.sampleRate), m.startAt),
+        runJob(m.jobId, m.options, (job) => transcribePcm(job, m.pcm, m.sampleRate, m.endAt), m.startAt),
       );
       break;
     case "live-start": {

@@ -33,6 +33,7 @@ import {
   IconOpen,
   IconPause,
   IconPlay,
+  IconScissors,
   IconSettings,
   IconSound,
   IconSearch,
@@ -59,7 +60,9 @@ import { clock, duration as fmtDuration } from "./lib/format";
 import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { useSourceInfo } from "./lib/useSourceInfo";
+import { useWaveform } from "./lib/useWaveform";
 import { framing, type Crop } from "./lib/crop";
+import { wordsIn } from "./lib/trim";
 import {
   effectiveOutput,
   loadOutput,
@@ -73,7 +76,7 @@ import { usePlayer } from "./lib/usePlayer";
 import { useFollow } from "./lib/useFollow";
 import { DEFAULT_VOICE, sameVoice, useDubber, useDubPlayback, type Voice } from "./lib/useDubber";
 import { useProjects } from "./lib/useProjects";
-import { canResume, modelIsCached, useTranscriber } from "./lib/useTranscriber";
+import { canResume, modelIsCached, useTranscriber, type TimeRange } from "./lib/useTranscriber";
 import { useTranslator } from "./lib/useTranslator";
 import { sourceKey } from "./lib/translation";
 import { TRANSCRIPT_LANG } from "./lib/lang";
@@ -150,7 +153,8 @@ export function App() {
     model,
     setModel,
     prepare,
-    start,
+    open,
+    transcribe,
     load,
     attach,
     clear,
@@ -183,6 +187,12 @@ export function App() {
   const [settings, setSettings] = useState<CaptionSettings>(loadSettings);
   /** The part of the video shown and exported; belongs to the project, unlike the style. */
   const [crop, setCrop] = useState<Crop | null>(null);
+  /** The part of the file used: transcribed, played and exported; null for all of it. Belongs to the project too. */
+  const [trim, setTrim] = useState<TimeRange | null>(null);
+  /** Picking the trim on the timeline ("Kes"): the range as it is being picked, kept on "Tamam". */
+  const [trimming, setTrimming] = useState(false);
+  const [trimDraft, setTrimDraft] = useState<TimeRange | null>(null);
+  const trimAtRef = useRef<(end: "start" | "end", t: number) => void>(() => {});
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const burner = useBurner();
@@ -193,7 +203,9 @@ export function App() {
     () => setVideoOutput((o) => ({ ...o, resolution: reels ? "1080" : loadOutput().resolution })),
     [reels],
   );
-  const player = usePlayer(job?.file ?? null);
+  // While picking, playback keeps to the range being picked.
+  const player = usePlayer(job?.file ?? null, trimming ? trimDraft : trim);
+  const wave = useWaveform(job?.live ? null : (job?.file ?? null));
   const following = useFollow(player, job);
   const dubber = useDubber();
   const translator = useTranslator();
@@ -224,7 +236,7 @@ export function App() {
     rename,
     importFile,
     exportText,
-  } = useProjects(job, settings, crop);
+  } = useProjects(job, settings, crop, trim);
   /** A saved project opened without its media (not stored, or not found). */
   const needsMedia =
     !!job && !job.file && !job.live && (!!current || !!job.imported);
@@ -266,6 +278,7 @@ export function App() {
         );
         setSettings(p.settings);
         setCrop(p.crop ?? null);
+        setTrim(p.trim ?? null);
         setMethod(p.method);
         const jobId = load({
           file,
@@ -366,10 +379,12 @@ export function App() {
       setSettings(noEmphasis);
       resetBurn();
       setCrop(null);
-      start(f, optionsFor(method));
+      setTrim(null);
+      // Not transcribed yet: first the frame and the part to use, then "Yazıya dök".
+      open(f, optionsFor(method));
     },
     [
-      start,
+      open,
       method,
       resetBurn,
       openSubtitle,
@@ -416,6 +431,7 @@ export function App() {
     setSettings(noEmphasis);
     resetBurn();
     setCrop(null);
+    setTrim(null);
     clear();
   };
 
@@ -430,6 +446,9 @@ export function App() {
     ) {
       return;
     }
+    // A file opened before it was transcribed is saved already, with no words: it goes too.
+    // A project transcribed before keeps its saved transcript.
+    if (current && !current.words.length) void remove(current.id);
     newProject();
   };
 
@@ -438,9 +457,24 @@ export function App() {
   const resumeJob = canResume(job)
     ? () => {
         punctuated.current.delete(job.id);
-        resume();
+        resume(trim ?? undefined);
       }
     : undefined;
+
+  /**
+   * Transcribe the open file, or only the trimmed part of it, with the chosen
+   * model. A transcript it replaces comes back with ⌘Z.
+   */
+  const transcribeJob = () => {
+    if (!job?.file || job.live || job.status === "running") return;
+    if (job.words.length) {
+      history.current.push({ jobId: job.id, en: false, words: job.words });
+      setCanUndo(true);
+    }
+    punctuated.current.delete(job.id);
+    resetBurn();
+    transcribe(optionsFor(method), trim ?? undefined);
+  };
 
   // Deleting the open project moves on to the next most recent one.
   const deleteProject = async (id: string) => {
@@ -656,6 +690,22 @@ export function App() {
         else void goLiveRef.current();
         return;
       }
+      // Picking the trim: Enter keeps it, Escape drops it.
+      if (trimming && !inField && (e.key === "Enter" || e.key === "Escape")) {
+        if (e.key === "Enter" && (e.target as HTMLElement).closest("button")) return;
+        e.preventDefault();
+        if (e.key === "Enter") finishTrimming();
+        else setTrimming(false);
+        return;
+      }
+      // I and O: the trim starts or ends at the playhead.
+      const key = e.key.toLowerCase();
+      if (!inField && !e.metaKey && !e.ctrlKey && !e.altKey && (key === "i" || key === "o")) {
+        if (!job?.file || job.live || job.status === "running" || !player.el) return;
+        e.preventDefault();
+        trimAtRef.current(key === "i" ? "start" : "end", player.el.currentTime);
+        return;
+      }
       if (
         (e.metaKey || e.ctrlKey) &&
         !e.shiftKey &&
@@ -684,11 +734,17 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, job?.recording, liveWaiting, stopLive, editable, showFind]);
+  });
 
   const sourceInfo = useSourceInfo(job?.file ?? null, crop);
   // A picture this browser cannot decode (AV1 in Safari without the hardware for it): said up front, not at export.
   const badCodec = undecodable(sourceInfo);
+  // Exports are of the trimmed part: subtitle times from its start, sizes for its length.
+  const exportWords = useMemo(() => wordsIn(shown, trim, true), [shown, trim]);
+  const exportSource = useMemo(
+    () => (sourceInfo && trim ? { ...sourceInfo, duration: trim.end - trim.start } : sourceInfo),
+    [sourceInfo, trim],
+  );
   const changeOutput = (o: VideoOutput) => {
     setVideoOutput(o);
     // A size picked for Reels stays with Reels; other videos keep the saved one.
@@ -712,16 +768,50 @@ export function App() {
       size: resolution && { width: resolution.width, height: resolution.height },
       crop: framed?.crop ?? null,
       fit: framed && !framed.crop ? framed.placement : null,
+      trim,
     };
     // Translated words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
     const loudness = english ? EMPTY_BANDS : job.loudness;
-    void burner.burn(job.file, shown, settings, job.bands, loudness, lang, encode, dubbing?.clips ?? null, `${exportName}.altyazili.mp4`);
+    // Only the trimmed part's words, so no caption line reaches outside it.
+    void burner.burn(job.file, wordsIn(shown, trim), settings, job.bands, loudness, lang, encode, dubbing?.clips ?? null, `${exportName}.altyazili.mp4`);
   };
 
   const changeCrop = (c: Crop | null) => {
     setCrop(c);
     if (burner.state.status === "done" || burner.state.status === "error")
       burner.reset();
+  };
+
+  const changeTrim = (r: TimeRange | null) => {
+    setTrim(r);
+    if (burner.state.status === "done" || burner.state.status === "error")
+      burner.reset();
+  };
+  const startTrimming = () => {
+    setTrimDraft(trim);
+    setTrimming(true);
+  };
+  const finishTrimming = () => {
+    if (trimming) changeTrim(trimDraft);
+    setTrimming(false);
+  };
+  // Transcription starting, or another file, ends the picking without a change.
+  const trimLocked = !job?.file || job.live || job.status === "running";
+  useEffect(() => {
+    if (trimLocked) setTrimming(false);
+  }, [trimLocked, job?.id]);
+
+  /** One end of the trim (or of the one being picked) at `t`; the other end stays unless it would come first. */
+  trimAtRef.current = (end, t) => {
+    const total = player.duration || job?.duration || 0;
+    if (!total) return;
+    const cur = trimming ? trimDraft : trim;
+    const set = trimming ? setTrimDraft : changeTrim;
+    const start = end === "start" ? t : (cur?.start ?? 0);
+    const stop = end === "end" ? t : (cur?.end ?? total);
+    const whole = start <= 0.01 && stop >= total - 0.01;
+    if (stop - start < 0.5) set(end === "start" ? { start: t, end: total } : { start: 0, end: t });
+    else set(whole ? null : { start, end: stop });
   };
 
   const changeSettings = (s: CaptionSettings) => {
@@ -753,6 +843,7 @@ export function App() {
   const otherModel =
     job &&
     job.status !== "running" &&
+    job.status !== "idle" &&
     job.file &&
     !job.imported &&
     job.model !== model
@@ -781,6 +872,7 @@ export function App() {
     if (micBlocked) return;
     setSettings(noEmphasis);
     setCrop(null);
+    setTrim(null);
     try {
       await startLive(optionsFor(method));
     } catch (e) {
@@ -854,7 +946,7 @@ export function App() {
         />
         {job && (
           <ExportMenu
-            words={shown}
+            words={exportWords}
             baseName={exportName}
             meta={{
               file: title,
@@ -867,7 +959,7 @@ export function App() {
             burn={burner.state}
             output={videoOutput}
             onOutput={changeOutput}
-            source={sourceInfo}
+            source={exportSource}
             onBurn={burnVideo}
             onCancelBurn={burner.cancel}
             onResetBurn={burner.reset}
@@ -973,14 +1065,37 @@ export function App() {
               <Button
                 variant="primary"
                 className="flex-none"
-                onClick={() => job?.file && openFile(job.file)}
+                onClick={transcribeJob}
               >
                 {chosen.name} ile yeniden dök
               </Button>
             </div>
           )}
           <PaneBody>
-            {job ? (
+            {job?.status === "idle" ? (
+              <div className="grid gap-3 px-3.5 py-4">
+                <p className="m-0 text-[12.5px] leading-[1.6] text-fg-2">
+                  {job.file
+                    ? "Yazıya dökmeden önce istersen kadrajı ayarla ve kullanacağın bölümü seç: zaman çizelgesinin sonundaki Kes düğmesine bas, iki ucu sürükle ve Tamam de (oynatırken I ve O tuşları da olur). Yalnızca seçili bölüm dökülür."
+                    : "Bu proje henüz yazıya dökülmedi. Önce medya dosyasını seç."}
+                </p>
+                {job.file && (
+                  <p className="m-0 text-[12px] text-fg-3 tabular-nums">
+                    {trim
+                      ? `Seçili bölüm ${clock(trim.start)} – ${clock(trim.end)}, ${fmtDuration(trim.end - trim.start)}`
+                      : `Dosyanın tamamı${player.duration ? `, ${fmtDuration(player.duration)}` : ""}`}
+                  </p>
+                )}
+                <Button
+                  variant="primary"
+                  className="justify-self-start"
+                  disabled={!job.file}
+                  onClick={transcribeJob}
+                >
+                  {trim ? "Seçili bölümü yazıya dök" : "Yazıya dök"}
+                </Button>
+              </div>
+            ) : job ? (
               <Transcript
                 words={shown}
                 tentative={english ? [] : job.tentative}
@@ -1153,7 +1268,7 @@ export function App() {
           onMethod={setMethod}
           job={job}
           engine={engine}
-          onRestart={() => job?.file && openFile(job.file)}
+          onRestart={transcribeJob}
           onResume={resumeJob}
           autoPunct={autoPunct}
           onAutoPunct={setAutoPunct}
@@ -1219,17 +1334,53 @@ export function App() {
         </button>
         {job ? (
           <Timeline
-            peaks={job.peaks}
+            peaks={wave ?? job.peaks}
             duration={player.duration || job.duration || 0}
-            decoded={job.decoded}
+            decoded={job.status === "idle" ? 0 : job.decoded}
+            doneFrom={job.range?.start ?? 0}
             time={player.time}
             media={player.el}
             cues={groups}
             live={job.recording ? liveMeter.current : null}
             onSeek={player.seek}
+            range={trimming ? trimDraft : trim}
+            onRange={trimming ? setTrimDraft : undefined}
           />
         ) : (
           <div className={TIMELINE} />
+        )}
+        {job && !job.live && trimming ? (
+          <div className="ml-2 flex flex-none items-center gap-1.5 max-[860px]:ml-auto">
+            <span className="text-[12px] text-fg-3 tabular-nums max-[1100px]:hidden">
+              {trimDraft
+                ? `${clock(trimDraft.start)} – ${clock(trimDraft.end)}, ${fmtDuration(trimDraft.end - trimDraft.start)}`
+                : "Tamamı"}
+            </span>
+            {trimDraft && <Button onClick={() => setTrimDraft(null)}>Sıfırla</Button>}
+            <Button onClick={() => setTrimming(false)}>Vazgeç</Button>
+            <Button variant="primary" onClick={finishTrimming}>
+              Tamam
+            </Button>
+          </div>
+        ) : (
+          job &&
+          !job.live && (
+            <button
+              className={`${TP_BTN} relative ml-1`}
+              onClick={startTrimming}
+              disabled={trimLocked}
+              aria-label="Kes"
+              title={
+                trim
+                  ? `Kesilen bölüm ${clock(trim.start)} – ${clock(trim.end)}; değiştirmek için tıkla`
+                  : "Kes: videonun kullanılacak bölümünü seç (I ve O tuşları da olur)"
+              }
+            >
+              <IconScissors />
+              {/* A part is cut out. */}
+              {trim && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-firuze" aria-hidden />}
+            </button>
+          )
         )}
       </div>
 

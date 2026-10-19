@@ -15,7 +15,14 @@ export type EngineState =
   | { phase: "ready"; provider: "webgpu" | "wasm"; gpu: string | null; fallbackReason: string | null }
   | { phase: "error"; message: string };
 
-export type JobStatus = "running" | "done" | "cancelled" | "error";
+/** `idle`: a file is open but not transcribed yet (it waits for "Yazıya dök"). */
+export type JobStatus = "idle" | "running" | "done" | "cancelled" | "error";
+
+/** A stretch of the file in seconds. */
+export interface TimeRange {
+  start: number;
+  end: number;
+}
 
 export type PunctState =
   | { phase: "idle" }
@@ -48,13 +55,23 @@ export interface Job {
   elapsed: number | null;
   error: string | null;
   translation?: Translation;
-  /** Where the current run started in the file: 0, or where a stopped job was continued from. */
+  /** Where the current run started in the file: 0, the range's start, or where a stopped job was continued from. */
   startAt?: number;
+  /** The part of the file being transcribed; missing for all of it. */
+  range?: TimeRange;
 }
 
 /** A stopped file job can go on from where it stopped. */
 export const canResume = (j: Job | null): j is Job & { file: File } =>
-  !!j && j.status === "cancelled" && !j.live && !!j.file && !j.imported && j.decoded < (j.duration ?? Infinity) - 0.5;
+  !!j &&
+  j.status === "cancelled" &&
+  !j.live &&
+  !!j.file &&
+  !j.imported &&
+  j.decoded < (j.range?.end ?? j.duration ?? Infinity) - 0.5;
+
+/** A continued job (not its first run), which is already saved as a project. */
+export const isContinued = (j: Job) => !!j.startAt && j.startAt !== j.range?.start;
 
 const PROVIDER_KEY = "harfiyen.provider";
 const MODEL_KEY = "harfiyen.model";
@@ -188,7 +205,7 @@ export function useTranscriber() {
           update(m.jobId, (j) => ({
             ...j,
             status: "done",
-            decoded: j.duration ?? m.decoded,
+            decoded: j.range?.end ?? j.duration ?? m.decoded,
             words: j.words.concat(m.committed),
             tentative: [],
             elapsed: m.elapsed,
@@ -230,7 +247,15 @@ export function useTranscriber() {
             try {
               const pcm = await decodeWithAudioContext(j.file);
               send(
-                { type: "transcribe-pcm", jobId: j.id, pcm, sampleRate: 16000, options: j.options, startAt: j.startAt },
+                {
+                  type: "transcribe-pcm",
+                  jobId: j.id,
+                  pcm,
+                  sampleRate: 16000,
+                  options: j.options,
+                  startAt: j.startAt,
+                  endAt: j.range?.end,
+                },
                 [pcm.buffer],
               );
               break;
@@ -294,14 +319,21 @@ export function useTranscriber() {
     setLiveWaiting(false);
   }, []);
 
-  const start = useCallback(
+  /** Stop whatever runs now: a recording, or the wait for one. */
+  const stopOthers = useCallback(() => {
+    const prev = jobRef.current;
+    if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
+    // Opening a file while recording (or waiting to record) ends the recording.
+    cancelLiveWait();
+    void mic.current?.stop();
+    mic.current = null;
+  }, [send, cancelLiveWait]);
+
+  /** Open a file to play, frame and trim; it is transcribed only on `transcribe`. */
+  const open = useCallback(
     (file: File, options: DecodeOptions) => {
-      const prev = jobRef.current;
-      if (prev?.status === "running") send({ type: "cancel", jobId: prev.id });
-      // Opening a file while recording (or waiting to record) ends the recording.
-      cancelLiveWait();
-      void mic.current?.stop();
-      mic.current = null;
+      stopOthers();
+      // The model loads meanwhile, so "Yazıya dök" starts at once.
       prepare();
       const j: Job = {
         id: nextId.current++,
@@ -310,7 +342,7 @@ export function useTranscriber() {
         recording: false,
         model: workerModel.current,
         options,
-        status: "running",
+        status: "idle",
         duration: null,
         decoded: 0,
         words: [],
@@ -324,9 +356,47 @@ export function useTranscriber() {
       };
       jobRef.current = j;
       setJob(j);
-      send({ type: "transcribe", jobId: j.id, file, options });
     },
-    [prepare, send, cancelLiveWait],
+    [prepare, stopOthers],
+  );
+
+  /**
+   * Transcribe the open file, or only `range` of it, with the chosen model.
+   * The job stays the same (and so its project); what it had is replaced.
+   * The waveform and aura start out silent up to the range, so they line up with the file.
+   */
+  const transcribe = useCallback(
+    (options: DecodeOptions, range?: TimeRange) => {
+      const prev = jobRef.current;
+      if (!prev?.file || prev.live) return;
+      stopOthers();
+      prepare();
+      const at = range?.start ?? 0;
+      const bands = Math.floor(at * BAND_RATE);
+      const j: Job = {
+        ...prev,
+        model: workerModel.current,
+        imported: undefined,
+        options,
+        status: "running",
+        decoded: at,
+        words: [],
+        tentative: [],
+        peaks: new Float32Array(Math.floor(at / PEAK_STEP)),
+        bands: new Float32Array(bands * 3),
+        loudness: new Float32Array(bands),
+        speed: 0,
+        elapsed: null,
+        error: null,
+        translation: undefined,
+        startAt: at,
+        range,
+      };
+      jobRef.current = j;
+      setJob(j);
+      send({ type: "transcribe", jobId: j.id, file: prev.file, options, startAt: at, endAt: range?.end });
+    },
+    [prepare, send, stopOthers],
   );
 
   /**
@@ -348,12 +418,14 @@ export function useTranscriber() {
       const { stoppedAt, ...rest } = p;
       // Only a sane position counts (project files can be edited by hand).
       const stopped = typeof stoppedAt === "number" && stoppedAt >= 0;
+      // Saved before it was transcribed: it still waits for "Yazıya dök".
+      const waiting = !stopped && !p.words.length && !p.imported;
       const j: Job = {
         ...rest,
         id: nextId.current++,
         live: false,
         recording: false,
-        status: stopped ? "cancelled" : "done",
+        status: stopped ? "cancelled" : waiting ? "idle" : "done",
         decoded: stopped ? stoppedAt : (p.duration ?? p.words.at(-1)?.end ?? 0),
         tentative: [],
         speed: p.duration && p.elapsed ? p.duration / p.elapsed : 0,
@@ -515,7 +587,7 @@ export function useTranscriber() {
         error: "Ekran kartı hata verdi, kayıt durduruldu. İşlemciyle yeniden kaydedebilirsin.",
       }));
     } else if (j?.status === "running" && j.file) {
-      start(j.file, j.options);
+      transcribe(j.options, j.range);
       return;
     }
     prepare();
@@ -564,9 +636,11 @@ export function useTranscriber() {
    * have read a little further than it wrote. The model that wrote the
    * job writes the rest, so the selected model switches back to it if needed.
    */
-  const resume = useCallback(() => {
+  const resume = useCallback((trim?: TimeRange) => {
     const j = jobRef.current;
     if (!canResume(j)) return;
+    // A project opened again has its range from the page (the trim), not from the job.
+    const range = j.range ?? trim;
     if (workerModel.current !== j.model) setModel(j.model);
     prepare();
     const at = j.decoded;
@@ -575,6 +649,7 @@ export function useTranscriber() {
       ...x,
       status: "running",
       startAt: at,
+      range,
       error: null,
       tentative: [],
       speed: 0,
@@ -583,10 +658,10 @@ export function useTranscriber() {
       bands: x.bands.slice(0, bands * 3),
       loudness: x.loudness.slice(0, bands),
     }));
-    send({ type: "transcribe", jobId: j.id, file: j.file, options: j.options, startAt: at });
+    send({ type: "transcribe", jobId: j.id, file: j.file, options: j.options, startAt: at, endAt: range?.end });
   }, [prepare, send, update, setModel]);
 
-  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, start, load, attach, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct };
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct };
 }
 
 export { MicError };

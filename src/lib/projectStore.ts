@@ -12,6 +12,7 @@ import type { DecodingMethod, Word } from "../engine";
 import { readCrop, type Crop } from "./crop";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
 import type { Translation } from "./translation";
+import type { TimeRange } from "./useTranscriber";
 
 export interface MediaInfo {
   name: string;
@@ -47,6 +48,8 @@ export interface Project {
   settings: CaptionSettings;
   /** The part of the picture shown and exported; missing shows all of it. */
   crop?: Crop;
+  /** The part of the media used (transcribed, played, exported); missing for all of it. */
+  trim?: TimeRange;
   media: MediaInfo | null;
   storage: MediaStorage;
 }
@@ -247,6 +250,7 @@ export function projectToFile(p: Project): string {
     media: p.media,
     settings: p.settings,
     ...(p.crop && { crop: p.crop }),
+    ...(p.trim && { trim: p.trim }),
     words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
     ...(p.translation && {
       translation: {
@@ -259,6 +263,13 @@ export function projectToFile(p: Project): string {
     bands: toBase64(p.bands),
     ...(p.loudness?.length && { loudness: toBase64(p.loudness) }),
   });
+}
+
+/** A trim read back from a project file; undefined when missing or not a range. */
+function readTrim(x: unknown): TimeRange | undefined {
+  const r = x as Partial<TimeRange> | null;
+  const ok = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+  return r && ok(r.start) && ok(r.end) && r.end > r.start ? { start: r.start, end: r.end } : undefined;
 }
 
 /** Read a project file; throws a readable message when it is not one. */
@@ -307,6 +318,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     translation,
     settings: { ...defaults, ...(d.settings as Partial<CaptionSettings>) },
     crop: readCrop(d.crop) ?? undefined,
+    trim: readTrim(d.trim),
     media: media && typeof media.name === "string" && typeof media.size === "number" ? media : null,
     storage: "none",
   };

@@ -1,6 +1,6 @@
 import { clock, duration as fmtDuration, megabytes, remaining } from "../lib/format";
 import type { BurnState } from "../lib/useBurner";
-import type { EngineState, Job, PunctState } from "../lib/useTranscriber";
+import { isContinued, type EngineState, type Job, type PunctState } from "../lib/useTranscriber";
 import { Meter, RecDot } from "./Indicators";
 
 const ITEM =
@@ -69,8 +69,13 @@ function JobItem({ job, engine, liveWaiting }: { job: Job | null; engine: Engine
     );
   }
   switch (job.status) {
+    case "idle":
+      return <span className={ITEM}>Yazıya dökülmeyi bekliyor</span>;
     case "running": {
-      const pct = job.duration ? Math.min(99, Math.floor((job.decoded / job.duration) * 100)) : 0;
+      // Of the range being transcribed, or of the whole file.
+      const from = job.range?.start ?? 0;
+      const to = job.range?.end ?? job.duration;
+      const pct = to ? Math.min(99, Math.max(0, Math.floor(((job.decoded - from) / (to - from)) * 100))) : 0;
       return (
         <span className={ITEM} role="status">
           Yazıya dökülüyor %{pct}
@@ -86,7 +91,9 @@ function JobItem({ job, engine, liveWaiting }: { job: Job | null; engine: Engine
           <span className={DIM}>
             {job.imported
               ? `${job.imported} altyazısından`
-              : `${fmtDuration(job.duration ?? job.decoded)} kayıt, ${fmtDuration(job.elapsed ?? 0)} içinde`}
+              : `${fmtDuration(job.range ? job.range.end - job.range.start : (job.duration ?? job.decoded))} ${
+                  job.range ? "bölüm" : "kayıt"
+                }, ${fmtDuration(job.elapsed ?? 0)} içinde`}
           </span>
         </span>
       );
@@ -175,7 +182,7 @@ export function StatusBar({
             Durdur
           </button>
           {/* A continued job is already saved as a project: only stopping makes sense. */}
-          {!job.startAt && (
+          {!isContinued(job) && (
             <button type="button" className={ACTION} title="Yanlış dosya mı? Döküm silinir, proje kaydedilmez" onClick={onDiscard}>
               İptal
             </button>

@@ -22,6 +22,9 @@
   --mercan: #ef644e;
   --wave: #7a848f;
   --wave-played: #8fa6f2;
+  /* Not transcribed yet: the same waveform, fainter. */
+  --wave-pending: #444c56;
+  --wave-pending-played: #56648c;
 
   --ui: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --read: var(--ui);

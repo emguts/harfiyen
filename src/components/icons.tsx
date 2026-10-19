@@ -24,6 +24,14 @@ export const IconCrop = (p: P) => (
   </Svg>
 );
 
+export const IconScissors = (p: P) => (
+  <Svg {...p}>
+    <circle cx="4" cy="4.5" r="2" />
+    <circle cx="4" cy="11.5" r="2" />
+    <path d="M5.6 5.7 13.5 12.5M5.6 10.3 13.5 3.5" />
+  </Svg>
+);
+
 export const IconPlay = (p: P) => (
   <Svg {...p}>
     <path d="M5 3.5v9l7.5-4.5z" fill="currentColor" />

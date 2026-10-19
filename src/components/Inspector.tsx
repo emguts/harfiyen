@@ -143,11 +143,14 @@ export function Inspector({
     job &&
     (model !== job.model ||
       (model === "seda" && method !== job.options.method));
-  const restartLabel = !differs
-    ? "Yeniden yazıya dök"
-    : model !== job.model
-      ? `${info.name} ile yeniden dök`
-      : `${methodTitle(method)} ile yeniden dök`;
+  const restartLabel =
+    job?.status === "idle"
+      ? "Yazıya dök"
+      : !differs
+        ? "Yeniden yazıya dök"
+        : model !== job.model
+          ? `${info.name} ile yeniden dök`
+          : `${methodTitle(method)} ile yeniden dök`;
 
   return (
     <Pane side="right">

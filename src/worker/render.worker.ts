@@ -13,6 +13,10 @@
 // With a dub, the sound in either case is the synthetic voice instead of the
 // file's own audio.
 //
+// With a trim only that part is written, its first moment at 0:00. Captions,
+// the aura and the dub are looked up at the file's own time (output time plus
+// the trim's start).
+//
 // The MP4 is written to disk as it is encoded (sink.ts): into the file the
 // user picked, or onto the browser's private disk, so hours of video never
 // sit in memory.
@@ -94,6 +98,8 @@ export interface Encode {
   crop: { left: number; top: number; width: number; height: number } | null;
   /** The whole picture fitted into a frame of another shape (`size` is the frame); null fills the frame. */
   fit: Placement | null;
+  /** The part of the file to write, in seconds; null for all of it. */
+  trim: { start: number; end: number } | null;
 }
 
 // The browser's own choice when the hardware encoder is not there: the processor's.
@@ -114,9 +120,10 @@ async function finish(jobId: number, sink: Sink, handle: FileSystemFileHandle | 
   post({ type: "done", jobId, file, saved: file ? null : handle!.name, size, elapsed: (performance.now() - started) / 1000 });
 }
 
-const dubSample = (dub: DubClip[], timestamp: number, frames: number) =>
+/** The dub from `from` seconds of the file, written at `timestamp` of the output. */
+const dubSample = (dub: DubClip[], from: number, frames: number, timestamp = from) =>
   new AudioSample({
-    data: dubSlice(dub, timestamp, frames),
+    data: dubSlice(dub, from, frames),
     format: "f32",
     numberOfChannels: 1,
     sampleRate: DUB_RATE,
@@ -161,10 +168,13 @@ async function burn(
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
   let frames = 0;
+  // Samples reach process at output time; captions and the dub go by the file's.
+  const t0 = encode.trim?.start ?? 0;
   const conversion = await Conversion.init({
     input,
     output,
     tracks: "primary",
+    ...(encode.trim && { trim: encode.trim }),
     video: {
       codec: encode.codec,
       bitrate: quality(encode),
@@ -180,7 +190,7 @@ async function burn(
       process: (sample) => {
         const frame = sample.toVideoFrame();
         try {
-          compositor.render(frame, captions.frame(sample.timestamp));
+          compositor.render(frame, captions.frame(sample.timestamp + t0));
         } finally {
           frame.close();
         }
@@ -194,7 +204,7 @@ async function burn(
           numberOfChannels: 1,
           sampleRate: DUB_RATE,
           forceTranscode: true,
-          process: (sample) => dubSample(dub, sample.timestamp, sample.numberOfFrames),
+          process: (sample) => dubSample(dub, sample.timestamp + t0, sample.numberOfFrames, sample.timestamp),
         }
       : undefined,
   });
@@ -253,7 +263,10 @@ async function burnAudio(
   const compositor = await createCompositor(canvas, false);
   const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
   const palette = paletteById(settings.aura).colors;
-  const duration = await input.computeDuration();
+  // The part written: t0..t1 of the file, written from 0:00.
+  const t0 = encode.trim?.start ?? 0;
+  const t1 = Math.min(encode.trim?.end ?? Infinity, await input.computeDuration());
+  const duration = Math.max(0, t1 - t0);
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
   const video = new CanvasSource(canvas, {
@@ -277,9 +290,10 @@ async function burnAudio(
   const renderUntil = async (t: number) => {
     for (; frame < totalFrames && frame / fps < t && !stop; frame++) {
       const time = frame / fps;
+      const at = time + t0;
       compositor.render(
-        { kind: "aura", time, levels: levelsAt(bands, time), palette },
-        captions.frame(time),
+        { kind: "aura", time: at, levels: levelsAt(bands, at), palette },
+        captions.frame(at),
       );
       await video.add(time, 1 / fps);
     }
@@ -291,19 +305,31 @@ async function burnAudio(
     await output.start();
     // Interleave: draw the frames up to the end of each audio sample.
     if (dub) {
-      // A second of dub at a time, over the file's length.
+      // A second of dub at a time, over the length written.
       for (let t = 0; t < duration && !stop; t++) {
-        const sample = dubSample(dub, t, Math.round(Math.min(1, duration - t) * DUB_RATE));
+        const sample = dubSample(dub, t0 + t, Math.round(Math.min(1, duration - t) * DUB_RATE), t);
         await sound.add(sample);
         sample.close();
         await renderUntil(t + 1);
       }
     } else {
-      for await (const sample of new AudioSampleSink(audio).samples()) {
-        const end = sample.timestamp + sample.duration;
-        if (!stop) await sound.add(sample);
+      const trimmed = !!encode.trim;
+      for await (const sample of new AudioSampleSink(audio).samples(trimmed ? t0 : undefined, trimmed ? t1 : undefined)) {
+        // Cut to the trim at the sample: the first may begin before it, the last end after it.
+        const n = sample.numberOfFrames;
+        const a = Math.max(0, Math.min(n, Math.round((t0 - sample.timestamp) * sample.sampleRate)));
+        const b = Math.max(a, Math.min(n, Math.round((t1 - sample.timestamp) * sample.sampleRate)));
+        if (stop || a >= b) {
+          sample.close();
+          if (stop) break;
+          continue;
+        }
+        const part = a > 0 || b < n ? sample.trim(a, b) : sample;
+        part.setTimestamp(Math.max(0, sample.timestamp + a / sample.sampleRate - t0));
+        const end = part.timestamp + part.duration;
+        await sound.add(part);
+        if (part !== sample) part.close();
         sample.close();
-        if (stop) break;
         await renderUntil(end);
       }
     }

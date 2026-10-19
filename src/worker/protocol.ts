@@ -6,8 +6,11 @@ export type ProviderChoice = "auto" | "webgpu" | "wasm";
 export type ToWorker =
   /** Load the model. `reason`: why the page chose the CPU, shown once ready. */
   | { type: "init"; model: ModelId; provider: ProviderChoice; reason?: string }
-  /** `startAt`: seconds into the file to start from (continuing a stopped job); times stay absolute. */
-  | { type: "transcribe"; jobId: number; file: File; options: DecodeOptions; startAt?: number }
+  /**
+   * `startAt`: seconds into the file to start from (a trimmed range, or continuing a stopped job);
+   * `endAt`: where to stop, missing for the file's end. Times stay absolute.
+   */
+  | { type: "transcribe"; jobId: number; file: File; options: DecodeOptions; startAt?: number; endAt?: number }
   | {
       type: "transcribe-pcm";
       jobId: number;
@@ -15,6 +18,7 @@ export type ToWorker =
       sampleRate: number;
       options: DecodeOptions;
       startAt?: number;
+      endAt?: number;
     }
   | { type: "cancel"; jobId: number }
   /** Live microphone: audio arrives in chunks until live-stop. */
