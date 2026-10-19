@@ -14,7 +14,7 @@ import { alignWords, FRAME_SEC, tokenFrames } from "./alignment";
 import { HOP, LogMel, SAMPLE_RATE, WINDOW_SAMPLES } from "./mel";
 import { WhisperModel, type WhisperConfig } from "./model";
 import { WhisperTokenizer } from "./tokenizer";
-import { SileroVad } from "./vad";
+import { SileroVad } from "../engine/vad";
 
 export type { WhisperConfig } from "./model";
 

@@ -28,6 +28,6 @@ export interface SpeechStream {
 
 export interface SpeechEngine {
   readonly provider: EncoderProvider;
-  /** One stream at a time: streams share the model's buffers. */
-  createRecognizer(opts: DecodeOptions): SpeechStream;
+  /** One stream at a time: streams share the model's buffers. `live`: the microphone, which needs text as it is spoken. */
+  createRecognizer(opts: DecodeOptions, live?: boolean): SpeechStream;
 }

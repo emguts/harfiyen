@@ -5,12 +5,12 @@ import { LANG_NAMES } from "../lib/lang";
 import { writeNumbers, type NumberMode } from "../lib/numbers";
 import type { DubState, PreviewState, Voice } from "../lib/useDubber";
 import type { EngineState, Job } from "../lib/useTranscriber";
-import { translationLang as targetOf, type TranslateState } from "../lib/useTranslator";
+import { translateProgress, translationLang as targetOf, type TranslateState } from "../lib/useTranslator";
 import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { VideoLang } from "./VideoLang";
-import { Meter } from "./Indicators";
+import { Progress } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import {
@@ -91,6 +91,8 @@ export function Inspector({
   canTranslate,
   onTranslate,
   onCancelTranslate,
+  canTranslateDub,
+  onTranslateDub,
   sourceLang,
   videoLang,
   onVideoLang,
@@ -143,6 +145,9 @@ export function Inspector({
   canTranslate: boolean;
   onTranslate: () => void;
   onCancelTranslate: () => void;
+  /** The dub needs the translation first: it is made, then read. */
+  canTranslateDub: boolean;
+  onTranslateDub: () => void;
   /** The language of the open transcript, and of its translation if there is one. */
   sourceLang: SpeechLang;
   translationLang: string | null;
@@ -156,6 +161,7 @@ export function Inspector({
 }) {
   const [tab, setTab] = useState<Tab>("captions");
   const running = job?.status === "running";
+  const translating = translateProgress(translate);
   const info = modelInfo(model);
   // Whisper punctuates by itself: the section is for Seda, or for a Seda transcript that is open.
   const sedaJob = !!job && !modelInfo(job.model).punctuates;
@@ -250,9 +256,10 @@ export function Inspector({
             translationLang={translationLang}
             sourceLang={sourceLang}
             translationStale={translationStale}
-            translating={translate.status === "download" || translate.status === "running"}
-            canTranslate={canTranslate && !running}
-            onTranslate={onTranslate}
+            translate={translate}
+            canTranslateDub={canTranslateDub}
+            onTranslateDub={onTranslateDub}
+            onCancelTranslate={onCancelTranslate}
           />
         ) : (
           <div className={STUDIO}>
@@ -380,25 +387,7 @@ export function Inspector({
                 altyazı, dışa aktarma ve video için dil seçilir; çeviri de düzenlenebilir. İlk kullanımda yaklaşık 360 MB
                 model indirilir.
               </Hint>
-              {translate.status === "download" && (
-                <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
-                  <span className="flex-1">
-                    Model indiriliyor %
-                    {Math.floor((translate.loaded / (translate.total || 1)) * 100)}
-                  </span>
-                  <Meter value={translate.loaded / (translate.total || 1)} />
-                </div>
-              )}
-              {translate.status === "running" && (
-                <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
-                  <span className="flex-1">
-                    {translate.done
-                      ? `Çevriliyor ${translate.done} / ${translate.total}`
-                      : "Model hazırlanıyor"}
-                  </span>
-                  <Meter value={translate.total ? translate.done / translate.total : 0} />
-                </div>
-              )}
+              {translating && <Progress {...translating} />}
               {translate.status === "error" && (
                 <Hint>Çevrilemedi: {translate.message}</Hint>
               )}
@@ -409,7 +398,7 @@ export function Inspector({
                 </Hint>
               )}
               <SectionActions>
-                {translate.status === "download" || translate.status === "running" ? (
+                {translating ? (
                   <Button onClick={onCancelTranslate}>Durdur</Button>
                 ) : (
                   <Button

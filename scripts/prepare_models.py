@@ -1,12 +1,17 @@
 """Download seda-v0.2 from Hugging Face and convert it for the browser.
 
 The streaming model is the c32/ export (0.64 s chunks, the same as seda-v0.1),
-with the LSTM language model and the LODR bigram from lm/.
+for the microphone; files use the final/ export of the same weights (5.12 s
+chunks, 20.48 s left context). Both share the LSTM language model and the LODR
+bigram from lm/, and the Silero VAD from vad/.
 
 Outputs go to public/models/seda-v0.2/:
 
   encoder.webgpu.onnx  int8 weights, but MatMulInteger -> DequantizeLinear + MatMul
                        so that every op runs on onnxruntime-web's WebGPU EP
+  encoder.final.webgpu.onnx
+                       final/encoder.int8.onnx, converted the same way
+  silero_vad.onnx      Silero VAD v6, unchanged (runs on wasm)
   decoder.onnx         unchanged (runs on wasm)
   joiner.int8.onnx     unchanged (runs on wasm)
   rnnlm.int8.onnx      unchanged (runs on wasm)
@@ -61,6 +66,9 @@ FILES = {
     "tokens.txt": "tokens.txt",
     "lm/rnnlm.int8.onnx": "lm/rnnlm.int8.onnx",
     "lm/2gram.fst": "lm/2gram.fst",
+    # final/decoder.onnx and final/joiner.int8.onnx are the same files as c32's.
+    "final/encoder.int8.onnx": "final/encoder.int8.onnx",
+    "vad/silero_vad.onnx": "silero_vad.onnx",
 }
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -219,16 +227,29 @@ def simplify_static(path: Path) -> None:
     print(f"{path.name}: {before} -> {len(g.node)} nodes after static simplification")
 
 
+def encoder_shape(path: Path) -> dict:
+    """Left context and frames per chunk of a streaming encoder, from its metadata.
+
+    processed_lens counts encoder_embed frames: half the feature frames of a chunk.
+    """
+    enc = meta(path)
+    left = int(enc["left_context_len"].split(",")[0])
+    per_chunk = int(enc["decode_chunk_len"]) // 2
+    return {"leftContext": left, "padMaskLen": left + per_chunk, "processedPerChunk": per_chunk}
+
+
 def externalize_pad_mask(path: Path) -> None:
     """Replace the int64 `processed_lens` bookkeeping with an int32 input.
 
     The encoder derives a left-context padding mask from processed_lens:
-        mask = concat(reverse(processed_lens <= arange(128)), zeros(32))
+        mask = concat(reverse(processed_lens <= arange(left)), zeros(per_chunk))
+    (left 128 and per_chunk 32 for the c32 export, 1024 and 256 for final/).
     Those int64 ops are placed on the CPU by onnxruntime-web, which forces a
     GPU<->CPU round trip per chunk and rules out WebGPU graph capture. The app
-    computes the same [1, 160] int32 mask itself (see StreamingEncoder) and
+    computes the same int32 mask itself (padMask in src/engine/models.ts) and
     tracks processed_lens in JavaScript.
     """
+    mask_len = encoder_shape(path)["padMaskLen"]
     m = onnx.load(str(path))
     g = m.graph
     byname = {n.name: n for n in g.node}
@@ -245,7 +266,7 @@ def externalize_pad_mask(path: Path) -> None:
     g.node.extend(keep)
 
     inputs = [i for i in g.input if i.name != "processed_lens"]
-    inputs.append(helper.make_tensor_value_info("pad_mask", onnx.TensorProto.INT32, [1, 160]))
+    inputs.append(helper.make_tensor_value_info("pad_mask", onnx.TensorProto.INT32, [1, mask_len]))
     del g.input[:]
     g.input.extend(inputs)
     outputs = [o for o in g.output if o.name != "new_processed_lens"]
@@ -346,6 +367,7 @@ def meta(path: Path) -> dict:
 
 def write_config(src: Path) -> None:
     enc = meta(src / "encoder.int8.onnx")
+    final = meta(src / "final/encoder.int8.onnx")
     dec = meta(src / "decoder.onnx")
     lm = meta(src / "lm/rnnlm.int8.onnx")
     tokens = (src / "tokens.txt").read_text().split("\n")
@@ -359,6 +381,8 @@ def write_config(src: Path) -> None:
             "tokens.txt",
             "rnnlm.int8.onnx",
             "lodr.bin",
+            "encoder.final.webgpu.onnx",
+            "silero_vad.onnx",
         ]
     }
     cfg = {
@@ -379,10 +403,12 @@ def write_config(src: Path) -> None:
             for i in onnx.load(str(OUT / "encoder.webgpu.onnx"), load_external_data=False).graph.input
             if i.name not in ("x", "pad_mask")
         ],
-        "leftContext": 128,
-        "padMaskLen": 160,
-        # processed_lens grows by this many (encoder_embed) frames per chunk.
-        "processedPerChunk": 32,
+        **encoder_shape(src / "encoder.int8.onnx"),
+        "final": {
+            "chunkSize": int(final["T"]),
+            "chunkShift": int(final["decode_chunk_len"]),
+            **encoder_shape(src / "final/encoder.int8.onnx"),
+        },
         "lm": {
             "sosId": int(lm["sos_id"]),
             "numLayers": int(lm["num_layers"]),
@@ -839,10 +865,11 @@ def main() -> None:
     download(args.src)
     OUT.mkdir(parents=True, exist_ok=True)
 
-    convert_matmul_integer(args.src / "encoder.int8.onnx", OUT / "encoder.webgpu.onnx")
-    simplify_static(OUT / "encoder.webgpu.onnx")
-    externalize_pad_mask(OUT / "encoder.webgpu.onnx")
-    for f in ["decoder.onnx", "joiner.int8.onnx", "tokens.txt"]:
+    for src, dst in [("encoder.int8.onnx", "encoder.webgpu.onnx"), ("final/encoder.int8.onnx", "encoder.final.webgpu.onnx")]:
+        convert_matmul_integer(args.src / src, OUT / dst)
+        simplify_static(OUT / dst)
+        externalize_pad_mask(OUT / dst)
+    for f in ["decoder.onnx", "joiner.int8.onnx", "tokens.txt", "silero_vad.onnx"]:
         shutil.copy(args.src / f, OUT / f)
     shutil.copy(args.src / "lm/rnnlm.int8.onnx", OUT / "rnnlm.int8.onnx")
     convert_fst(args.src / "lm/2gram.fst", OUT / "lodr.bin")

@@ -22,7 +22,8 @@ export interface ModelInfo {
   dir: string;
   /**
    * Files listed in the directory's model.json, downloaded and cached.
-   * Whisper: encoder, decoder, vocab, VAD, in this order.
+   * Whisper: encoder, decoder, vocab, VAD, in this order. Seda: streaming
+   * encoder, decoder, joiner, LM, LODR, tokens, final encoder, VAD.
    */
   files: string[];
   link: string;
@@ -48,10 +49,19 @@ export const MODELS: ModelInfo[] = [
     name: "Seda",
     tier: "Hızlı",
     note: "Küçük ve hızlı; canlı kayıtta ve her cihazda çalışır.",
-    size: "115 MB",
+    size: "190 MB",
     spec: "seda-v0.2",
     dir: "seda-v0.2",
-    files: ["encoder.webgpu.onnx", "decoder.onnx", "joiner.int8.onnx", "rnnlm.int8.onnx", "lodr.bin", "tokens.txt"],
+    files: [
+      "encoder.webgpu.onnx",
+      "decoder.onnx",
+      "joiner.int8.onnx",
+      "rnnlm.int8.onnx",
+      "lodr.bin",
+      "tokens.txt",
+      "encoder.final.webgpu.onnx",
+      "silero_vad.onnx",
+    ],
     link: "https://huggingface.co/atasoglu/seda-v0.2",
     live: true,
     gpuOnly: false,

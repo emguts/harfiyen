@@ -7,7 +7,7 @@ const BAR_HEIGHTS = ["h-1.5", "h-2.5", "h-3.5"];
 
 const METHODS: { value: DecodingMethod; label: string; note: string }[] = [
   { value: "beam-lm", label: "En doğru", note: "Dil modeliyle; özel adlarda ve uzun cümlelerde daha az hata." },
-  { value: "beam", label: "Dengeli", note: "Dil modeli olmadan, dört yollu arama." },
+  { value: "beam", label: "Dengeli", note: "Dil modeli olmadan, çok yollu arama." },
   { value: "greedy", label: "Hızlı", note: "Tek yollu arama, en kısa sürede biter." },
 ];
 

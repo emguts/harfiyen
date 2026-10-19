@@ -64,8 +64,10 @@ canlı çalışır.
   transkriptte Türkçe sayı kuralları uygulanmaz; İngilizce seslendirme doğrudan transkripti okur. İngilizce video
   Türkçeye çevrilip Türkçe altyazı ve Türkçe seslendirme (voice-over) yapılabilir.
 - Üç model, üst çubuktan (telefonda **⋯** menüsünden) seçilir:
-  - **Seda** (varsayılan, ~105 MB): küçük ve hızlı, canlı mikrofonda ve her cihazda çalışır. Üç doğruluk
-    ayarı var: **Hızlı**, **Dengeli** ve dil modeliyle **En doğru**.
+  - **Seda** (varsayılan, ~190 MB): küçük ve hızlı, canlı mikrofonda ve her cihazda çalışır. Üç doğruluk
+    ayarı var: **Hızlı**, **Dengeli** ve dil modeliyle **En doğru**. Dosyaları daha doğru olan 5,12 saniyelik
+    parçalarla, mikrofonu anında yazmak için 0,64 saniyelik parçalarla işler (aynı model, iki ayrı dışa aktarım).
+    Cümleler ses etkinliği algılayıcıyla (Silero VAD) bulunan kısa duraklamalarda kesinleşir.
   - **Duyu** (~85 MB): ekran kartı istemez, işlemcide çalışır; noktalamayı ve büyük harfleri kendisi yazar.
     Yalnızca dosyalarda çalışır, canlı kayıtta kullanılmaz; sesi 12–15 saniyelik parçalar hâlinde işler.
   - **Whisper Turbo** (~1,5 GB) ve **Whisper Turbo Hafif** (~600 MB, 4 bit encoder): daha az hata,
@@ -137,8 +139,8 @@ canlı çalışır.
   [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) ile yapay bir Türkçe sesle yeniden okunur. Her
   altyazı satırı kendi zamanında başlar; yerine sığmayan satır en fazla 1,35 kat hızlı okunur. Ahenk Cep rakamları,
   tarihleri ve kısaltmaları en iyi okuyan sestir; diğerlerinden biraz yavaştır.
-- **İngilizce (voice-over):** İngilizce çeviri Supertonic 3 ile okunur. Çeviri yoksa seslendirme sekmesinden
-  çevrilir. Her cümle Türkçesinin başladığı anda başlar; sığmayan cümle önündeki sessizliğe biraz erken başlar,
+- **İngilizce (voice-over):** İngilizce çeviri Supertonic 3 ile okunur. Çeviri yoksa **Çevir ve seslendir** önce
+  çevirir, sonra okur; ilerleme tek çubukta görünür. Her cümle Türkçesinin başladığı anda başlar; sığmayan cümle önündeki sessizliğe biraz erken başlar,
   gerekirse en fazla 1,15 kat hızlı okunur (Supertonic daha hızlıda cümle sonunu yutuyor). On ses arasından
   seçilir (Alex, James, Robert, Sam, Daniel, Sarah, Lily, Jessica, Olivia, Emily).
 - Modellerin cümle başına ve sonuna koyduğu sessizlik kırpılır; böylece cümleler birbirini itmez, seslendirme
@@ -210,7 +212,7 @@ npm run models     # konuşma tanıma, noktalama ve çeviri modellerini indirir 
 npm run dev        # http://localhost:5173
 ```
 
-İlk açılışta tarayıcı yaklaşık 105 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
+İlk açılışta tarayıcı yaklaşık 190 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
 önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB), Duyu
 seçilirse yaklaşık 85 MB indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB, İngilizce çeviri yaklaşık 360 MB,
 İngilizce seslendirme (Supertonic 3) yaklaşık 203 MB indirilir ve önbelleğe alınır. Modeller **Ayarlar → Modeller**'den önceden indirilebilir ya da silinebilir. Ses ve metin
@@ -265,18 +267,19 @@ Apple Silicon (Metal), Chrome, dil modeliyle beam search:
 | ----------------------- | ------------------------------------------------------------------- |
 | Yazıya döküm            | gerçek zamanın ~12 katı (encoder ~38 ms / 0,64 sn'lik parça)        |
 | Videoya altyazı yazma   | 640×360 videoda ~70 kare/sn; sesten 1080p video ~3 kat gerçek zaman |
-| İlk açılış              | ~105 MB indirme, sonrası önbellekten                                |
+| İlk açılış              | ~190 MB indirme, sonrası önbellekten                                |
 | İlk noktalama kullanımı | ek ~60 MB indirme, sonrası önbellekten                              |
 
 Ölçümler kısa test kayıtlarıyla yapıldı; uzun ve yüksek çözünürlüklü dosyalarda farklı olabilir.
 
-Model kartındaki doğruluk değerleri (WER, düşük olan iyi):
+Model kartındaki doğruluk değerleri (WER, düşük olan iyi; FLEURS-TR test). Harfiyen dosyalarda **En doğru** ile
+`accurate` kurulumunu kullanır (5,12 saniyelik parçalar, sekiz yollu arama ve dil modeli):
 
-| Test seti            | Hızlı | Dengeli | En doğru  |
-| -------------------- | ----- | ------- | --------- |
-| FLEURS-TR            | 15,14 | 14,24   | **11,52** |
-| Common Voice 27.0 TR | 16,32 | 15,59   | **13,61** |
-| ISSAI TSC            | 16,00 | 15,72   | **15,23** |
+| Kurulum    | seda-v0.1 | seda-v0.2 |
+| ---------- | --------- | --------- |
+| `fast`     |           | 9,38      |
+| `balanced` |           | 7,26      |
+| `accurate` | 11,60     | **6,38**  |
 
 ## Yayına alma
 
@@ -365,7 +368,7 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
 - [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
   kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
-- [Silero VAD](https://github.com/snakers4/silero-vad) v5: MIT.
+- [Silero VAD](https://github.com/snakers4/silero-vad) v5 (Whisper) ve v6 (Seda, seda-v0.2 ile gelir): MIT.
 - Çeviri modelleri [Helsinki-NLP/opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en)
   ve [Helsinki-NLP/opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr) (OPUS-MT,
   Tatoeba Challenge): CC-BY 4.0. ONNX'e `scripts/prepare_models.py` ile dönüştürülür.

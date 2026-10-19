@@ -10,6 +10,20 @@ export type TranslateState =
   | { status: "running"; done: number; total: number }
   | { status: "error"; message: string };
 
+/** What a running translation shows: its label and how far along it is (0..1); null when none runs. */
+export function translateProgress(s: TranslateState): { label: string; value: number } | null {
+  if (s.status === "download") {
+    const value = s.loaded / (s.total || 1);
+    return { label: `Çeviri modeli indiriliyor %${Math.floor(value * 100)}`, value };
+  }
+  if (s.status === "running") {
+    return s.done
+      ? { label: `Çevriliyor ${s.done} / ${s.total}`, value: s.done / s.total }
+      : { label: "Çeviri modeli hazırlanıyor", value: 0 };
+  }
+  return null;
+}
+
 /** The language a transcript in `from` is translated into: the other one. */
 export const translationLang = (from: SpeechLang): TranslationLang => (from === "en" ? "tr" : "en");
 

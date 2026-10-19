@@ -12,6 +12,16 @@ export function Meter({ value, className = "w-[72px]" }: { value: number; classN
   );
 }
 
+/** A task's progress in a panel: what it is doing, and how far along (0..1). */
+export function Progress({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
+      <span className="flex-1">{label}</span>
+      <Meter value={value} />
+    </div>
+  );
+}
+
 /** Blinking red dot: the microphone is on. */
 export const RecDot = () => (
   <span className="size-2 flex-none animate-rec rounded-full bg-mercan motion-reduce:animate-none" aria-hidden />

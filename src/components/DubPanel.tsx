@@ -1,6 +1,6 @@
 import type { SpeechLang } from "../engine";
 import { LANG_NAMES } from "../lib/lang";
-import { translationLang as targetOf } from "../lib/useTranslator";
+import { translateProgress, translationLang as targetOf, type TranslateState } from "../lib/useTranslator";
 import {
   DEFAULT_VOICE,
   MAX_ORIGINAL,
@@ -11,7 +11,7 @@ import {
   type VoiceModel,
 } from "../lib/useDubber";
 import { STUDIO } from "./CaptionStudio";
-import { Meter } from "./Indicators";
+import { Progress } from "./Indicators";
 import { OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import {
   Button,
@@ -134,9 +134,10 @@ export function DubPanel({
   translationLang,
   sourceLang,
   translationStale,
-  translating,
-  canTranslate,
-  onTranslate,
+  translate,
+  canTranslateDub,
+  onTranslateDub,
+  onCancelTranslate,
 }: {
   state: DubState;
   /** The transcript changed after the dub was made. */
@@ -167,11 +168,16 @@ export function DubPanel({
   sourceLang: SpeechLang;
   /** The transcript changed after it was translated. */
   translationStale: boolean;
-  translating: boolean;
-  canTranslate: boolean;
-  onTranslate: () => void;
+  translate: TranslateState;
+  /** There is a transcript to translate and then read. */
+  canTranslateDub: boolean;
+  /** Translate, then dub the translation. */
+  onTranslateDub: () => void;
+  onCancelTranslate: () => void;
 }) {
-  const working = state.status === "download" || state.status === "running";
+  const translating = translateProgress(translate);
+  // While translating for the dub too: it starts with the voice chosen when it was asked for.
+  const working = state.status === "download" || state.status === "running" || !!translating;
   const setVoice = (v: Partial<Voice>) => onVoice({ ...voice, ...v });
   const model = MODELS[voice.model];
   // A dub in the other language reads the translation into it.
@@ -179,6 +185,9 @@ export function DubPanel({
   const hasTranslation = translation && translationLang === voice.lang;
   // The transcript is translated into its other language only.
   const translatable = targetOf(sourceLang) === voice.lang;
+  // The one button translates first.
+  const needsTranslation = fromTranslation && !hasTranslation && translatable;
+  const ready = needsTranslation ? canTranslateDub : canDub;
   const setLang = (lang: DubLang) =>
     setVoice({ lang, model: LANG_MODELS[lang].includes(voice.model) ? voice.model : LANG_MODELS[lang][0] });
   const modelOptions = LANG_MODELS[voice.lang].map((id) => ({ value: id, label: MODELS[id].name }));
@@ -212,21 +221,11 @@ export function DubPanel({
             {LANG_NAMES[sourceLang]}den {LANG_NAMES[voice.lang]}ye çeviri yok.
           </Hint>
         )}
-        {fromTranslation && !hasTranslation && translatable && (
-          <>
-            <Hint>
-              {LANG_NAMES[voice.lang]} seslendirme için önce transkript {LANG_NAMES[voice.lang]}ye çevrilir.
-            </Hint>
-            <SectionActions>
-              <Button
-                variant="primary"
-                disabled={!canTranslate || translating}
-                onClick={onTranslate}
-              >
-                {translating ? "Çevriliyor" : `${LANG_NAMES[voice.lang]}ye çevir`}
-              </Button>
-            </SectionActions>
-          </>
+        {needsTranslation && (
+          <Hint>
+            {LANG_NAMES[voice.lang]} seslendirme için transkript önce {LANG_NAMES[voice.lang]}ye çevrilir; çeviri modeli
+            ilk kullanımda yaklaşık 360 MB indirir.
+          </Hint>
         )}
         {fromTranslation && hasTranslation && translationStale && (
           <Hint>
@@ -234,24 +233,21 @@ export function DubPanel({
             Yazıya dök sekmesinden yeniden çevrilebilir.
           </Hint>
         )}
+        {translating && <Progress {...translating} />}
         {state.status === "download" && (
-          <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
-            <span className="flex-1">
-              Model indiriliyor %
-              {Math.floor((state.loaded / (state.total || 1)) * 100)}
-            </span>
-            <Meter value={state.loaded / (state.total || 1)} />
-          </div>
+          <Progress
+            label={`Ses modeli indiriliyor %${Math.floor((state.loaded / (state.total || 1)) * 100)}`}
+            value={state.loaded / (state.total || 1)}
+          />
         )}
         {state.status === "running" && (
-          <div className="flex items-center gap-2.5 text-[12px] text-fg-2">
-            <span className="flex-1">
-              {state.total
-                ? `Seslendiriliyor ${state.done} / ${state.total}`
-                : "Model hazırlanıyor"}
-            </span>
-            <Meter value={state.total ? state.done / state.total : 0} />
-          </div>
+          <Progress
+            label={state.total ? `Seslendiriliyor ${state.done} / ${state.total}` : "Ses modeli hazırlanıyor"}
+            value={state.total ? state.done / state.total : 0}
+          />
+        )}
+        {needsTranslation && translate.status === "error" && (
+          <Hint>Çevrilemedi: {translate.message}</Hint>
         )}
         {state.status === "error" && (
           <Hint>Seslendirilemedi: {state.message}</Hint>
@@ -280,16 +276,20 @@ export function DubPanel({
         )}
         <SectionActions>
           {working ? (
-            <Button onClick={onCancel}>Durdur</Button>
+            <Button onClick={translating ? onCancelTranslate : onCancel}>Durdur</Button>
           ) : (
             <Button
               variant={
                 state.status === "done" && !stale ? "default" : "primary"
               }
-              disabled={!canDub || busy}
-              onClick={onDub}
+              disabled={!ready || busy}
+              onClick={needsTranslation ? onTranslateDub : onDub}
             >
-              {state.status === "done" ? "Yeniden seslendir" : "Seslendir"}
+              {needsTranslation
+                ? "Çevir ve seslendir"
+                : state.status === "done"
+                  ? "Yeniden seslendir"
+                  : "Seslendir"}
             </Button>
           )}
           {state.status === "done" && (
@@ -302,7 +302,7 @@ export function DubPanel({
             </a>
           )}
         </SectionActions>
-        {!canDub && state.status === "idle" && !(fromTranslation && !hasTranslation) && (
+        {!ready && state.status === "idle" && !(fromTranslation && !hasTranslation && !translatable) && (
           <Hint>Önce bir dosyayı yazıya dök.</Hint>
         )}
       </Section>

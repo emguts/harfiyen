@@ -5,9 +5,17 @@ Yeni sürümler en üstte.
 ## Yayımlanmadı
 
 - **Seda v0.2:** Seda, [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2)'ye geçti. Daha çok veriyle eğitildi;
-  daha az hata yapıyor, özellikle gürültülü, yankılı ve telefon kalitesindeki seste. Parça boyu aynı (0,64 sn), dil
-  modeli daha büyük; ilk indirme yaklaşık 115 MB. Eski v0.1 dosyaları **Ayarlar**'dan silinebilir. Lisansı
-  CC BY-SA 4.0.
+  daha az hata yapıyor, özellikle gürültülü, yankılı ve telefon kalitesindeki seste. Dil modeli daha büyük. Eski v0.1
+  dosyaları **Ayarlar**'dan silinebilir. Lisansı CC BY-SA 4.0.
+- **Dosyalarda daha doğru Seda:** Dosyalar modelin 5,12 saniyelik parçalarla çalışan `final` sürümüyle, sekiz yollu
+  aramayla yazıya dökülür (FLEURS-TR'de %6,4 hata). Mikrofon anında yazmak için 0,64 saniyelik parçalarla devam
+  eder. İlk indirme yaklaşık 190 MB.
+- **Duraklamada kesinleşen cümleler:** Seda cümle sonlarını 1,2 saniyelik sessizlik kuralı yerine ses etkinliği
+  algılayıcıyla (Silero VAD) bulur; canlı kayıtta kısa bir duraklamada metin kesinleşir. Uzun konuşmalar
+  duraklamalarda bölünür.
+- **Çevir ve seslendir:** Çeviri gereken seslendirmede iki buton yerine tek buton var; önce çevirir, sonra okur.
+  Çeviri modelinin indirilmesi, çeviri ve seslendirme aynı yerde yüzde ve ilerleme çubuğuyla görünür, **Durdur** ile
+  durdurulabilir.
 - **İngilizce videolar:** Yazıya dökmeden önce videodaki dil (Türkçe ya da İngilizce) seçilir; İngilizce videolar
   Whisper ile İngilizce yazıya dökülür, altyazı ve SRT/VTT İngilizce olur, Supertonic ile İngilizce seslendirilebilir.
   Dil projeyle saklanır. Eskiden İngilizce konuşma Türkçe sanılıp bozuk yazılıyordu.

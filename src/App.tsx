@@ -93,7 +93,7 @@ import {
 import { useProjects } from "./lib/useProjects";
 import { canResume, modelIsCached, useTranscriber, type TimeRange } from "./lib/useTranscriber";
 import { useTranslator } from "./lib/useTranslator";
-import { sourceKey } from "./lib/translation";
+import { sourceKey, type Translation } from "./lib/translation";
 import { LANG_NAMES } from "./lib/lang";
 import { DEFAULT_MODEL, modelInfo } from "./models";
 
@@ -689,7 +689,8 @@ export function App() {
     }
     setCanUndo(h.length > 0);
   }, [job?.id, job?.translation, setWords, setTranslation]);
-  const translate = () => {
+  /** `then` runs with the translation once it is made (not if it is cancelled or the job changes). */
+  const translate = (then?: (t: Translation) => void) => {
     if (!job) return;
     const id = job.id;
     const before = job.translation;
@@ -701,7 +702,12 @@ export function App() {
       }
       setTranslation(id, t);
       setShowEn(true);
+      then?.(t);
     });
+  };
+  const startDub = (read: Word[]) => {
+    dubProject.current = current?.id ?? null;
+    dubber.dub(read, fileDuration, dubEnd, voice, dubBySentence(voice.lang, sourceLang));
   };
   const find = useFind(shown, lang);
   const { close: closeFind, show: showFind } = find;
@@ -1412,10 +1418,7 @@ export function App() {
           dub={dubber.state}
           dubStale={dubStale}
           canDub={editable && !!job?.file && dubWords.length > 0}
-          onDub={() => {
-            dubProject.current = current?.id ?? null;
-            dubber.dub(dubWords, fileDuration, dubEnd, voice, dubBySentence(voice.lang, sourceLang));
-          }}
+          onDub={() => startDub(dubWords)}
           onCancelDub={dubber.cancel}
           dubOn={dubOn}
           onDubOn={setDubOn}
@@ -1443,8 +1446,10 @@ export function App() {
           captionLang={lang}
           translationStale={translationStale}
           canTranslate={!!job && job.status !== "running" && words.length > 0}
-          onTranslate={translate}
+          onTranslate={() => translate()}
           onCancelTranslate={translator.cancel}
+          canTranslateDub={editable && !!job?.file && words.length > 0}
+          onTranslateDub={() => translate((t) => startDub(t.words))}
         />
       </div>
 

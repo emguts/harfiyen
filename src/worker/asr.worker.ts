@@ -119,7 +119,7 @@ async function createOnProvider<T>(pick: ProviderPick, create: () => Promise<T>)
 
 async function loadSeda(m: ModelInfo, pick: ProviderPick): Promise<SpeechEngine> {
   const config = await readConfig<ModelConfig>(m);
-  const [encoder, decoder, joiner, lm, lodr, tokens, wasm] = await download(m, config.files);
+  const [encoder, decoder, joiner, lm, lodr, tokens, final, vad, wasm] = await download(m, config.files);
   post({ type: "compiling" });
   setupRuntime(wasm, pick.provider);
   const files = {
@@ -130,6 +130,8 @@ async function loadSeda(m: ModelInfo, pick: ProviderPick): Promise<SpeechEngine>
     lm,
     lodr: lodr.buffer.slice(lodr.byteOffset, lodr.byteOffset + lodr.byteLength) as ArrayBuffer,
     tokens: new TextDecoder().decode(tokens),
+    final,
+    vad,
   };
   return createOnProvider(pick, () => Engine.create(ort, files, pick.provider));
 }
@@ -236,15 +238,19 @@ class Job {
 
   private onGpu: boolean;
 
-  /** offset: seconds of the file before this job's audio (a continued job); times are reported from the file's start. */
+  /**
+   * offset: seconds of the file before this job's audio (a continued job); times are reported from the file's start.
+   * live: the microphone.
+   */
   constructor(
     readonly id: number,
     engine: SpeechEngine,
     options: DecodeOptions,
     readonly offset = 0,
+    live = false,
   ) {
     this.onGpu = engine.provider === "webgpu";
-    this.rec = engine.createRecognizer(options);
+    this.rec = engine.createRecognizer(options, live);
     this.rec.onFeature = (f) => this.bands.push(f);
   }
 
@@ -449,11 +455,11 @@ async function peek(source: LiveSource): Promise<Float32Array | null> {
   return source.hasChunk() ? source.next() : null;
 }
 
-async function runJob(jobId: number, options: DecodeOptions, feed: (job: Job) => Promise<void>, startAt = 0) {
+async function runJob(jobId: number, options: DecodeOptions, feed: (job: Job) => Promise<void>, startAt = 0, live = false) {
   let job: Job | null = null;
   try {
     const engine = await getEngine();
-    job = new Job(jobId, engine, options, startAt);
+    job = new Job(jobId, engine, options, startAt, live);
     await feed(job);
     if (job.isCancelled) {
       post({ type: "cancelled", jobId });
@@ -495,7 +501,9 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
       const source = new LiveSource();
       live.set(m.jobId, source);
       queue = queue.then(() =>
-        runJob(m.jobId, m.options, (job) => transcribeLive(job, source, m.sampleRate)).finally(() => live.delete(m.jobId)),
+        runJob(m.jobId, m.options, (job) => transcribeLive(job, source, m.sampleRate), 0, true).finally(() =>
+          live.delete(m.jobId),
+        ),
       );
       break;
     }

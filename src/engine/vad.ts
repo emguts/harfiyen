@@ -1,9 +1,11 @@
-// Silero VAD v5 (MIT, 2.3 MB): speech probability per 32 ms of 16 kHz audio.
-// Whisper invents text over silence ("Altyazı M.K.") and turbo's own
+// Silero VAD (MIT): speech probability per 32 ms of 16 kHz audio. v5 and v6
+// take the same inputs.
+// Whisper (v5) invents text over silence ("Altyazı M.K.") and turbo's own
 // no-speech score does not catch it, so words outside speech are dropped.
+// seda-v0.2 (v6) ends a segment at a short pause after speech.
 
 import type * as OrtWeb from "onnxruntime-web";
-import type { Ort } from "../engine/models";
+import type { Ort } from "./models";
 
 const FRAME = 512;
 const CONTEXT = 64;
@@ -101,6 +103,26 @@ export class SileroVad {
       start: Math.max(start, first * VAD_FRAME_SEC - pad),
       end: Math.min(end, (last + 1) * VAD_FRAME_SEC + pad),
     };
+  }
+
+  /** Seconds of speech between the two times. */
+  speechSeconds(start: number, end: number): number {
+    const a = Math.max(0, Math.floor(start / VAD_FRAME_SEC));
+    const b = Math.min(this.speech.length, Math.ceil(end / VAD_FRAME_SEC));
+    let n = 0;
+    for (let k = a; k < b; k++) n += this.speech[k];
+    return n * VAD_FRAME_SEC;
+  }
+
+  /** The non-speech run around time `t`, as far as the audio is classified; null in speech. */
+  silenceAround(t: number): { start: number; end: number } | null {
+    const k = Math.floor(t / VAD_FRAME_SEC);
+    if (k < 0 || k >= this.speech.length || this.speech[k]) return null;
+    let a = k;
+    let b = k + 1;
+    while (a > 0 && !this.speech[a - 1]) a--;
+    while (b < this.speech.length && !this.speech[b]) b++;
+    return { start: a * VAD_FRAME_SEC, end: b * VAD_FRAME_SEC };
   }
 
   /** True if there is speech between the two times, widened by `pad` seconds. */
