@@ -13,9 +13,8 @@ import {
 } from "../engine";
 import type { SpeechEngine, SpeechStream } from "../engine/stream";
 import { modelFileUrl, modelInfo, packFileUrl, PUNCT_PACK, type ModelId, type ModelInfo } from "../models";
-import { Punctuator, type PunctConfig } from "../punct/punctuator";
-import type { SpmVocab } from "../punct/spm";
-import { finishTurkish } from "../punct/turkish";
+import { Formatter, type FormatterConfig } from "../punct/formatter";
+import type { WordPieceVocab } from "../punct/wordpiece";
 import { fetchAll } from "./modelStore";
 import { BandTracker } from "../render/aura";
 import { WhisperEngine, type WhisperConfig } from "../whisper";
@@ -197,22 +196,22 @@ function getEngine() {
   return enginePromise;
 }
 
-let punctPromise: Promise<Punctuator> | null = null;
+let punctPromise: Promise<Formatter> | null = null;
 
-/** The punctuation model is loaded on first use (≈60 MB, cached like the rest). */
-function getPunctuator(id: number): Promise<Punctuator> {
+/** The formatter is loaded on first use (≈30 MB, cached like the rest). */
+function getPunctuator(id: number): Promise<Formatter> {
   punctPromise ??= (async () => {
     const res = await fetch(packFileUrl(PUNCT_PACK, PUNCT_PACK.manifest), { cache: "no-cache" });
     if (!res.ok) throw new Error("Noktalama modeli bulunamadı. `npm run models` çalıştırılmalı.");
-    const cfg: PunctConfig = await res.json();
+    const cfg: FormatterConfig = await res.json();
     const [model, vocab] = await fetchAll(
       PUNCT_PACK.files.map((f) => ({ url: packFileUrl(PUNCT_PACK, f), size: cfg.files[f] })),
       (done, total) => post({ type: "punct-progress", id, phase: "download", done, total }),
     );
     // Shares the wasm runtime loaded for the recognizer.
     await getEngine();
-    const spm: SpmVocab = JSON.parse(new TextDecoder().decode(vocab));
-    return Punctuator.create(ort, model, spm, cfg);
+    const pieces: WordPieceVocab = JSON.parse(new TextDecoder().decode(vocab));
+    return Formatter.create(ort, model, pieces, cfg);
   })().catch((e) => {
     punctPromise = null;
     throw e;
@@ -223,8 +222,8 @@ function getPunctuator(id: number): Promise<Punctuator> {
 async function punctuate(id: number, words: string[]) {
   try {
     const p = await getPunctuator(id);
-    const marks = await p.run(words, (done, total) => post({ type: "punct-progress", id, phase: "run", done, total }));
-    post({ type: "punctuated", id, words: finishTurkish(marks) });
+    const written = await p.run(words, (done, total) => post({ type: "punct-progress", id, phase: "run", done, total }));
+    post({ type: "punctuated", id, words: written });
   } catch (e) {
     post({ type: "punct-error", id, message: e instanceof Error ? e.message : String(e) });
   }

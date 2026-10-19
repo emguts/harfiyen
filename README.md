@@ -75,10 +75,9 @@ canlı çalışır.
     yapabilir. Yalnızca dosyalarda ve ekran kartında (WebGPU, `shader-f16`) çalışır; sesi 30 saniyelik
     parçalar hâlinde işler. Sessiz bölümlerde metin uydurmaması için ses etkinliği algılayıcı (Silero VAD)
     kullanır.
-- Otomatik noktalama ve büyük harf: döküm bitince nokta, virgül ve soru işareti eklenir; cümle başları
-  ve özel adlar büyük harfle yazılır. Türkçe özel ad ekleri için kesme işareti eklenir ("İstanbul'da",
-  "Van Gölü'nün"); yapım ve çokluk ekleri TDK'ya göre ayrılmaz ("İstanbullu", "Ahmetler").
-  Kelime zamanları korunur; işlem ⌘Z / Ctrl+Z ile geri alınabilir.
+- Otomatik noktalama ve büyük harf: döküm bitince seda-v0.2'nin formatter modeli nokta, virgül ve soru işareti
+  ekler; cümle başlarını, özel adları ve kısaltmaları büyük harfle yazar, özel ad eklerini kesme işaretiyle ayırır
+  ("İstanbul'da", "TBMM'de", "Ahmet Bey'in"). Kelime zamanları korunur; işlem ⌘Z / Ctrl+Z ile geri alınabilir.
 - Sayı yazımı: sayılar **kurala göre** (TDK'ya göre: 1–9 yazıyla, 10 ve üstü rakamla) ya da **hepsi
   rakamla** yazılır, istenirse hiç dokunulmaz. Ekler, sıra sayıları, tarih ve saat de doğru yazılır
   ("Saat 15.30'da 15 kişi geldi").
@@ -214,7 +213,7 @@ npm run dev        # http://localhost:5173
 
 İlk açılışta tarayıcı yaklaşık 190 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
 önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB), Duyu
-seçilirse yaklaşık 85 MB indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 60 MB, İngilizce çeviri yaklaşık 360 MB,
+seçilirse yaklaşık 85 MB indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 30 MB, İngilizce çeviri yaklaşık 360 MB,
 İngilizce seslendirme (Supertonic 3) yaklaşık 203 MB indirilir ve önbelleğe alınır. Modeller **Ayarlar → Modeller**'den önceden indirilebilir ya da silinebilir. Ses ve metin
 işlenmek için sunucuya gönderilmez.
 
@@ -268,7 +267,7 @@ Apple Silicon (Metal), Chrome, dil modeliyle beam search:
 | Yazıya döküm            | gerçek zamanın ~12 katı (encoder ~38 ms / 0,64 sn'lik parça)        |
 | Videoya altyazı yazma   | 640×360 videoda ~70 kare/sn; sesten 1080p video ~3 kat gerçek zaman |
 | İlk açılış              | ~190 MB indirme, sonrası önbellekten                                |
-| İlk noktalama kullanımı | ek ~60 MB indirme, sonrası önbellekten                              |
+| İlk noktalama kullanımı | ek ~30 MB indirme, sonrası önbellekten                              |
 
 Ölçümler kısa test kayıtlarıyla yapıldı; uzun ve yüksek çözünürlüklü dosyalarda farklı olabilir.
 
@@ -294,7 +293,7 @@ kurulabilir.
 ```bash
 npm run typecheck  # TypeScript kontrolü
 npm run test:whisper -- kayit.wav   # Whisper motorunu Node'da dener (16 bit WAV)
-npm run test:turkish                # Türkçe yazım kurallarını dener (model gerekmez)
+npm run test:formatter              # noktalamayı sedalib'in çıktısıyla karşılaştırır (model gerekir)
 npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
@@ -341,7 +340,7 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [ ] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
       tüm altyazıya toplu zaman kaydırma.
 - [x] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
-- [x] **Noktalama için Türkçe testleri:** özel ad ekleri, birleşik adlar, soru cümleleri ve tekrar uygulama;
+- [x] **Noktalama için Türkçe testleri:** sedalib ile birebir karşılaştırma ve tekrar uygulama;
       Vikipedi metniyle kesme işareti, büyük harf ve noktalama ölçümü.
 - [x] **Sayıları rakama çevirme seçeneği:** "bin dokuz yüz yirmi üç" → "1923";
       kurala göre, hepsi rakamla ya da dokunma; tarih ve saat her zaman rakamla.
@@ -363,7 +362,9 @@ Harfiyen [MIT](LICENSE) lisanslıdır; dilediğin gibi kullanabilir, değiştire
 
 Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphaneler kendi lisanslarıyla gelir:
 
-- Konuşma tanıma modeli [atasoglu/seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2): CC BY-SA 4.0.
+- Konuşma tanıma modeli [atasoglu/seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2): CC BY-SA 4.0. Noktalama
+  ondaki formatter ile yapılır (CC BY-SA 4.0; [ytu-ce-cosmos/turkish-small-bert-uncased](https://huggingface.co/ytu-ce-cosmos/turkish-small-bert-uncased)
+  üzerine, MIT); çalıştırma adımları [sedalib](https://github.com/atasoglu/seda)'den (Apache-2.0) uyarlandı.
 - [KaanAydinli/Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small): Apache-2.0.
 - [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);

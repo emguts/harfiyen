@@ -319,7 +319,7 @@ export function Inspector({
                 <Hint>
                   Döküm bitince nokta, virgül ve soru işareti eklenir; cümle
                   başları ve özel adlar büyük harfle yazılır ("İstanbul'da"). ⌘Z
-                  ile geri alınır. İlk kullanımda yaklaşık 60 MB model
+                  ile geri alınır. İlk kullanımda yaklaşık 30 MB model
                   indirilir.
                 </Hint>
                 {/* Not on a Whisper transcript: it would replace Whisper's own punctuation with a weaker one. */}

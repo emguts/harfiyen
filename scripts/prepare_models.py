@@ -20,11 +20,11 @@ Outputs go to public/models/seda-v0.2/:
   model.json           model hyper-parameters read from the ONNX metadata,
                        plus file sizes for download progress
 
-the punctuation / true-casing model to public/models/punct/:
+seda-v0.2's formatter to public/models/seda-formatter/:
 
-  punct.int8.onnx      1-800-BAD-CODE/punct_cap_seg_47_language, dynamic int8
-  spm.json             its SentencePiece unigram vocabulary (pieces + scores)
-  punct.json           labels and windowing parameters
+  formatter.int8.onnx  punctuation, casing and apostrophe heads on a Turkish BERT, unchanged (wasm)
+  vocab.json           its WordPiece vocabulary (tokens by id) and special ids
+  model.json           labels and windowing parameters (sedalib's Formatter)
 
 Duyu-small to public/models/duyu-small/:
 
@@ -69,6 +69,8 @@ FILES = {
     # final/decoder.onnx and final/joiner.int8.onnx are the same files as c32's.
     "final/encoder.int8.onnx": "final/encoder.int8.onnx",
     "vad/silero_vad.onnx": "silero_vad.onnx",
+    "formatter/formatter.int8.onnx": "formatter/formatter.int8.onnx",
+    "formatter/tokenizer.json": "formatter/tokenizer.json",
 }
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -422,10 +424,6 @@ def write_config(src: Path) -> None:
     print("model.json:", json.dumps({k: v for k, v in cfg.items() if k not in ("files", "encoderStates")}))
 
 
-PUNCT_REPO = "1-800-BAD-CODE/punct_cap_seg_47_language"
-PUNCT_OUT = ROOT / "public" / "models" / "punct"
-
-
 def spm_vocab(path: Path, normalizer: str) -> dict:
     """A SentencePiece unigram model as src/punct/spm.ts reads it."""
     from sentencepiece import sentencepiece_model_pb2 as pb
@@ -449,50 +447,63 @@ def spm_vocab(path: Path, normalizer: str) -> dict:
     }
 
 
-def prepare_punct(cache: Path) -> None:
-    """Punctuation, true-casing and sentence boundaries (47 languages, incl. Turkish)."""
-    import yaml
-    from onnxruntime.quantization import QuantType, quantize_dynamic
+FORMATTER_OUT = ROOT / "public" / "models" / "seda-formatter"
 
-    files = ["punct_cap_seg_47lang.onnx", "spe_unigram_64k_lowercase_47lang.model", "config.yaml"]
-    for f in files:
-        p = cache / f
-        if not p.exists():
-            p.parent.mkdir(parents=True, exist_ok=True)
-            url = f"https://huggingface.co/{PUNCT_REPO}/resolve/main/{f}"
-            print("download", url)
-            urllib.request.urlretrieve(url, p)
-    PUNCT_OUT.mkdir(parents=True, exist_ok=True)
 
-    out = PUNCT_OUT / "punct.int8.onnx"
-    # Weights (MatMul) and the 64k x 512 embedding table (Gather) to int8,
-    # per channel: 233 -> 59 MB with the same output as fp32 on our Turkish
-    # test sentences (per-tensor scales changed one sentence boundary).
-    quantize_dynamic(
-        str(cache / files[0]),
-        str(out),
-        weight_type=QuantType.QInt8,
-        op_types_to_quantize=["MatMul", "Gather"],
-        per_channel=True,
+def prepare_formatter(src: Path) -> None:
+    """seda-v0.2's text formatter: punctuation, casing and apostrophes, as sedalib.formatter runs it.
+
+    Its tokenizer.json is reduced to the WordPiece vocabulary src/punct/wordpiece.ts reads; the
+    asserts pin the parts of it the TypeScript port implements.
+    """
+    tok = json.loads((src / "formatter/tokenizer.json").read_text())
+    assert tok["normalizer"] == {
+        "type": "BertNormalizer",
+        "clean_text": True,
+        "handle_chinese_chars": True,
+        "strip_accents": None,
+        "lowercase": False,
+    }, tok["normalizer"]
+    assert tok["pre_tokenizer"] == {"type": "BertPreTokenizer"}, tok["pre_tokenizer"]
+    model = tok["model"]
+    assert model["type"] == "WordPiece" and model["continuing_subword_prefix"] == "##"
+    single = [next(iter(t.values()))["id"] for t in tok["post_processor"]["single"]]
+    assert single == ["[CLS]", "A", "[SEP]"], single
+    vocab = model["vocab"]
+    pieces = [""] * len(vocab)
+    for piece, i in vocab.items():
+        pieces[i] = piece
+    assert all(pieces), "vocabulary ids have gaps"
+
+    FORMATTER_OUT.mkdir(parents=True, exist_ok=True)
+    shutil.copy(src / "formatter/formatter.int8.onnx", FORMATTER_OUT / "formatter.int8.onnx")
+    (FORMATTER_OUT / "vocab.json").write_text(
+        json.dumps(
+            {
+                "pieces": pieces,
+                "unkId": vocab[model["unk_token"]],
+                "clsId": vocab["[CLS]"],
+                "sepId": vocab["[SEP]"],
+                "maxInputChars": model["max_input_chars_per_word"],
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
     )
-
-    spm = spm_vocab(cache / files[1], "identity")
-    (PUNCT_OUT / "spm.json").write_text(json.dumps(spm, ensure_ascii=False, separators=(",", ":")))
-
-    cfg = yaml.safe_load((cache / files[2]).read_text())
-    punct = {
-        "maxLength": cfg["max_length"],
-        "overlap": 16,
-        "preLabels": cfg["pre_labels"],
-        "postLabels": cfg["post_labels"],
-        "nullToken": cfg.get("null_token", "<NULL>"),
-        "files": {f: (PUNCT_OUT / f).stat().st_size for f in ["punct.int8.onnx", "spm.json"]},
+    files = ["formatter.int8.onnx", "vocab.json"]
+    cfg = {
+        # The heads' labels, in the model's output order (sedalib.formatter).
+        "punct": ["", ",", ".", "?", "!", ":", ";"],
+        "case": ["lower", "title", "upper"],
+        # Trained on windows of 12-48 words; longer inputs are cut at maxTokens.
+        "windowWords": 48,
+        "maxTokens": 128,
+        "files": {f: (FORMATTER_OUT / f).stat().st_size for f in files},
     }
-    (PUNCT_OUT / "punct.json").write_text(json.dumps(punct, ensure_ascii=False, indent=2))
-    print(f"punct: {out.stat().st_size / 1e6:.1f} MB model, {len(spm['pieces'])} pieces")
+    (FORMATTER_OUT / "model.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2))
+    print(f"formatter: {sum(cfg['files'].values()) / 1e6:.0f} MB")
 
 
-WHISPER_REPO = "onnx-community/whisper-large-v3-turbo_timestamped"
 WHISPER_OUT = ROOT / "public" / "models" / "whisper-large-v3-turbo"
 # Two choices in the app: fp16 encoder with q4f16 decoder ("Whisper Turbo"),
 # and q4f16 for both ("Whisper Turbo Hafif"); they share the decoder. The *_timestamped export also
@@ -837,6 +848,7 @@ def main() -> None:
     ap.add_argument("--ahenk-only", action="store_true", help="only download Ahenk Cep")
     ap.add_argument("--duyu-only", action="store_true", help="only (re)build Duyu-small")
     ap.add_argument("--supertonic-only", action="store_true", help="only (re)build Supertonic 3")
+    ap.add_argument("--formatter-only", action="store_true", help="only (re)build seda-v0.2's formatter")
     args = ap.parse_args()
     duyu_cache = args.src.parent / "duyu-small"
     supertonic_cache = args.src.parent / "supertonic-3"
@@ -861,6 +873,11 @@ def main() -> None:
     if args.supertonic_only:
         prepare_supertonic(supertonic_cache)
         return
+    if args.formatter_only:
+        args.src.mkdir(parents=True, exist_ok=True)
+        download(args.src)
+        prepare_formatter(args.src)
+        return
     args.src.mkdir(parents=True, exist_ok=True)
     download(args.src)
     OUT.mkdir(parents=True, exist_ok=True)
@@ -874,7 +891,7 @@ def main() -> None:
     shutil.copy(args.src / "lm/rnnlm.int8.onnx", OUT / "rnnlm.int8.onnx")
     convert_fst(args.src / "lm/2gram.fst", OUT / "lodr.bin")
     write_config(args.src)
-    prepare_punct(args.src.parent / "punct_cap_seg_47_language")
+    prepare_formatter(args.src)
     prepare_whisper()
     prepare_duyu(duyu_cache)
     prepare_ema()

@@ -15,6 +15,9 @@ Yeni sürümler en üstte.
 - **Duraklamada kesinleşen cümleler:** Seda cümle sonlarını 1,2 saniyelik sessizlik kuralı yerine ses etkinliği
   algılayıcıyla (Silero VAD) bulur; canlı kayıtta kısa bir duraklamada metin kesinleşir. Uzun konuşmalar
   duraklamalarda bölünür.
+- **Daha iyi noktalama:** Seda'nın dökümüne noktalama, büyük harf ve kesme işaretini seda-v0.2 ile gelen formatter
+  modeli ekler. Cümle sonları, özel adlar ve kesme işaretleri çok daha isabetli ("TBMM'de", "Ahmet Bey'in"); model
+  yaklaşık 30 MB, ilk kullanımda iner. Eski noktalama modeli dosyaları **Ayarlar**'dan silinebilir.
 - **Çevir ve seslendir:** Çeviri gereken seslendirmede iki buton yerine tek buton var; önce çevirir, sonra okur.
   Çeviri modelinin indirilmesi, çeviri ve seslendirme aynı yerde yüzde ve ilerleme çubuğuyla görünür, **Durdur** ile
   durdurulabilir.

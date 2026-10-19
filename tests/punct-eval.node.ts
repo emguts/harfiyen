@@ -4,27 +4,28 @@
 //
 // The text (tests/data/punct-eval.tr.json, from scripts/make_punct_eval.py)
 // is stripped to what speech recognition gives (plainWord), punctuated again
-// with the model and finishTurkish, and compared word by word. Prints scores,
-// not pass/fail: run it before and after a change to the rules. --all lists
-// every mistake instead of the first few of each kind.
+// with the formatter, and compared word by word. Prints scores, not
+// pass/fail: run it before and after a change. --all lists every mistake
+// instead of the first few of each kind.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ort from "onnxruntime-node";
 import type { Ort } from "../src/engine/models";
-import { Punctuator, type PunctConfig } from "../src/punct/punctuator";
-import type { SpmVocab } from "../src/punct/spm";
-import { finishTurkish, plainWord } from "../src/punct/turkish";
+import { Formatter, type FormatterConfig } from "../src/punct/formatter";
+import { plainWord } from "../src/punct/turkish";
+import type { WordPieceVocab } from "../src/punct/wordpiece";
 
 const args = process.argv.slice(2);
 const showAll = args.includes("--all");
 const dataPath = args.find((a) => !a.startsWith("--")) ?? join(import.meta.dirname, "data", "punct-eval.tr.json");
 const data: { articles: { title: string; text: string }[] } = JSON.parse(readFileSync(dataPath, "utf8"));
 
-const dir = join(import.meta.dirname, "..", "public", "models", "punct");
-const vocab: SpmVocab = JSON.parse(readFileSync(join(dir, "spm.json"), "utf8"));
-const cfg: PunctConfig = JSON.parse(readFileSync(join(dir, "punct.json"), "utf8"));
-const punct = await Punctuator.create(ort as unknown as Ort, new Uint8Array(readFileSync(join(dir, "punct.int8.onnx"))), vocab, cfg, "cpu");
+const dir = join(import.meta.dirname, "..", "public", "models", "seda-formatter");
+const vocab: WordPieceVocab = JSON.parse(readFileSync(join(dir, "vocab.json"), "utf8"));
+const cfg: FormatterConfig = JSON.parse(readFileSync(join(dir, "model.json"), "utf8"));
+const model = new Uint8Array(readFileSync(join(dir, "formatter.int8.onnx")));
+const formatter = await Formatter.create(ort as unknown as Ort, model, vocab, cfg, "cpu");
 
 /** Precision / recall counter for one yes-no property of a word. */
 class Score {
@@ -62,7 +63,7 @@ const question = new Score();
 for (const article of data.articles) {
   const ref = article.text.split(/\s+/).filter((w) => plainWord(w));
   const input = ref.map(plainWord);
-  const ours = finishTurkish(await punct.run(input));
+  const ours = await formatter.run(input);
 
   ref.forEach((r, i) => {
     const o = ours[i];
