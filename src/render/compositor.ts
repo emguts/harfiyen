@@ -1,4 +1,5 @@
 import type { CaptionImage } from "../captions/renderer";
+import type { Placement, Rect } from "../lib/crop";
 import { AURA_SHADER, auraUniforms, type AuraFrame } from "./aura";
 import { GlassBlur } from "./glass";
 
@@ -10,7 +11,9 @@ import { GlassBlur } from "./glass";
 // WebGPU path: the picture is imported as an external texture (zero-copy on
 // most platforms) and drawn full screen; the caption image is uploaded only
 // when its pixels change and blended on top, with placement and pop-in scale
-// as a uniform. With a glass caption the frame is blurred under the caption
+// as a uniform. A placement (crop.ts) says which part of the picture goes
+// where on the frame: a slice that fills it, or the whole picture fitted in
+// over black or over a blurred copy of itself. With a glass caption the frame is blurred under the caption
 // (glass.ts) before the text goes on. A 2D-canvas path covers browsers
 // without WebGPU.
 
@@ -22,6 +25,8 @@ export interface Compositor {
   readonly canvas: AnyCanvas;
   /** Set the output size (the picture is stretched to it). */
   resize(width: number, height: number): void;
+  /** Where video pictures go on the frame; null fills the frame with all of the picture. */
+  setPlacement(placement: Placement | null): void;
   /** Draw a picture (black when null) and an optional caption. */
   render(picture: Picture, caption: CaptionImage | null): void;
   destroy(): void;
@@ -44,9 +49,19 @@ struct VsOut {
 
 @group(0) @binding(0) var samp: sampler;
 @group(0) @binding(1) var video: texture_external;
+// The part of the picture shown: (x, y, width, height) in texture coordinates.
+// src (x, y, width, height) of the picture, in texture coordinates, is drawn
+// into dst of the frame; the frame outside dst is left as it was.
+struct Place { src: vec4f, dst: vec4f };
+@group(0) @binding(4) var<uniform> place: Place;
 
 @fragment fn fs_video(in: VsOut) -> @location(0) vec4f {
-  return vec4f(textureSampleBaseClampToEdge(video, samp, in.uv).rgb, 1);
+  let t = (in.uv - place.dst.xy) / place.dst.zw;
+  let c = textureSampleBaseClampToEdge(video, samp, place.src.xy + clamp(t, vec2f(0), vec2f(1)) * place.src.zw);
+  if (any(t < vec2f(0)) || any(t > vec2f(1))) {
+    discard;
+  }
+  return vec4f(c.rgb, 1);
 }
 
 // Subtitle quad; rect = (x0, y0, x1, y1) in clip space.
@@ -102,6 +117,10 @@ class GpuCompositor implements Compositor {
   private overlayPipeline: GPURenderPipeline;
   private sampler: GPUSampler;
   private rectBuffer: GPUBuffer;
+  private placeBuffer: GPUBuffer;
+  /** The backdrop's placement: the cover part of the picture over the whole frame. */
+  private coverBuffer: GPUBuffer;
+  private backdrop: Placement["backdrop"] = null;
   private overlay: { key: string; texture: GPUTexture; bind: GPUBindGroup } | null = null;
   private auraPipeline: GPURenderPipeline;
   private auraBuffer: GPUBuffer;
@@ -146,6 +165,9 @@ class GpuCompositor implements Compositor {
     });
     this.sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
     this.rectBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.placeBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.coverBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.setPlacement(null);
 
     const auraModule = device.createShaderModule({ code: AURA_SHADER });
     this.auraPipeline = device.createRenderPipeline({
@@ -163,6 +185,14 @@ class GpuCompositor implements Compositor {
   resize(width: number, height: number) {
     if (this.canvas.width !== width) this.canvas.width = width;
     if (this.canvas.height !== height) this.canvas.height = height;
+  }
+
+  setPlacement(p: Placement | null) {
+    const whole: Rect = { x: 0, y: 0, w: 1, h: 1 };
+    const rects = (src: Rect, dst: Rect) => new Float32Array([src.x, src.y, src.w, src.h, dst.x, dst.y, dst.w, dst.h]);
+    this.device.queue.writeBuffer(this.placeBuffer, 0, rects(p?.src ?? whole, p?.dst ?? whole));
+    this.device.queue.writeBuffer(this.coverBuffer, 0, rects(p?.cover ?? whole, whole));
+    this.backdrop = p?.backdrop ?? null;
   }
 
   render(picture: Picture, caption: CaptionImage | null) {
@@ -189,17 +219,26 @@ class GpuCompositor implements Compositor {
         external = null;
       }
       if (external) {
-        pass.setPipeline(this.videoPipeline);
-        pass.setBindGroup(
-          0,
+        const bind = (buffer: GPUBuffer) =>
           d.createBindGroup({
             layout: this.videoPipeline.getBindGroupLayout(0),
             entries: [
               { binding: 0, resource: this.sampler },
               { binding: 1, resource: external },
+              { binding: 4, resource: { buffer } },
             ],
-          }),
-        );
+          });
+        pass.setPipeline(this.videoPipeline);
+        if (this.backdrop === "blur") {
+          // The picture over the whole frame, blurred, then the fitted picture on top.
+          pass.setBindGroup(0, bind(this.coverBuffer));
+          pass.draw(3);
+          pass.end();
+          (this.glass ??= new GlassBlur(d, this.format)).backdrop(enc, view, this.canvas.width, this.canvas.height);
+          pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
+          pass.setPipeline(this.videoPipeline);
+        }
+        pass.setBindGroup(0, bind(this.placeBuffer));
         pass.draw(3);
       }
     }
@@ -281,6 +320,8 @@ class GpuCompositor implements Compositor {
   destroy() {
     this.overlay?.texture.destroy();
     this.rectBuffer.destroy();
+    this.placeBuffer.destroy();
+    this.coverBuffer.destroy();
     this.auraBuffer.destroy();
     this.glass?.destroy();
     this.ctx.unconfigure();
@@ -291,6 +332,7 @@ class GpuCompositor implements Compositor {
 class CanvasCompositor implements Compositor {
   readonly kind = "2d" as const;
   private g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  private placement: Placement | null = null;
 
   constructor(readonly canvas: AnyCanvas) {
     this.g = canvas.getContext("2d") as CanvasRenderingContext2D;
@@ -301,12 +343,33 @@ class CanvasCompositor implements Compositor {
     if (this.canvas.height !== height) this.canvas.height = height;
   }
 
+  setPlacement(placement: Placement | null) {
+    this.placement = placement;
+  }
+
+  /** The picture laid out on the canvas: its backdrop, then its placement. */
+  private drawPicture(picture: VideoFrame | HTMLVideoElement) {
+    const g = this.g;
+    const { width: W, height: H } = this.canvas;
+    const p = this.placement;
+    if (!p) return g.drawImage(picture, 0, 0, W, H);
+    const pw = "videoWidth" in picture ? picture.videoWidth : picture.displayWidth;
+    const ph = "videoHeight" in picture ? picture.videoHeight : picture.displayHeight;
+    const draw = (s: Rect, d: Rect) => g.drawImage(picture, s.x * pw, s.y * ph, s.w * pw, s.h * ph, d.x * W, d.y * H, d.w * W, d.h * H);
+    if (p.backdrop === "blur" && "filter" in g) {
+      g.filter = `blur(${Math.round(Math.min(W, H) * 0.04)}px) brightness(0.7)`;
+      draw(p.cover, { x: 0, y: 0, w: 1, h: 1 });
+      g.filter = "none";
+    }
+    draw(p.src, p.dst);
+  }
+
   render(picture: Picture, c: CaptionImage | null) {
     const { width: W, height: H } = this.canvas;
     this.g.fillStyle = "#000";
     this.g.fillRect(0, 0, W, H);
     if (isAura(picture)) this.drawAura(picture);
-    else if (pictureReady(picture)) this.g.drawImage(picture, 0, 0, W, H);
+    else if (pictureReady(picture)) this.drawPicture(picture);
     if (c) {
       const sx = W / c.frameW;
       const sy = H / c.frameH;
@@ -334,7 +397,7 @@ class CanvasCompositor implements Compositor {
     const blurs = "filter" in g && pictureReady(picture);
     if (blurs) {
       g.filter = `blur(${Math.round(Math.min(W, H) * 0.03)}px)`;
-      g.drawImage(picture, 0, 0, W, H);
+      this.drawPicture(picture);
       g.filter = "none";
     }
     // Without the blur the panel is a plain dark box; a bit darker so text still reads.

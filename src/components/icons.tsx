@@ -18,6 +18,12 @@ const Svg = ({ size = 16, children }: P & { children: React.ReactNode }) => (
   </svg>
 );
 
+export const IconCrop = (p: P) => (
+  <Svg {...p}>
+    <path d="M4.5 1.5v10h10M1.5 4.5h10v10" />
+  </Svg>
+);
+
 export const IconPlay = (p: P) => (
   <Svg {...p}>
     <path d="M5 3.5v9l7.5-4.5z" fill="currentColor" />

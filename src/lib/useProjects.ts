@@ -18,6 +18,7 @@ import {
   type Project,
   type StoredMedia,
 } from "./projectStore";
+import type { Crop } from "./crop";
 import type { Job } from "./useTranscriber";
 
 const LIVE_NAME = "Canlı kayıt";
@@ -27,7 +28,7 @@ const saveable = (j: Job | null): j is Job =>
   !!j && (j.status === "done" || j.status === "cancelled") && (j.words.length > 0 || !!j.file);
 
 /** Saves the current job as a project as it changes, and opens saved ones. */
-export function useProjects(job: Job | null, settings: CaptionSettings) {
+export function useProjects(job: Job | null, settings: CaptionSettings, crop: Crop | null) {
   const [projects, setProjects] = useState<Project[]>([]);
   /** The project behind each job. */
   const byJob = useRef(new Map<number, Project>());
@@ -108,6 +109,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
       loudness: job.loudness,
       translation: job.translation,
       settings,
+      crop: crop ?? undefined,
     });
     const project = p;
     const file = job.file;
@@ -121,7 +123,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings) {
         .catch(() => {});
     }, 400);
     return () => clearTimeout(timer);
-  }, [job, settings, writeMedia, remember]);
+  }, [job, settings, crop, writeMedia, remember]);
 
   /** A picked or dropped file came with a handle: keep it instead of a copy. */
   const noteHandle = useCallback((file: File, handle: FileSystemFileHandle) => {

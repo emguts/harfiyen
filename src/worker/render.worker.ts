@@ -3,7 +3,8 @@
 //
 // Video files: mediabunny decodes and re-encodes (WebCodecs, hardware H.264
 // or HEVC where available, at the bitrate chosen in the export menu), the WebGPU compositor draws every frame with its caption,
-// and the audio track is copied over untouched.
+// and the audio track is copied over untouched. A slice that fills the frame (upright, for Reels, say) is cut
+// out while decoding; a picture fitted into the frame is scaled down while decoding and placed by the compositor.
 //
 // Audio files and recordings: the picture is the audio-reactive aura (the
 // same one the player shows), rendered at 1080p30; the audio is re-encoded
@@ -37,6 +38,7 @@ import { CaptionRenderer } from "../captions/renderer";
 import type { CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
 import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
+import type { Placement } from "../lib/crop";
 import { createCompositor } from "../render/compositor";
 import { DUB_RATE, dubSlice, type DubClip } from "../tts/dub";
 import { clearRenders, openSink, type Sink } from "./sink";
@@ -86,8 +88,12 @@ export interface Encode {
   codec: OutputCodec;
   bitrate: number | null;
   encoder: Encoder;
-  /** Picture size of the output; null keeps the file's own (1080p for auras). */
+  /** Picture size of the output; null keeps the file's own, or the crop's (1080p for auras). */
   size: { width: number; height: number } | null;
+  /** Part of the video picture to keep, in displayed pixels; null keeps all of it. Ignored for audio files. */
+  crop: { left: number; top: number; width: number; height: number } | null;
+  /** The whole picture fitted into a frame of another shape (`size` is the frame); null fills the frame. */
+  fit: Placement | null;
 }
 
 // The browser's own choice when the hardware encoder is not there: the processor's.
@@ -139,12 +145,18 @@ async function burn(
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
-  // so the canvas uses the displayed size, or the chosen smaller one
-  // (mediabunny resizes the frames before process). Encoders want even dimensions.
-  const width = encode.size?.width ?? track.displayWidth & ~1;
-  const height = encode.size?.height ?? track.displayHeight & ~1;
+  // so the canvas uses the displayed size (or the crop's), or the chosen smaller one
+  // (mediabunny rotates, crops and resizes the frames before process). Encoders want even dimensions.
+  const { crop, fit } = encode;
+  const width = encode.size?.width ?? crop?.width ?? track.displayWidth & ~1;
+  const height = encode.size?.height ?? crop?.height ?? track.displayHeight & ~1;
+  // A fitted picture is decoded at the size it takes up in the frame.
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  const pictureW = fit ? even(fit.dst.w * width) : width;
+  const pictureH = fit ? even(fit.dst.h * height) : height;
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas, false);
+  compositor.setPlacement(fit);
   const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
@@ -158,9 +170,10 @@ async function burn(
       bitrate: quality(encode),
       forceTranscode: true,
       allowRotationMetadata: false,
+      ...(crop && { crop }),
       hardwareAcceleration: acceleration(encode),
-      width,
-      height,
+      width: pictureW,
+      height: pictureH,
       fit: "fill",
       processedWidth: width,
       processedHeight: height,

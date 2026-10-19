@@ -72,8 +72,8 @@ const OFFSET = 1.5;
   return sum / 12;
 }
 
-// The panel; rect = (x0, y0, x1, y1) in clip space, size and radius in canvas pixels.
-struct Panel { rect: vec4f, size: vec2f, canvas: vec2f, radius: f32 };
+// The panel; rect = (x0, y0, x1, y1) in clip space, size and radius in canvas pixels; rim 1 draws its light edge.
+struct Panel { rect: vec4f, size: vec2f, canvas: vec2f, radius: f32, rim: f32 };
 @group(0) @binding(3) var<uniform> panel: Panel;
 
 @vertex fn vs_panel(@builtin(vertex_index) i: u32) -> VsOut {
@@ -103,7 +103,7 @@ fn hash(p: vec2f) -> f32 {
   c = mix(c, vec3f(0), 0.3);
   // Faint light rim.
   let rim = max(1.0, panel.radius * 0.05);
-  c += vec3f(0.12) * (1 - smoothstep(0, rim, -d));
+  c += vec3f(0.12) * (1 - smoothstep(0, rim, -d)) * panel.rim;
   // Dither: a smooth blur bands in 8-bit video.
   c += (hash(in.pos.xy) - 0.5) / 255;
   return vec4f(clamp(c, vec3f(0), vec3f(1)) * a, a); // premultiplied alpha
@@ -120,6 +120,8 @@ export class GlassBlur {
   private panelPipeline: GPURenderPipeline;
   private baseBuffer: GPUBuffer;
   private panelBuffer: GPUBuffer;
+  /** Its own uniforms: a frame can have a backdrop and a glass caption, written before either draws. */
+  private backdropBuffer: GPUBuffer;
   /** Per canvas size: the pyramid and the bind groups that read it. */
   private sized: {
     key: string;
@@ -127,6 +129,7 @@ export class GlassBlur {
     down: GPUBindGroup[];
     up: GPUBindGroup[];
     panel: GPUBindGroup;
+    backdrop: GPUBindGroup;
   } | null = null;
 
   constructor(
@@ -163,6 +166,12 @@ export class GlassBlur {
     this.sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
     this.baseBuffer = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.panelBuffer = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.backdropBuffer = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  }
+
+  /** Blurs the whole of `frame` (W x H) in place, without a rim: the backdrop behind a fitted picture. */
+  backdrop(enc: GPUCommandEncoder, frame: GPUTextureView, W: number, H: number) {
+    this.draw(enc, frame, W, H, new Float32Array([-1, -1, 1, 1]), W, H, 0, true);
   }
 
   /**
@@ -178,6 +187,7 @@ export class GlassBlur {
     w: number,
     h: number,
     radius: number,
+    isBackdrop = false,
   ) {
     const d = this.device;
     const s = this.resize(W, H);
@@ -205,8 +215,9 @@ export class GlassBlur {
     for (let i = 1; i <= LEVELS; i++) pass(views[i], this.downPipeline, s.down[i - 1], 3);
     for (let i = LEVELS - 1; i >= 0; i--) pass(views[i], this.upPipeline, s.up[i], 3);
 
-    d.queue.writeBuffer(this.panelBuffer, 0, new Float32Array([...rect, w, h, W, H, radius, 0, 0, 0]));
-    pass(frame, this.panelPipeline, s.panel, 6, true);
+    const uniforms = new Float32Array([...rect, w, h, W, H, radius, isBackdrop ? 0 : 1, 0, 0]);
+    d.queue.writeBuffer(isBackdrop ? this.backdropBuffer : this.panelBuffer, 0, uniforms);
+    pass(frame, this.panelPipeline, isBackdrop ? s.backdrop : s.panel, 6, true);
   }
 
   private resize(W: number, H: number) {
@@ -239,21 +250,24 @@ export class GlassBlur {
     // down[i] reads level i (into i + 1); up[i] reads level i + 1 (into i).
     const down = levels.slice(0, LEVELS).map((t) => read(this.downPipeline, t));
     const up = levels.slice(1).map((t) => read(this.upPipeline, t));
-    const panel = d.createBindGroup({
-      layout: this.panelPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: this.sampler },
-        { binding: 1, resource: levels[0].createView() },
-        { binding: 3, resource: { buffer: this.panelBuffer } },
-      ],
-    });
+    const panelWith = (buffer: GPUBuffer) =>
+      d.createBindGroup({
+        layout: this.panelPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: this.sampler },
+          { binding: 1, resource: levels[0].createView() },
+          { binding: 3, resource: { buffer } },
+        ],
+      });
+    const panel = panelWith(this.panelBuffer);
+    const backdrop = panelWith(this.backdropBuffer);
 
     // Each first-level texel averages the frame pixels under it.
     const [bw, bh] = sizes[0];
     const taps = Math.max(1, Math.ceil(W / bw / 2));
     d.queue.writeBuffer(this.baseBuffer, 0, new Float32Array([1 / bw, 1 / bh, taps, 0]));
 
-    this.sized = { key, levels, down, up, panel };
+    this.sized = { key, levels, down, up, panel, backdrop };
     return this.sized;
   }
 
@@ -261,5 +275,6 @@ export class GlassBlur {
     this.sized?.levels.forEach((t) => t.destroy());
     this.baseBuffer.destroy();
     this.panelBuffer.destroy();
+    this.backdropBuffer.destroy();
   }
 }

@@ -3,11 +3,13 @@ import { loadCaptionFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
 import type { CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
+import { cropFor, dragCrop, framing, type Crop } from "../lib/crop";
 import { clock } from "../lib/format";
 import type { Player } from "../lib/usePlayer";
 import { levelsAt, paletteById, type AuraFrame, type AuraLevels } from "../render/aura";
 import { createCompositor, type Compositor } from "../render/compositor";
-import { IconCollapse, IconExpand, IconPause, IconPlay } from "./icons";
+import { CropOverlay } from "./CropOverlay";
+import { IconCollapse, IconCrop, IconExpand, IconPause, IconPlay } from "./icons";
 import { RecDot } from "./Indicators";
 
 /** The media element only decodes; the picture is drawn on the canvas. */
@@ -35,6 +37,9 @@ export function Viewer({
   notice,
   lang,
   following = false,
+  crop = null,
+  onCrop,
+  cropLocked = false,
 }: {
   /** Raw microphone levels while recording (updated in place). */
   liveLevels?: React.RefObject<AuraLevels | null>;
@@ -55,14 +60,24 @@ export function Viewer({
   lang: string;
   /** The preview follows a running transcription (see useFollow). */
   following?: boolean;
+  /** How the video picture is framed; ignored for audio. */
+  crop?: Crop | null;
+  /** Frame the video from the player (the crop button); missing hides it. */
+  onCrop?: (c: Crop | null) => void;
+  /** An export is running: the framing cannot change. */
+  cropLocked?: boolean;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [compositor, setCompositor] = useState<Compositor | null>(null);
-  const [frame, setFrame] = useState(AUDIO_FRAME);
+  /** The video's own size; the frame drawn is the cropped part of it. */
+  const [picture, setPicture] = useState(AUDIO_FRAME);
   const [fontTick, setFontTick] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [idle, setIdle] = useState(false);
+  /** The framing being edited on the player; null when not cropping. */
+  const [draft, setDraft] = useState<Crop | null>(null);
+  const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
   const { el, isVideo, url } = player;
   const live = !url && liveTime !== null;
   const active = !!url || live;
@@ -99,24 +114,71 @@ export function Viewer({
 
   useEffect(() => {
     if (!el || !isVideo) {
-      setFrame(AUDIO_FRAME);
+      setPicture(AUDIO_FRAME);
       return;
     }
     const v = el as HTMLVideoElement;
-    const update = () => v.videoWidth && setFrame({ w: v.videoWidth, h: v.videoHeight });
+    const update = () => v.videoWidth && setPicture({ w: v.videoWidth, h: v.videoHeight });
     update();
     v.addEventListener("loadedmetadata", update);
     return () => v.removeEventListener("loadedmetadata", update);
   }, [el, isVideo]);
 
+  const hasPicture = isVideo && !live && picture !== AUDIO_FRAME;
+  const canCrop = hasPicture && !!onCrop;
+  const shown = hasPicture ? (draft ?? crop) : null;
+  // While a slice is being placed the whole picture shows, the slice marked over it; a fitted picture shows as it comes out.
+  const placing = !!draft && (draft.fit === "fill" || draft.aspect === "free");
+  const framed = useMemo(
+    () => (shown && !placing ? framing(shown, picture.w, picture.h) : null),
+    [shown, placing, picture],
+  );
+  const view = framed && !framed.none ? framed : null;
+  const placement = view?.placement ?? null;
+  // Captions are laid out on the frame, as in the export.
+  const fw = view ? view.size.width : picture.w;
+  const fh = view ? view.size.height : picture.h;
+  const frame = useMemo(() => ({ w: fw, h: fh }), [fw, fh]);
+
+  useEffect(() => compositor?.setPlacement(placement), [compositor, placement]);
+
+  // Where the canvas shows on the stage (object-contain), for the crop overlay.
+  useEffect(() => {
+    const st = stage.current;
+    if (!st) return;
+    const ro = new ResizeObserver(() => setStageSize({ w: st.clientWidth, h: st.clientHeight }));
+    ro.observe(st);
+    return () => ro.disconnect();
+  }, []);
+  const fitScale = Math.min(stageSize.w / frame.w, stageSize.h / frame.h) || 0;
+  const shownRect = {
+    width: frame.w * fitScale,
+    height: frame.h * fitScale,
+    left: (stageSize.w - frame.w * fitScale) / 2,
+    top: (stageSize.h - frame.h * fitScale) / 2,
+  };
+
+  const startCrop = () => {
+    if (!canCrop || cropLocked) return;
+    setDraft(crop ?? cropFor("9:16", picture.w, picture.h));
+  };
+  const finishCrop = () => {
+    if (!draft) return;
+    onCrop?.(framing(draft, picture.w, picture.h).none ? null : draft);
+    setDraft(null);
+  };
+  // A new file, or an export starting, ends the editing without a change.
+  useEffect(() => setDraft(null), [url, cropLocked]);
+
   const captions = useMemo(
     () =>
-      words.length
+      // No caption while cropping: the frame is still being decided.
+      words.length && !draft
         ? new CaptionRenderer(words, settings, frame.w, frame.h, settings.voiceEmphasis ? loudness : null, lang)
         : null,
     // fontTick: lay out again once the font file has loaded. Loudness only matters with voiceEmphasis.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null, lang],
+    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null, lang, !draft],
   );
 
   // The loop reads these through refs, so new words (every progress update)
@@ -135,6 +197,7 @@ export function Viewer({
     let last = "";
     /** A video frame has been drawn: from then on a seek keeps it up until the new one is decoded. */
     let drawn = false;
+    const cropKey = placement ? JSON.stringify(placement) : "";
     const loop = () => {
       const dpr = window.devicePixelRatio || 1;
       const fit = Math.min(1, (st.clientWidth * dpr) / frame.w, (st.clientHeight * dpr) / frame.h);
@@ -165,7 +228,7 @@ export function Viewer({
       }
       const key = aura
         ? `${w}x${h}|${aura.time}|${aura.palette}|${bandsRef.current.length}|${cap ? `${cap.key}|${cap.scale}` : ""}`
-        : `${w}x${h}|${t}|${el?.readyState}|${cap ? `${cap.key}|${cap.scale}` : ""}`;
+        : `${w}x${h}|${t}|${el?.readyState}|${cropKey}|${cap ? `${cap.key}|${cap.scale}` : ""}`;
       const video = !aura && isVideo && el ? (el as HTMLVideoElement) : null;
       // While scrubbing, the element has no frame (readyState < 2) until the
       // seek lands; drawing then would flash black, so the last frame stays.
@@ -180,7 +243,7 @@ export function Viewer({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [compositor, el, isVideo, frame, live, liveLevels]);
+  }, [compositor, el, isVideo, frame, live, liveLevels, placement]);
 
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === stage.current);
@@ -198,10 +261,24 @@ export function Viewer({
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (!url || t.closest("input, textarea, select, [contenteditable], dialog") || e.metaKey || e.ctrlKey) return;
+      if (draft) {
+        // Cropping: Enter keeps it, Escape drops it, arrows move the slice a pixel (ten with Shift).
+        const step = e.shiftKey ? 10 : 1;
+        const nudge = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+        if (e.key === "Escape") setDraft(null);
+        else if (e.key === "Enter" && !t.closest("button")) finishCrop();
+        else if (nudge && placing)
+          setDraft(dragCrop(draft, "move", nudge[0] / picture.w, nudge[1] / picture.h, picture.w, picture.h));
+        else if (e.key === " " && !t.closest("button")) player.toggle();
+        else return;
+        e.preventDefault();
+        return;
+      }
       if (e.key === " " && !t.closest("button")) player.toggle();
       else if (e.key === "ArrowLeft" && !t.closest("[role=slider]")) player.seek(player.time - 5);
       else if (e.key === "ArrowRight" && !t.closest("[role=slider]")) player.seek(player.time + 5);
       else if (e.key === "f" || e.key === "F") toggleFullscreen();
+      else if ((e.key === "c" || e.key === "C") && canCrop) startCrop();
       else return;
       e.preventDefault();
     };
@@ -266,36 +343,61 @@ export function Viewer({
             onDoubleClick={toggleFullscreen}
             aria-label={player.playing ? "Duraklat" : "Oynat"}
           />
-          <div
-            className={`absolute inset-x-0 bottom-0 flex items-center gap-2.5 bg-linear-to-b from-transparent to-black/60 transition-opacity duration-200 ease-[ease] motion-reduce:transition-none ${hud}`}
-          >
-            <button className={HUD_BTN} onClick={player.toggle} aria-label={player.playing ? "Duraklat" : "Oynat"}>
-              {player.playing ? <IconPause /> : <IconPlay />}
-            </button>
-            <span className="text-[12px] text-white tabular-nums">
-              {clock(player.time)} / {clock(player.duration)}
-            </span>
-            {fullscreen && (
-              <input
-                className="flex-1 accent-cini"
-                type="range"
-                min={0}
-                max={player.duration || 1}
-                step={0.01}
-                value={player.time}
-                onChange={(e) => player.seek(Number(e.target.value))}
-                aria-label="Konum"
-              />
-            )}
-            <button
-              className={`${HUD_BTN} ml-auto`}
-              onClick={toggleFullscreen}
-              aria-label={fullscreen ? "Tam ekrandan çık" : "Tam ekran"}
-              title="Tam ekran (F)"
+          {draft && (
+            <CropOverlay
+              draft={draft}
+              onDraft={setDraft}
+              picture={picture}
+              rect={shownRect}
+              onDone={finishCrop}
+              onCancel={() => setDraft(null)}
+            />
+          )}
+          {!draft && (
+            <div
+              className={`absolute inset-x-0 bottom-0 flex items-center gap-2.5 bg-linear-to-b from-transparent to-black/60 transition-opacity duration-200 ease-[ease] motion-reduce:transition-none ${hud}`}
             >
-              {fullscreen ? <IconCollapse /> : <IconExpand />}
-            </button>
-          </div>
+              <button className={HUD_BTN} onClick={player.toggle} aria-label={player.playing ? "Duraklat" : "Oynat"}>
+                {player.playing ? <IconPause /> : <IconPlay />}
+              </button>
+              <span className="text-[12px] text-white tabular-nums">
+                {clock(player.time)} / {clock(player.duration)}
+              </span>
+              {fullscreen && (
+                <input
+                  className="flex-1 accent-cini"
+                  type="range"
+                  min={0}
+                  max={player.duration || 1}
+                  step={0.01}
+                  value={player.time}
+                  onChange={(e) => player.seek(Number(e.target.value))}
+                  aria-label="Konum"
+                />
+              )}
+              {canCrop && (
+                <button
+                  className={`${HUD_BTN} relative ml-auto disabled:opacity-40`}
+                  onClick={startCrop}
+                  disabled={cropLocked}
+                  aria-label="Kırp"
+                  title={cropLocked ? "Dışa aktarma sürerken kırpılamaz" : "Kırp ve kadrajla (C)"}
+                >
+                  <IconCrop />
+                  {/* The video is framed. */}
+                  {crop && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-cini" aria-hidden />}
+                </button>
+              )}
+              <button
+                className={`${HUD_BTN} ${canCrop ? "" : "ml-auto"}`}
+                onClick={toggleFullscreen}
+                aria-label={fullscreen ? "Tam ekrandan çık" : "Tam ekran"}
+                title="Tam ekran (F)"
+              >
+                {fullscreen ? <IconCollapse /> : <IconExpand />}
+              </button>
+            </div>
+          )}
         </>
       ) : (
         children

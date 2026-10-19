@@ -61,16 +61,16 @@ export interface Resolution {
 
 /** What the export needs to know about the file: picture, length, bitrates and the sizes it can be written at. */
 export interface SourceInfo {
-  /** The picture as rendered: the displayed size of the video, or the aura's 1080p. */
+  /** The picture as rendered: the displayed size of the video (or of its crop), or the aura's 1080p. */
   width: number;
   height: number;
   fps: number;
   duration: number;
   /**
-   * Average video bitrate and codec of the file, when it has a picture, and
+   * Average video bitrate, codec and displayed size of the file, when it has a picture, and
    * whether this browser can decode it (Safari has AV1 only on chips that decode it in hardware).
    */
-  video: { bitrate: number; codec: string | null; decodes: boolean } | null;
+  video: { bitrate: number; codec: string | null; decodes: boolean; width: number; height: number } | null;
   /** Average audio bitrate (copied over for videos). */
   audioBitrate: number;
   /** Largest first. Videos only shrink ("source" and the standard sizes below it); auras come in 720p, 1080p and 4K. */
@@ -79,17 +79,19 @@ export interface SourceInfo {
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
-/** The size with the given short side, same shape. */
-const scaled = (width: number, height: number, short: number) => {
-  const s = short / Math.min(width, height);
-  return { width: even(width * s), height: even(height * s) };
-};
+/** The size with the given short side and shape (width over height). */
+const scaled = (ratio: number, short: number) =>
+  ratio >= 1 ? { width: even(short * ratio), height: short } : { width: short, height: even(short / ratio) };
 
-/** The sizes a file can be written at (without encoders): videos only shrink, auras pick a size. */
-export function resolutionSizes(width: number, height: number, isVideo: boolean) {
+/**
+ * The sizes a file can be written at (without encoders): videos only shrink, auras pick a size.
+ * `ratio` is the exact shape when the picture is a crop, so 9:16 comes out at 1080×1920, not
+ * the 1080×1918 its even-sized pixels would give.
+ */
+export function resolutionSizes(width: number, height: number, isVideo: boolean, ratio = width / height) {
   const standard = (["2160", "1080", "720"] as const).map((value) => ({
     value,
-    ...scaled(width, height, SHORT_SIDES[value]),
+    ...scaled(ratio, SHORT_SIDES[value]),
   }));
   if (!isVideo) return standard;
   return [{ value: "source" as const, width, height }, ...standard.filter((r) => SHORT_SIDES[r.value] < Math.min(width, height))];
@@ -113,9 +115,9 @@ export function videoBitrate(output: VideoOutput, source: SourceInfo): number {
     1000;
   if (output.quality === "source" && source.video) {
     // An HEVC file written as H.264 needs more bits for the same picture, and the other way round;
-    // a smaller picture fewer. The file's bitrate already carries its frame rate.
+    // a smaller (or cropped) picture fewer. The file's bitrate already carries its frame rate.
     const from = EFFICIENCY[source.video.codec ?? "avc"] ?? 1;
-    const shrink = Math.pow(pixels / (source.width * source.height), 0.95);
+    const shrink = Math.pow(pixels / (source.video.width * source.video.height), 0.95);
     const matched = Math.ceil((source.video.bitrate * shrink * efficiency) / from / 1000) * 1000;
     // Not below "low": a screen recording at a few hundred kbps would blur the burnt-in captions.
     return Math.max(atLevel(LEVELS.low), matched);

@@ -59,6 +59,7 @@ import { clock, duration as fmtDuration } from "./lib/format";
 import { PROJECT_EXT, projectTitle, sameMedia } from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { useSourceInfo } from "./lib/useSourceInfo";
+import { framing, type Crop } from "./lib/crop";
 import {
   effectiveOutput,
   loadOutput,
@@ -180,10 +181,18 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
   const [settings, setSettings] = useState<CaptionSettings>(loadSettings);
+  /** The part of the video shown and exported; belongs to the project, unlike the style. */
+  const [crop, setCrop] = useState<Crop | null>(null);
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const burner = useBurner();
   const [videoOutput, setVideoOutput] = useState<VideoOutput>(loadOutput);
+  /** Framed for Reels: 1080×1920 is offered first; the saved size comes back without the frame. */
+  const reels = crop?.aspect === "9:16";
+  useEffect(
+    () => setVideoOutput((o) => ({ ...o, resolution: reels ? "1080" : loadOutput().resolution })),
+    [reels],
+  );
   const player = usePlayer(job?.file ?? null);
   const following = useFollow(player, job);
   const dubber = useDubber();
@@ -215,7 +224,7 @@ export function App() {
     rename,
     importFile,
     exportText,
-  } = useProjects(job, settings);
+  } = useProjects(job, settings, crop);
   /** A saved project opened without its media (not stored, or not found). */
   const needsMedia =
     !!job && !job.file && !job.live && (!!current || !!job.imported);
@@ -256,6 +265,7 @@ export function App() {
             : null,
         );
         setSettings(p.settings);
+        setCrop(p.crop ?? null);
         setMethod(p.method);
         const jobId = load({
           file,
@@ -355,6 +365,7 @@ export function App() {
       setPendingHandle(null);
       setSettings(noEmphasis);
       resetBurn();
+      setCrop(null);
       start(f, optionsFor(method));
     },
     [
@@ -404,6 +415,7 @@ export function App() {
     setPendingHandle(null);
     setSettings(noEmphasis);
     resetBurn();
+    setCrop(null);
     clear();
   };
 
@@ -674,28 +686,42 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, job?.recording, liveWaiting, stopLive, editable, showFind]);
 
-  const sourceInfo = useSourceInfo(job?.file ?? null);
+  const sourceInfo = useSourceInfo(job?.file ?? null, crop);
   // A picture this browser cannot decode (AV1 in Safari without the hardware for it): said up front, not at export.
   const badCodec = undecodable(sourceInfo);
   const changeOutput = (o: VideoOutput) => {
     setVideoOutput(o);
-    saveOutput(o);
+    // A size picked for Reels stays with Reels; other videos keep the saved one.
+    saveOutput(reels ? { ...o, resolution: loadOutput().resolution } : o);
     if (burner.state.status === "done" || burner.state.status === "error")
       burner.reset();
   };
   const burnVideo = () => {
     if (!job?.file) return;
+    // A crop needs the picture's size; the file is read within a moment of opening.
+    if (crop && !sourceInfo) return;
     const out = effectiveOutput(videoOutput, sourceInfo);
     const resolution = sourceInfo && resolutionOf(out, sourceInfo);
+    const picture = sourceInfo?.video;
+    const frame = crop && picture ? framing(crop, picture.width, picture.height) : null;
+    const framed = frame && !frame.none ? frame : null;
     const encode = {
       codec: out.codec,
       bitrate: sourceInfo ? videoBitrate(out, sourceInfo) : null,
       encoder: resolution?.encoders[out.codec] ?? null,
       size: resolution && { width: resolution.width, height: resolution.height },
+      crop: framed?.crop ?? null,
+      fit: framed && !framed.crop ? framed.placement : null,
     };
     // Translated words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
     const loudness = english ? EMPTY_BANDS : job.loudness;
     void burner.burn(job.file, shown, settings, job.bands, loudness, lang, encode, dubbing?.clips ?? null, `${exportName}.altyazili.mp4`);
+  };
+
+  const changeCrop = (c: Crop | null) => {
+    setCrop(c);
+    if (burner.state.status === "done" || burner.state.status === "error")
+      burner.reset();
   };
 
   const changeSettings = (s: CaptionSettings) => {
@@ -754,6 +780,7 @@ export function App() {
     resetBurn();
     if (micBlocked) return;
     setSettings(noEmphasis);
+    setCrop(null);
     try {
       await startLive(optionsFor(method));
     } catch (e) {
@@ -988,6 +1015,9 @@ export function App() {
             settings={settings}
             liveTime={job?.live && !job.file ? job.decoded : null}
             following={following}
+            crop={crop}
+            onCrop={changeCrop}
+            cropLocked={burner.state.status === "running"}
             bands={job?.bands ?? EMPTY_BANDS}
             loudness={(!english && job?.loudness) || EMPTY_BANDS}
             lang={lang}

@@ -9,6 +9,7 @@
 import type { UserFont } from "../captions/fonts";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod, Word } from "../engine";
+import { readCrop, type Crop } from "./crop";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
 import type { Translation } from "./translation";
 
@@ -44,6 +45,8 @@ export interface Project {
   loudness?: Float32Array;
   translation?: Translation;
   settings: CaptionSettings;
+  /** The part of the picture shown and exported; missing shows all of it. */
+  crop?: Crop;
   media: MediaInfo | null;
   storage: MediaStorage;
 }
@@ -243,6 +246,7 @@ export function projectToFile(p: Project): string {
     ...(p.stoppedAt !== undefined && { stoppedAt: p.stoppedAt }),
     media: p.media,
     settings: p.settings,
+    ...(p.crop && { crop: p.crop }),
     words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
     ...(p.translation && {
       translation: {
@@ -302,6 +306,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     loudness: fromBase64(d.loudness),
     translation,
     settings: { ...defaults, ...(d.settings as Partial<CaptionSettings>) },
+    crop: readCrop(d.crop) ?? undefined,
     media: media && typeof media.name === "string" && typeof media.size === "number" ? media : null,
     storage: "none",
   };
