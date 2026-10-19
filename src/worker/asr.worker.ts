@@ -70,10 +70,12 @@ async function pickProvider(choice: ProviderChoice): Promise<ProviderPick> {
  * Threads for the wasm runtime. Fixed once the runtime starts, so a worker
  * picks it from its provider and switching provider means a new worker.
  */
-function wasmThreads(provider: EncoderProvider) {
+function wasmThreads(provider: EncoderProvider, searchOnCpu: boolean) {
   // On the GPU only the small models run here; per-call work is too tiny for
-  // extra threads to pay off. On the CPU the encoder needs them.
-  if (provider === "webgpu" || !self.crossOriginIsolated) return 1;
+  // extra threads to pay off, except in Seda's search (the LM, eight paths in
+  // files), which takes most of the time and runs 2.5x faster with four. On
+  // the CPU the encoder needs them.
+  if (!self.crossOriginIsolated || (provider === "webgpu" && !searchOnCpu)) return 1;
   return Math.max(1, Math.min(4, Math.ceil((navigator.hardwareConcurrency || 2) / 2)));
 }
 
@@ -91,14 +93,17 @@ function download(m: ModelInfo, sizes: Record<string, number>) {
   );
 }
 
-/** Start the wasm runtime. Must happen once, before the first session. */
-function setupRuntime(wasm: Uint8Array, provider: EncoderProvider) {
+/**
+ * Start the wasm runtime. Must happen once, before the first session.
+ * searchOnCpu: the model's search runs here even on the GPU (Seda).
+ */
+function setupRuntime(wasm: Uint8Array, provider: EncoderProvider, searchOnCpu = false) {
   ort.env.wasm.wasmBinary = wasm.buffer as ArrayBuffer;
   // wasm threads load this script. Without it they load the bundle ORT is
   // built into, i.e. this worker in production, and never start. The dev
   // server already serves ORT as its own module.
   if (import.meta.env.PROD) ort.env.wasm.wasmPaths = { mjs: new URL(ortMjsUrl, self.location.href) };
-  ort.env.wasm.numThreads = wasmThreads(provider);
+  ort.env.wasm.numThreads = wasmThreads(provider, searchOnCpu);
   ort.env.logLevel = "error";
 }
 
@@ -121,7 +126,7 @@ async function loadSeda(m: ModelInfo, pick: ProviderPick): Promise<SpeechEngine>
   const config = await readConfig<ModelConfig>(m);
   const [encoder, decoder, joiner, lm, lodr, tokens, final, vad, wasm] = await download(m, config.files);
   post({ type: "compiling" });
-  setupRuntime(wasm, pick.provider);
+  setupRuntime(wasm, pick.provider, true);
   const files = {
     config,
     encoder,

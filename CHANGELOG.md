@@ -10,6 +10,8 @@ Yeni sürümler en üstte.
 - **Dosyalarda daha doğru Seda:** Dosyalar modelin 5,12 saniyelik parçalarla çalışan `final` sürümüyle, sekiz yollu
   aramayla yazıya dökülür (FLEURS-TR'de %6,4 hata). Mikrofon anında yazmak için 0,64 saniyelik parçalarla devam
   eder. İlk indirme yaklaşık 190 MB.
+- **Ekran kartında daha hızlı Seda:** Ekran kartı seçiliyken Seda'nın dil modeli işlemcinin birden çok çekirdeğini
+  kullanır; yazıya döküm daha hızlı biter.
 - **Duraklamada kesinleşen cümleler:** Seda cümle sonlarını 1,2 saniyelik sessizlik kuralı yerine ses etkinliği
   algılayıcıyla (Silero VAD) bulur; canlı kayıtta kısa bir duraklamada metin kesinleşir. Uzun konuşmalar
   duraklamalarda bölünür.
@@ -18,7 +20,7 @@ Yeni sürümler en üstte.
   durdurulabilir.
 - **İngilizce videolar:** Yazıya dökmeden önce videodaki dil (Türkçe ya da İngilizce) seçilir; İngilizce videolar
   Whisper ile İngilizce yazıya dökülür, altyazı ve SRT/VTT İngilizce olur, Supertonic ile İngilizce seslendirilebilir.
-  Dil projeyle saklanır. Eskiden İngilizce konuşma Türkçe sanılıp bozuk yazılıyordu.
+  Dil projeyle saklanır.
 - **İngilizceden Türkçeye çeviri:** İngilizce videonun transkripti
   [opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr) ile Türkçeye çevrilir (yaklaşık
   360 MB, ilk kullanımda iner). Türkçe altyazı ve Türkçe seslendirme (voice-over) yapılabilir.
