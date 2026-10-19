@@ -27,7 +27,7 @@ export type DubState =
   | { status: "done"; clips: DubClip[]; url: string; words: Word[]; voice: Voice; elapsed: number }
   | { status: "error"; message: string };
 
-/** Reads the transcript aloud with EMA Lightning in its own worker, one line at a time. */
+/** Reads the transcript aloud with the chosen voice model in its own worker, one line at a time. */
 export function useDubber() {
   const worker = useRef<Worker | null>(null);
   const jobId = useRef(0);

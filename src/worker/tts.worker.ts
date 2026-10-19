@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-// Dubbing: reads every caption line aloud with EMA Lightning or Antalia Mini and places it at the line's start time. A line that
+// Dubbing: reads every caption line aloud with EMA Lightning, Antalia Mini or Ahenk Cep and places it at the line's start time. A line that
 // does not fit before the next one is spoken faster, up to MAX_SPEED; past that it runs over and the next line
 // starts late. The voice's pitch is moved by synthesising at a matching speed and resampling, so it does not change
 // how long a line takes.
@@ -8,6 +8,7 @@ import * as ort from "onnxruntime-web/webgpu";
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import ortMjsUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url";
 import { packFileUrl, VOICE_PACKS } from "../models";
+import { Ahenk, type AhenkManifest } from "../tts/ahenk";
 import type { DubClip } from "../tts/dub";
 import { Ema, loadNormalizer, RATE, type EmaMeta } from "../tts/ema";
 import { Mini, type MiniManifest } from "../tts/mini";
@@ -21,8 +22,8 @@ export interface DubLine {
   text: string;
 }
 
-/** The text-to-speech models, both at 48 kHz. */
-export type VoiceModel = "ema" | "mini";
+/** The text-to-speech models, all at 48 kHz. */
+export type VoiceModel = "ema" | "mini" | "ahenk";
 
 export interface Voice {
   model: VoiceModel;
@@ -86,9 +87,19 @@ async function load(jobId: number, model: VoiceModel): Promise<Speaker> {
 
   const create = async (providers: string[]): Promise<Speaker> => {
     if (model === "mini") return Mini.load(ort, meta as MiniManifest, files.slice(0, names.length), providers);
-    const [text, sound, decoder] = files;
     const opts = { executionProviders: providers, graphOptimizationLevel: "all" as const };
     // Sequential: the wasm runtime rejects concurrent initialisation.
+    if (model === "ahenk") {
+      const [text, cond, step, decoder] = files;
+      const sessions = {
+        text: await ort.InferenceSession.create(text, opts),
+        cond: await ort.InferenceSession.create(cond, opts),
+        step: await ort.InferenceSession.create(step, opts),
+        decoder: await ort.InferenceSession.create(decoder, opts),
+      };
+      return new Ahenk(ort, meta as AhenkManifest, sessions);
+    }
+    const [text, sound, decoder] = files;
     const sessions = {
       text: await ort.InferenceSession.create(text, opts),
       sound: await ort.InferenceSession.create(sound, opts),
@@ -105,7 +116,7 @@ async function load(jobId: number, model: VoiceModel): Promise<Speaker> {
   }
 }
 
-/** Loaded once per model; both stay loaded, they are small. */
+/** Loaded once per model; all stay loaded, they are small. */
 function getSpeaker(jobId: number, model: VoiceModel) {
   let p = speakers.get(model);
   if (!p) {

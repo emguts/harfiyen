@@ -186,6 +186,17 @@ export const VOICE_PACKS = {
     gpuOnly: false,
     needsF16: false,
   },
+  ahenk: {
+    id: "tts-ahenk",
+    kind: "tts",
+    name: "Ahenk Cep",
+    note: "Seslendirme sesi; rakamları, tarihleri ve kısaltmaları en iyi okuyan.",
+    dir: "ahenk-cep",
+    manifest: "model.json",
+    files: ["text.f16.onnx", "cond.f16.onnx", "step.f16.onnx", "decoder.f16.onnx"],
+    gpuOnly: false,
+    needsF16: false,
+  },
 } satisfies Record<string, ModelPack>;
 
 export const PACKS: ModelPack[] = [
@@ -206,6 +217,7 @@ export const PACKS: ModelPack[] = [
   MT_PACK,
   VOICE_PACKS.ema,
   VOICE_PACKS.mini,
+  VOICE_PACKS.ahenk,
 ];
 
 export const packFileUrl = (p: ModelPack, file: string) => `${MODELS_BASE}/${p.dir}/${file}`;

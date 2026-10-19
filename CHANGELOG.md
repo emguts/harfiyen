@@ -2,6 +2,12 @@
 
 Yeni sürümler en üstte.
 
+## Yayımlanmadı
+
+- **Yeni ses Ahenk Cep:** Seslendirmeye üçüncü ses olarak
+  [Ahenk Cep](https://huggingface.co/ozgurguler/ahenk-cep-tr) eklendi. 18 MB, ekran kartı istemez. Rakamları,
+  tarihleri ve kısaltmaları diğer seslerden daha doğru okur ("Dr.", "TBMM'de"); biraz daha yavaştır.
+
 ## v0.3.0 (15 Ekim 2026)
 
 - **Yeni model Duyu:** [Duyu-small](https://huggingface.co/KaanAydinli/Duyu-small) eklendi. 85 MB,

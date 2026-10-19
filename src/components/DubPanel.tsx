@@ -36,6 +36,12 @@ const MODELS: Record<
     link: "https://huggingface.co/cloud0day3/antalia-mini",
     note: "Patientdesk.ai'nin Türkçe metin okuma modeli Antalia-2 Mini (Apache-2.0); tek ses, ekran kartı olmadan da hızlı.",
   },
+  ahenk: {
+    name: "Ahenk Cep",
+    size: "18 MB",
+    link: "https://huggingface.co/ozgurguler/ahenk-cep-tr",
+    note: "Ahenk (github.com/ozguradmin/ahenk-turkish-tts), CC BY 4.0; EMA Lightning (Apache-2.0) mimarisinde, Alania verilerinden (PatientDesk AI, CC BY 4.0) türeyen Ahenk sesinden öğrenmiş küçük model. Rakam, tarih ve kısaltmaları iyi okur; diğerlerinden biraz yavaş.",
+  },
 };
 
 const PITCHES = [

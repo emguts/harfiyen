@@ -25,8 +25,9 @@ Duyu-small to public/models/duyu-small/:
   tokens.json          SentencePiece pieces by id (decoding only)
   model.json           special tokens, refinement gates and pass embeddings, file sizes
 
-Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the two text-to-speech models for
-dubbing: EMA Lightning to public/models/ema-lightning/ and Antalia Mini to public/models/antalia-mini/,
+Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the three text-to-speech models for
+dubbing: EMA Lightning to public/models/ema-lightning/, Antalia Mini to public/models/antalia-mini/ and Ahenk Cep
+to public/models/ahenk-cep/,
 and the Turkish -> English translation model to public/models/opus-mt-tc-big-tr-en/.
 
 Usage:  python scripts/prepare_models.py [--src DIR]
@@ -34,6 +35,7 @@ Usage:  python scripts/prepare_models.py [--src DIR]
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import shutil
@@ -627,6 +629,38 @@ def prepare_mini() -> None:
     (MINI_OUT / "model.json").write_text(json.dumps(mini, ensure_ascii=False, indent=2))
     print(f"antalia mini: {sum(mini['files'].values()) / 1e6:.0f} MB")
 
+AHENK_URL = (
+    "https://huggingface.co/ozgurguler/ahenk-cep-tr/resolve/345c4cbb934815fa96ffd0d5061fd913237544bc/onnx"
+)
+AHENK_OUT = ROOT / "public" / "models" / "ahenk-cep"
+# Ahenk Cep (ozgurguler/ahenk-cep-tr, CC BY 4.0), pinned. The fp16 graphs, as the model's web demo loads them.
+AHENK_GRAPHS = ["text", "cond", "step", "decoder"]
+
+
+def prepare_ahenk() -> None:
+    """Ahenk Cep, the third dubbing voice."""
+    AHENK_OUT.mkdir(parents=True, exist_ok=True)
+    src = AHENK_OUT / "ahenk-cep.json"
+    if not src.exists():
+        print("download", f"{AHENK_URL}/ahenk-cep.json")
+        urllib.request.urlretrieve(f"{AHENK_URL}/ahenk-cep.json", str(src) + ".part")
+        os.replace(str(src) + ".part", src)
+    ahenk = json.loads(src.read_text())
+    graphs = [ahenk["files"][g]["f16"] for g in AHENK_GRAPHS]
+    for g in graphs:
+        p = AHENK_OUT / g["file"]
+        if not p.exists():
+            print("download", f"{AHENK_URL}/{g['file']}")
+            urllib.request.urlretrieve(f"{AHENK_URL}/{g['file']}", str(p) + ".part")
+            os.replace(str(p) + ".part", p)
+        if hashlib.sha256(p.read_bytes()).hexdigest() != g["sha256"]:
+            p.unlink()
+            raise SystemExit(f"{p.name}: checksum mismatch, deleted; run again")
+    # The manifest lists every precision's graphs with their checksums; the app wants the sizes of the files it downloads.
+    ahenk["files"] = {g["file"]: (AHENK_OUT / g["file"]).stat().st_size for g in graphs}
+    (AHENK_OUT / "model.json").write_text(json.dumps(ahenk, ensure_ascii=False, indent=2))
+    print(f"ahenk cep: {sum(ahenk['files'].values()) / 1e6:.0f} MB")
+
 DUYU_REPO = "KaanAydinli/Duyu-small"
 DUYU_OUT = ROOT / "public" / "models" / "duyu-small"
 DUYU_GRAPHS = ["encoder_pre.onnx", "encoder_pass.onnx", "encoder_post.onnx", "decoder.onnx"]
@@ -683,6 +717,7 @@ def main() -> None:
     ap.add_argument("--whisper-only", action="store_true", help="only (re)build the Whisper files")
     ap.add_argument("--tts-only", action="store_true", help="only download the dubbing voices")
     ap.add_argument("--mt-only", action="store_true", help="only (re)build the translation model")
+    ap.add_argument("--ahenk-only", action="store_true", help="only download Ahenk Cep")
     ap.add_argument("--duyu-only", action="store_true", help="only (re)build Duyu-small")
     args = ap.parse_args()
     mt_cache = args.src.parent / "opus-mt-tc-big-tr-en"
@@ -693,9 +728,13 @@ def main() -> None:
     if args.tts_only:
         prepare_ema()
         prepare_mini()
+        prepare_ahenk()
         return
     if args.mt_only:
         prepare_mt(mt_cache)
+        return
+    if args.ahenk_only:
+        prepare_ahenk()
         return
     if args.duyu_only:
         prepare_duyu(duyu_cache)
@@ -717,6 +756,7 @@ def main() -> None:
     prepare_duyu(duyu_cache)
     prepare_ema()
     prepare_mini()
+    prepare_ahenk()
     prepare_mt(mt_cache)
 
 

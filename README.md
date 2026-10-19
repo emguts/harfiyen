@@ -110,13 +110,16 @@ konuşurken de canlı çalışır.
 
 ### Seslendirme
 
-- Transkript, [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning) ya da
-  [Antalia Mini](https://huggingface.co/cloud0day3/antalia-mini) ile yapay bir Türkçe sesle yeniden okunur. Her
-  altyazı satırı kendi zamanında başlar; yerine sığmayan satır en fazla 1,35 kat hızlı okunur.
+- Transkript, [EMA Lightning](https://huggingface.co/canberkkkkkk/ema-lightning),
+  [Antalia Mini](https://huggingface.co/cloud0day3/antalia-mini) ya da
+  [Ahenk Cep](https://huggingface.co/ozgurguler/ahenk-cep-tr) ile yapay bir Türkçe sesle yeniden okunur. Her
+  altyazı satırı kendi zamanında başlar; yerine sığmayan satır en fazla 1,35 kat hızlı okunur. Ahenk Cep rakamları,
+  tarihleri ve kısaltmaları en iyi okuyan sestir; diğerlerinden biraz yavaştır.
 - Ses tonu yarım ton adımlarla kalınlaştırılıp inceltilebilir; satırların süresi değişmez. Seed aynı sesi farklı
   bir vurguyla okutur. Ayarlar seslendirmeden önce ilk satırla dinlenebilir.
 - Açıkken oynatıcı ve altyazılı MP4 orijinal ses yerine yapay sesi kullanır. Ses ayrıca WAV olarak
-  indirilebilir. Modeller ilk kullanımda indirilir: EMA Lightning yaklaşık 36 MB, Antalia Mini 23 MB.
+  indirilebilir. Modeller ilk kullanımda indirilir: EMA Lightning yaklaşık 36 MB, Antalia Mini 23 MB,
+  Ahenk Cep 18 MB.
 
 ### İngilizce çeviri
 
@@ -309,6 +312,10 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
 - İkinci seslendirme modeli Antalia-2 Mini, Patientdesk.ai,
   [cloud0day3/antalia-mini](https://huggingface.co/cloud0day3/antalia-mini): Apache-2.0 (kod, metin işleme ve
   ağırlıklar). `src/tts/antalia-mini/` altındaki iki dosya modelin Space'inden değiştirilmeden alındı.
+- Üçüncü seslendirme modeli [ozgurguler/ahenk-cep-tr](https://huggingface.co/ozgurguler/ahenk-cep-tr):
+  ağırlıklar CC BY 4.0. EMA Lightning (Apache-2.0) mimarisinde, Alania verilerinden (PatientDesk AI, CC BY 4.0)
+  türeyen Ahenk sesinden öğrenmiş küçük model. Okuma adımları ve metin normalleştirme (`src/tts/trnorm/`)
+  [ozguradmin/ahenk-turkish-tts](https://github.com/ozguradmin/ahenk-turkish-tts)'ten (Apache-2.0) uyarlandı.
 - Dil modeli dosyaları (`rnnlm`, `2gram`): CC BY-SA 4.0 (Türkçe Vikipedi üzerinde eğitildi).
 - Noktalama ölçüm metinleri (`tests/data/`): Türkçe Vikipedi, CC BY-SA 4.0; kaynak makaleler dosyalarda.
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.

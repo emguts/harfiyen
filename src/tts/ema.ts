@@ -25,11 +25,11 @@ const TYPOGRAPHY: Record<string, string> = {
   "’": "'", "‘": "'", "ʼ": "'", "´": "'", "`": "'", "“": '"', "”": '"', "„": '"',
   "«": '"', "»": '"', "–": "-", "—": "-", "−": "-", "…": "...",
 };
-const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f-\x9f؜‎‏‪-‮⁦-⁩]/g;
+export const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f-\x9f؜‎‏‪-‮⁦-⁩]/g;
 const BLOCK_BYTES = 8 * 1024;
 
 /** Split at whitespace into pieces the normalizer accepts in one call. */
-function blocks(text: string): string[] {
+export function blocks(text: string): string[] {
   const out: string[] = [];
   let block: string[] = [];
   let size = 0;
@@ -47,7 +47,7 @@ function blocks(text: string): string[] {
   return out;
 }
 
-function alphabet(text: string, vocab: Set<string>): string {
+export function alphabet(text: string, vocab: Set<string>): string {
   text = [...text.replace(UNSAFE, " ")].map((ch) => TYPOGRAPHY[ch] ?? ch).join("");
   text = text.replace(/İ/g, "i").replace(/I/g, "ı").toLocaleLowerCase("tr");
   let out = "";
@@ -100,7 +100,7 @@ function finish(piece: string): string {
 }
 
 /** Pieces the model reads in one go, each with the pause after it. */
-function chunk(text: string, speed: number): [string, number][] {
+export function chunk(text: string, speed: number): [string, number][] {
   const limit = Math.floor(Math.min(MAX_LETTERS, LETTERS_PER_SECOND * MAX_SECONDS * speed));
   const pieces: [string, number][] = [];
   let rest = text.trim();
@@ -153,7 +153,7 @@ function gaussian(seed: number) {
 // ---------- engine.py ----------
 
 /** Word index of each letter, and the first letter of that word (spaces belong to the next word). */
-function words(text: string) {
+export function words(text: string) {
   const starts: number[] = [];
   for (let i = 0; i < text.length; i++) if (text[i] !== " " && (i === 0 || text[i - 1] === " ")) starts.push(i);
   if (!starts.length) starts.push(0);
