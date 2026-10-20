@@ -172,6 +172,31 @@ canlı çalışır.
 - Çeviri projeyle birlikte kaydedilir. Transkript sonradan değişirse çevirinin eskidiği söylenir.
   Her yönün modeli ilk kullanımda yaklaşık 360 MB indirir ve işlemcide (WASM) çalışır.
 
+### Şarkılar
+
+> Bu bölüm [emguts/harfiyen](https://github.com/emguts/harfiyen) fork'unun eklemeleridir (`muzik-modu` dalı).
+
+- **Müzik modu:** **Videodaki dil** seçiminin yanındaki kutu. Açıkken Whisper ses etkinliği algılayıcıya (VAD)
+  takılmaz: her 30 saniyelik parçayı işler, hiçbir kelimeyi atmaz. VAD konuşma için eğitildiğinden müziğin altındaki
+  vokali çoğu zaman sessizlik sanıyor. Yalnızca Whisper'da etkilidir; yalnız çalgı olan yerlerde Whisper birkaç
+  uydurma ya da tekrarlanan satır yazabilir.
+- **Şarkı sözleri:** Müzik modu açıkken **Yazıya döküm** sekmesinde görünür. Sözler, her dize ayrı satırda olacak
+  şekilde yapıştırılır; `[Nakarat]` ya da `(x2)` gibi tek başına duran başlıklar atlanır. Her dize ayrı bir altyazı
+  satırı olur; altyazı stilleri, SRT ve VTT bu satırlara uyar. ⌘Z / Ctrl+Z geri alır.
+  - **Sözleri hizala:** Sözler dökümle kelime kelime eşleştirilir (yazılışa göre; yanlış duyulmuş ama yakın yazılan
+    kelimeler de eşleşir). Kelimeler sözlerden, zamanlar dökümden gelir. İnsanın söyleyemeyeceği kadar hızlı
+    sıkışmaya yol açan eşleşmeler atılır; eşleşmeyen kelimeler komşularının yanına, söyleme hızında dizilir.
+  - **Elle tempo tut:** Şarkı baştan çalar, her dize başlarken **Enter**'a basılır. **Backspace** son işareti
+    siler, **←** / **→** 5 saniye geri / ileri sarar (geri gidince sonraki işaretler silinir), **+** / **−** tepki
+    payını 25 ms değiştirir (her basıştan düşülür, varsayılan 150 ms), **Esc** bitirir. Dize içindeki kelimeler o
+    aralıkta duyulan kelimelerin zamanını alır. Dökümde izi olmayan bölümler (başka dilde söylenen kısımlar, Whisper'ın
+    hiç duymadığı girişler) için en güvenilir yol budur.
+  - **Sesle ince ayar (isteğe bağlı):** Hizalamadan sonra Whisper sözleri en fazla 30 saniyelik parçalarda doğrudan
+    seste arar ve kelime zamanlarını oradan alır. Yeni zamanları eldeki kanıttan (eşleşen kelimeler, işaretler) 2
+    saniyeden fazla sapan parçalar eski zamanlarında kalır. Whisper gerekir; daha yavaştır.
+  - **Tüm zamanları kaydır:** Bütün altyazıyı 0,1 / 0,5 saniye öne ya da geriye alır; **[** ve **]**, Shift ile
+    0,5 saniye.
+
 ### Projeler
 
 - Otomatik kayıt: transkript, düzeltmeler, altyazı stili, kadraj, seçilen bölüm ve dalga formu tarayıcıda
@@ -296,6 +321,7 @@ npm run test:whisper -- kayit.wav   # Whisper motorunu Node'da dener (16 bit WAV
 npm run test:formatter              # noktalamayı sedalib'in çıktısıyla karşılaştırır (model gerekir)
 npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
+npm run test:lyrics                 # şarkı sözlerini dökümle hizalamayı dener
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
 npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
 npm run build      # üretim derlemesi
