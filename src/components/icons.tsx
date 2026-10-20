@@ -120,6 +120,13 @@ export const IconEdit = (p: P) => (
   </Svg>
 );
 
+export const IconClock = (p: P) => (
+  <Svg {...p}>
+    <circle cx="8" cy="8" r="6.25" />
+    <path d="M8 4.5V8l2.5 1.5" />
+  </Svg>
+);
+
 export const IconTrash = (p: P) => (
   <Svg {...p}>
     <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />

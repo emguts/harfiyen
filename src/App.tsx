@@ -54,6 +54,7 @@ import { Viewer } from "./components/Viewer";
 import type { DecodeOptions, DecodingMethod, SpeechLang, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
+import { retime, shiftAll, shiftSpan } from "./lib/timing";
 import { applySpans, planSpans, roughAlign, tapAlign, type LyricTiming } from "./lib/lyrics";
 import type { LyricsOptions } from "./components/LyricsSection";
 import { writeNumbers, type NumberMode } from "./lib/numbers";
@@ -684,6 +685,16 @@ export function App() {
     (first: number, count: number, text: string) => commitWords(replaceRange(shown, first, count, text)),
     [shown, commitWords],
   );
+  // Hand-edited times: a line or a word placed, moved, or the whole transcript shifted.
+  const onRetime = useCallback(
+    (first: number, count: number, start: number, end: number) => commitWords(retime(shown, first, count, start, end)),
+    [shown, commitWords],
+  );
+  const onShiftSpan = useCallback(
+    (first: number, count: number, seconds: number) => commitWords(shiftSpan(shown, first, count, seconds)),
+    [shown, commitWords],
+  );
+  const onShiftAll = useCallback((seconds: number) => commitWords(shiftAll(shown, seconds)), [shown, commitWords]);
   const undo = useCallback(() => {
     const h = history.current;
     while (h.length && h[h.length - 1].jobId !== job?.id) h.pop();
@@ -821,11 +832,6 @@ export function App() {
     aligning,
     onAlign: (text: string, opts: LyricsOptions) => applyLyrics((heard) => roughAlign(heard, text), opts),
     onTaps: (text: string, taps: number[], opts: LyricsOptions) => applyLyrics((heard) => tapAlign(heard, text, taps), opts),
-    onShift:
-      job && job.status === "done" && job.words.length && !translated
-        ? (d: number) =>
-            commitWords(job.words.map((w) => ({ ...w, start: Math.max(0, w.start + d), end: Math.max(0, w.end + d) })))
-        : null,
     playback: {
       seek: (t: number) => player.seek(t),
       start: () => {
@@ -1324,6 +1330,8 @@ export function App() {
                 playing={player.playing}
                 onSeek={player.seek}
                 onEdit={editable ? onEdit : undefined}
+                onRetime={editable ? onRetime : undefined}
+                onShift={editable ? onShiftSpan : undefined}
                 found={found}
               />
             ) : (
@@ -1522,6 +1530,7 @@ export function App() {
           music={music}
           onMusic={setMusic}
           lyrics={lyricsProps}
+          onShiftAll={editable ? onShiftAll : null}
           langIssue={langIssue}
           captionLang={lang}
           translationStale={translationStale}

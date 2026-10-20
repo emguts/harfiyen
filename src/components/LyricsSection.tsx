@@ -8,9 +8,6 @@ const MAX_OFFSET = 600;
 const OFFSET_STEP = 25;
 /** Arrow-key jump while timing by hand, seconds. */
 const JUMP = 5;
-/** Whole-transcript moves with [ and ] (with Shift: the bigger one), seconds. */
-const SHIFT = 0.1;
-const SHIFT_BIG = 0.5;
 
 const FIELD =
   "min-h-[140px] w-full resize-y rounded-ui-sm border border-line bg-bg px-2 py-1.5 text-[12.5px] leading-[1.5] text-fg outline-none placeholder:text-fg-3 focus:border-cini";
@@ -32,7 +29,6 @@ export function LyricsSection({
   aligning,
   onAlign,
   onTaps,
-  onShift,
   playback,
 }: {
   disabled: boolean;
@@ -41,8 +37,6 @@ export function LyricsSection({
   aligning: { done: number; total: number } | null;
   onAlign: (text: string, opts: LyricsOptions) => Promise<string | null>;
   onTaps: (text: string, taps: number[], opts: LyricsOptions) => Promise<string | null>;
-  /** Moves every word of the transcript by `seconds`; null when there is nothing to move. */
-  onShift: ((seconds: number) => void) | null;
   playback: { start: () => void; stop: () => void; time: () => number; seek: (t: number) => void };
 }) {
   const [text, setText] = useState("");
@@ -84,26 +78,18 @@ export function LyricsSection({
   };
 
   // While timing by hand these keys come before the page's own shortcuts
-  // (Space still plays and pauses). Otherwise [ and ] move every word.
+  // (Space still plays and pauses).
   useEffect(() => {
+    if (!taps) return;
     const onKey = (e: KeyboardEvent) => {
-      if (taps) {
-        if (e.key === "Enter") tap();
-        else if (e.key === "Backspace") undoTap();
-        else if (e.key === "Escape") void finish(taps);
-        else if (e.key === "ArrowLeft") jump(-JUMP);
-        else if (e.key === "ArrowRight") jump(JUMP);
-        else if (e.key === "+" || e.key === "=") nudgeOffset(OFFSET_STEP);
-        else if (e.key === "-" || e.key === "_") nudgeOffset(-OFFSET_STEP);
-        else return;
-      } else {
-        const el = e.target as HTMLElement | null;
-        if (!onShift || e.ctrlKey || e.metaKey || e.altKey) return;
-        if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
-        if (e.code === "BracketLeft") onShift(e.shiftKey ? -SHIFT_BIG : -SHIFT);
-        else if (e.code === "BracketRight") onShift(e.shiftKey ? SHIFT_BIG : SHIFT);
-        else return;
-      }
+      if (e.key === "Enter") tap();
+      else if (e.key === "Backspace") undoTap();
+      else if (e.key === "Escape") void finish(taps);
+      else if (e.key === "ArrowLeft") jump(-JUMP);
+      else if (e.key === "ArrowRight") jump(JUMP);
+      else if (e.key === "+" || e.key === "=") nudgeOffset(OFFSET_STEP);
+      else if (e.key === "-" || e.key === "_") nudgeOffset(-OFFSET_STEP);
+      else return;
       e.preventDefault();
       e.stopPropagation();
     };
@@ -171,23 +157,6 @@ export function LyricsSection({
         />
         Sesle ince ayar (Whisper, daha yavaş)
       </label>
-      {onShift && (
-        <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-fg-2">
-          <span className="flex-1">Tüm zamanları kaydır</span>
-          {[-SHIFT_BIG, -SHIFT, SHIFT, SHIFT_BIG].map((d) => (
-            <Button
-              key={d}
-             
-              disabled={busy}
-              onClick={() => onShift(d)}
-              title={`${Math.abs(d) === SHIFT ? "" : "Shift + "}${d < 0 ? "[" : "]"}`}
-            >
-              {d > 0 ? "+" : "−"}
-              {String(Math.abs(d)).replace(".", ",")} sn
-            </Button>
-          ))}
-        </div>
-      )}
       {aligning && <Progress label="Sesle hizalanıyor" value={aligning.total ? aligning.done / aligning.total : 0} />}
       {error ? (
         <Hint>{error}</Hint>

@@ -11,6 +11,7 @@ import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { VideoLang } from "./VideoLang";
 import { LyricsSection } from "./LyricsSection";
+import { TimingSection } from "./TimingSection";
 import { Progress } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
@@ -100,6 +101,7 @@ export function Inspector({
   music,
   onMusic,
   lyrics,
+  onShiftAll,
   langIssue,
   captionLang,
 }: {
@@ -162,6 +164,8 @@ export function Inspector({
   onMusic: (on: boolean) => void;
   /** Song lyrics over the transcript, shown in music mode. */
   lyrics: ComponentProps<typeof LyricsSection>;
+  /** Moves every caption by `seconds`; null when there is nothing to move. */
+  onShiftAll: ((seconds: number) => void) | null;
   /** Why the chosen model cannot transcribe `videoLang`, if it cannot. */
   langIssue: string | null;
   /** The language of the captions shown. */
@@ -282,6 +286,7 @@ export function Inspector({
               )}
             </Section>
             {music && <LyricsSection {...lyrics} />}
+            <TimingSection onShiftAll={onShiftAll} />
             <Section title="Doğruluk">
               {info.id === "seda" ? (
                 <MethodPicker

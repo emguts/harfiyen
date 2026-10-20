@@ -18,6 +18,7 @@
     "eval:punct": "tsx tests/punct-eval.node.ts",
     "test:numbers": "tsx tests/numbers.node.ts",
     "test:lyrics": "tsx tests/lyrics.node.ts",
+    "test:timing": "tsx tests/timing.node.ts",
     "eval:numbers": "tsx tests/numbers-eval.node.ts"
   },
   "dependencies": {

@@ -1,9 +1,10 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Word } from "../engine";
 import { buildCues, importedCues, READING_RULES, type Cue } from "../lib/cues";
 import type { Match } from "../lib/find";
 import { clock } from "../lib/format";
-import { IconEdit, IconTrash } from "./icons";
+import { IconClock, IconEdit, IconTrash } from "./icons";
+import { TimingEditor } from "./TimingEditor";
 import { EmptyNote, IconButton } from "./ui";
 
 interface Props {
@@ -17,6 +18,9 @@ interface Props {
   onSeek: (t: number) => void;
   /** Present when the transcript can be edited (decoding finished). */
   onEdit?: (first: number, count: number, text: string) => void;
+  /** Present with onEdit: words first..first+count-1 placed in start..end, or moved by seconds. */
+  onRetime?: (first: number, count: number, start: number, end: number) => void;
+  onShift?: (first: number, count: number, seconds: number) => void;
   /** Find hits to mark, and which one is current. */
   found?: { matches: Match[]; current: number };
   /** Language of the words, for the spelling check while editing. */
@@ -80,6 +84,9 @@ const CueRow = memo(function CueRow({
   marks,
   onSeek,
   onEdit,
+  onRetime,
+  onShift,
+  now,
 }: {
   cue: Cue;
   /** Index of the active word within this cue, or -1. */
@@ -90,8 +97,12 @@ const CueRow = memo(function CueRow({
   marks: string;
   onSeek: (t: number) => void;
   onEdit?: (first: number, count: number, text: string) => void;
+  onRetime?: (first: number, count: number, start: number, end: number) => void;
+  onShift?: (first: number, count: number, seconds: number) => void;
+  now: () => number;
 }) {
   const [editing, setEditing] = useState(false);
+  const [timing, setTiming] = useState(false);
   const text = cue.words.map((w) => w.text).join(" ");
   const finish = (value: string | null) => {
     setEditing(false);
@@ -146,10 +157,18 @@ const CueRow = memo(function CueRow({
           <IconButton onClick={() => setEditing(true)} title="Düzenle (çift tıkla)" aria-label="Satırı düzenle">
             <IconEdit />
           </IconButton>
+          {onRetime && onShift && (
+            <IconButton onClick={() => setTiming((t) => !t)} title="Zamanı düzenle" aria-label="Satırın zamanını düzenle">
+              <IconClock />
+            </IconButton>
+          )}
           <IconButton onClick={() => onEdit(cue.first, cue.words.length, "")} title="Satırı sil" aria-label="Satırı sil">
             <IconTrash />
           </IconButton>
         </span>
+      )}
+      {timing && onRetime && onShift && (
+        <TimingEditor cue={cue} now={now} onRetime={onRetime} onShift={onShift} onClose={() => setTiming(false)} />
       )}
     </li>
   );
@@ -161,11 +180,30 @@ const CueRow = memo(function CueRow({
   a.marks === b.marks &&
   a.onSeek === b.onSeek &&
   a.onEdit === b.onEdit &&
+  a.onRetime === b.onRetime &&
+  a.onShift === b.onShift &&
   a.cue.first === b.cue.first &&
   a.cue.words.length === b.cue.words.length &&
   a.cue.words.every((w, i) => w === b.cue.words[i]));
 
-export function Transcript({ words, tentative, running, waiting, time, playing, onSeek, onEdit, found, lang }: Props) {
+export function Transcript({
+  words,
+  tentative,
+  running,
+  waiting,
+  time,
+  playing,
+  onSeek,
+  onEdit,
+  onRetime,
+  onShift,
+  found,
+  lang,
+}: Props) {
+  // The playhead for "Şu an" buttons, without re-rendering rows as it moves.
+  const timeRef = useRef(time);
+  timeRef.current = time;
+  const now = useCallback(() => timeRef.current, []);
   const all = useMemo(() => (tentative.length ? words.concat(tentative) : words), [words, tentative]);
   const cues = useMemo(() => importedCues(all) ?? buildCues(all, READING_RULES), [all]);
   // Per cue, a string of find marks (see CueRow); "" where nothing is marked.
@@ -246,6 +284,9 @@ export function Transcript({ words, tentative, running, waiting, time, playing, 
             marks={marks?.[i] ?? ""}
             onSeek={onSeek}
             onEdit={onEdit}
+            onRetime={onRetime}
+            onShift={onShift}
+            now={now}
           />
         );
       })}

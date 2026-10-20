@@ -84,6 +84,11 @@ canlı çalışır.
 - Kelime düzeyinde zaman: bir kelimeye tıkla, kayıt o ana atlasın; çalarken konuşulan kelime vurgulanır.
 - Düzenleme: satıra çift tıkla ve düzelt, satırı sil, ⌘Z ile geri al. Değişmeyen kelimelerin zamanları
   korunur.
+- **Zaman düzenleme** (fork): transkriptte satırın üstüne gelip saat simgesine tıkla. Satırın ya da seçilen tek
+  kelimenin başlangıç ve bitiş zamanı yazılarak, ±0,1 sn (Shift ile 0,5) adımlarla ya da **Şu an** ile oynatıcının
+  bulunduğu ana getirilerek değiştirilir; **Alt + ← / →** satırı kaydırır. Satır uzayıp kısalınca kelimeleri aynı
+  oranda yayılır; zamanlar önceki ve sonraki kelimeleri geçmez. **Yazıya döküm → Zamanlama** bütün altyazıyı
+  0,1 / 0,5 sn öne ya da geriye alır (**[** ve **]**, Shift ile 0,5 sn). Hepsi ⌘Z / Ctrl+Z ile geri alınır.
 - Bul ve değiştir (⌘F / Ctrl+F): yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte düzelt. Büyük/küçük
   harfe bakmaz, istenirse yalnızca tam kelimeleri bulur.
 - SRT ve VTT açma: hazır altyazı açılıp stillendirilir ve videoya yazılır. Satırlar ve zamanlar korunur;
@@ -194,8 +199,7 @@ canlı çalışır.
   - **Sesle ince ayar (isteğe bağlı):** Hizalamadan sonra Whisper sözleri en fazla 30 saniyelik parçalarda doğrudan
     seste arar ve kelime zamanlarını oradan alır. Yeni zamanları eldeki kanıttan (eşleşen kelimeler, işaretler) 2
     saniyeden fazla sapan parçalar eski zamanlarında kalır. Whisper gerekir; daha yavaştır.
-  - **Tüm zamanları kaydır:** Bütün altyazıyı 0,1 / 0,5 saniye öne ya da geriye alır; **[** ve **]**, Shift ile
-    0,5 saniye.
+  - Hizalamadan sonra kalan kaymalar **Zamanlama** ile düzeltilir (bkz. Yazıya döküm → Zaman düzenleme).
 
 ### Projeler
 
@@ -322,6 +326,7 @@ npm run test:formatter              # noktalamayı sedalib'in çıktısıyla kar
 npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
 npm run test:lyrics                 # şarkı sözlerini dökümle hizalamayı dener
+npm run test:timing                 # elle zaman düzenlemeyi dener
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
 npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
 npm run build      # üretim derlemesi
@@ -342,7 +347,7 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - Altyazılı video oluşturulurken diske yazılır, uzun videolarda da bellek dolmaz: Chrome ve Edge önce kaydedilecek
   yeri sorar, diğer tarayıcılar videoyu tarayıcının kendi disk alanında hazırlayıp indirir. Sayfa ağdan `http://`
   ile açıldığında bu ikisi de kullanılamaz, video bellekte oluşturulur.
-- Düzenleme metinle sınırlı; kelime zamanlarını elle kaydırmak yok.
+- Zaman düzenleme transkriptten yapılır; zaman çizelgesinde satır kenarlarını sürüklemek yok.
 - Kesme tek bölümle sınırlı; aradan parça çıkarmak (jump cut) yok. Bölüm dökümden sonra genişletilirse eksik
   kısım için yeniden yazıya dökmek gerekir.
 - Kadraj videonun tamamı için sabittir; zamanla kayan kadraj yok. **Sığdır**'da videonun karedeki boyutu ve
@@ -363,8 +368,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 
 - [x] **Projeyi kaydetme ve geri açma:** transkript ve düzeltmeler için otomatik yerel kayıt;
       projeyi dosya olarak indirip yeniden açma.
-- [ ] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
-      tüm altyazıya toplu zaman kaydırma.
+- [x] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
+      tüm altyazıya toplu zaman kaydırma (fork: emguts/harfiyen).
 - [x] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
 - [x] **Noktalama için Türkçe testleri:** sedalib ile birebir karşılaştırma ve tekrar uygulama;
       Vikipedi metniyle kesme işareti, büyük harf ve noktalama ölçümü.
