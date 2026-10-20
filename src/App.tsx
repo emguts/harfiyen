@@ -54,6 +54,8 @@ import { Viewer } from "./components/Viewer";
 import type { DecodeOptions, DecodingMethod, SpeechLang, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
+import { applySpans, planSpans, roughAlign, tapAlign, type LyricTiming } from "./lib/lyrics";
+import type { LyricsOptions } from "./components/LyricsSection";
 import { writeNumbers, type NumberMode } from "./lib/numbers";
 import { plainWord } from "./punct/turkish";
 import { isSubtitle, parseSubtitles, readSubtitle, SUBTITLE_EXTS } from "./lib/subtitles";
@@ -129,9 +131,10 @@ const PICKER_TYPES = [
   },
 ];
 
-const optionsFor = (method: DecodingMethod, lang: SpeechLang = "tr"): DecodeOptions => ({
+const optionsFor = (method: DecodingMethod, lang: SpeechLang = "tr", music = false): DecodeOptions => ({
   method,
   lang,
+  music,
   maxActivePaths: 4,
   lmScale: 0.6,
   lodrScale: -0.5,
@@ -185,6 +188,8 @@ export function App() {
     liveMeter,
     punctuate,
     punct,
+    alignAudio,
+    aligning,
   } = useTranscriber();
   const [autoPunct, setAutoPunct] = useState(
     () => localStorage.getItem("harfiyen.punct") !== "off",
@@ -206,6 +211,9 @@ export function App() {
     localStorage.getItem("harfiyen.videoLang") === "en" ? "en" : "tr",
   );
   useEffect(() => localStorage.setItem("harfiyen.videoLang", videoLang), [videoLang]);
+  /** Songs: Whisper without the speech VAD. */
+  const [music, setMusic] = useState(() => localStorage.getItem("harfiyen.music") === "1");
+  useEffect(() => localStorage.setItem("harfiyen.music", music ? "1" : "0"), [music]);
   const [settings, setSettings] = useState<CaptionSettings>(loadSettings);
   /** The part of the video shown and exported; belongs to the project, unlike the style. */
   const [crop, setCrop] = useState<Crop | null>(null);
@@ -411,7 +419,7 @@ export function App() {
         file: media?.file ?? null,
         model: job?.model ?? model,
         imported: f.name,
-        options: optionsFor(method, videoLang),
+        options: optionsFor(method, videoLang, music),
         duration: media?.duration ?? null,
         elapsed: null,
         words: subs,
@@ -455,7 +463,7 @@ export function App() {
       setCrop(null);
       setTrim(null);
       // Not transcribed yet: first the frame and the part to use, then "Yazıya dök".
-      open(f, optionsFor(method, videoLang));
+      open(f, optionsFor(method, videoLang, music));
     },
     [
       open,
@@ -547,7 +555,7 @@ export function App() {
     }
     punctuated.current.delete(job.id);
     resetBurn();
-    transcribe(optionsFor(method, videoLang), trim ?? undefined);
+    transcribe(optionsFor(method, videoLang, music), trim ?? undefined);
   };
 
   // Deleting the open project moves on to the next most recent one.
@@ -761,6 +769,75 @@ export function App() {
     }
   }, [job, punctuate, setWords, withDigits]);
   // Numbers on their own: for Whisper, with punctuation off, or from the button.
+  /**
+   * Pasted song lyrics take the transcript's place: timed from it, or from
+   * taps (line starts marked by hand), and with `acoustic` refined by Whisper
+   * in the audio. Resolves with an error to show, if any.
+   */
+  const openJob = useRef<number | undefined>(undefined);
+  openJob.current = job?.id;
+  const applyLyrics = useCallback(
+    async (time: (heard: Word[]) => LyricTiming, opts: LyricsOptions): Promise<string | null> => {
+      if (!job || job.status !== "done" || !job.words.length) return "Önce şarkıyı yazıya dök.";
+      const before = job.words;
+      let next: Word[];
+      try {
+        const timing = time(before);
+        next = timing.words;
+        if (opts.acoustic && job.file) {
+          const duration = player.duration || job.duration || next[next.length - 1].end + 5;
+          const spans = planSpans(timing, duration);
+          const found = await alignAudio(
+            job.file,
+            job.options.lang ?? "tr",
+            spans.map((s) => ({ start: s.start, end: s.end, words: timing.words.slice(s.first, s.last + 1).map((w) => w.text) })),
+          );
+          next = applySpans(timing, spans, found);
+        }
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      // Another project was opened while Whisper worked: the result is not for it.
+      if (openJob.current !== job.id) return null;
+      // The lyrics are written as they are: no punctuation model, no number rewriting.
+      punctuated.current.add(job.id);
+      history.current.push({ jobId: job.id, en: false, words: before });
+      setCanUndo(true);
+      setShowEn(false);
+      setWords(next);
+      resetBurn();
+      return null;
+    },
+    [job, player.duration, alignAudio, setWords, resetBurn],
+  );
+  const lyricsProps = {
+    disabled: !job || job.status !== "done" || !job.words.length,
+    canRefine:
+      chosen.engine !== "whisper"
+        ? "Sesle ince ayar için üst çubuktan Whisper Turbo'yu seç."
+        : gpuReason
+          ? `Whisper bu cihazda çalışmıyor. ${gpuReason}`
+          : null,
+    aligning,
+    onAlign: (text: string, opts: LyricsOptions) => applyLyrics((heard) => roughAlign(heard, text), opts),
+    onTaps: (text: string, taps: number[], opts: LyricsOptions) => applyLyrics((heard) => tapAlign(heard, text, taps), opts),
+    onShift:
+      job && job.status === "done" && job.words.length && !translated
+        ? (d: number) =>
+            commitWords(job.words.map((w) => ({ ...w, start: Math.max(0, w.start + d), end: Math.max(0, w.end + d) })))
+        : null,
+    playback: {
+      seek: (t: number) => player.seek(t),
+      start: () => {
+        player.seek(trim?.start ?? 0);
+        if (!player.playing) player.toggle();
+      },
+      stop: () => {
+        if (player.playing) player.toggle();
+      },
+      time: () => player.el?.currentTime ?? player.time,
+    },
+  };
   const applyNumbers = useCallback(() => {
     if (!job || job.status !== "done" || !job.words.length || numberMode === "keep") return;
     punctuated.current.add(job.id);
@@ -1220,7 +1297,7 @@ export function App() {
                       : `Dosyanın tamamı${player.duration ? `, ${fmtDuration(player.duration)}` : ""}`}
                   </p>
                 )}
-                {job.file && <VideoLang value={videoLang} onChange={chooseVideoLang} />}
+                {job.file && <VideoLang value={videoLang} onChange={chooseVideoLang} music={music} onMusic={setMusic} />}
                 {job.file && langIssue && <p className="m-0 text-[12px] leading-normal text-mercan-text">{langIssue}</p>}
                 <Button
                   variant="primary"
@@ -1442,6 +1519,9 @@ export function App() {
           sourceLang={sourceLang}
           videoLang={videoLang}
           onVideoLang={chooseVideoLang}
+          music={music}
+          onMusic={setMusic}
+          lyrics={lyricsProps}
           langIssue={langIssue}
           captionLang={lang}
           translationStale={translationStale}

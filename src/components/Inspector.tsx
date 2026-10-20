@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentProps } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod, SpeechLang } from "../engine";
 import { LANG_NAMES } from "../lib/lang";
@@ -10,6 +10,7 @@ import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { VideoLang } from "./VideoLang";
+import { LyricsSection } from "./LyricsSection";
 import { Progress } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
@@ -96,6 +97,9 @@ export function Inspector({
   sourceLang,
   videoLang,
   onVideoLang,
+  music,
+  onMusic,
+  lyrics,
   langIssue,
   captionLang,
 }: {
@@ -154,6 +158,10 @@ export function Inspector({
   /** The language spoken in the media, for the next transcription. */
   videoLang: SpeechLang;
   onVideoLang: (l: SpeechLang) => void;
+  music: boolean;
+  onMusic: (on: boolean) => void;
+  /** Song lyrics over the transcript, shown in music mode. */
+  lyrics: ComponentProps<typeof LyricsSection>;
   /** Why the chosen model cannot transcribe `videoLang`, if it cannot. */
   langIssue: string | null;
   /** The language of the captions shown. */
@@ -264,7 +272,7 @@ export function Inspector({
         ) : (
           <div className={STUDIO}>
             <Section title="Dil">
-              <VideoLang value={videoLang} onChange={onVideoLang} disabled={running} />
+              <VideoLang value={videoLang} onChange={onVideoLang} music={music} onMusic={onMusic} disabled={running} />
               {langIssue ? (
                 <Hint>{langIssue}</Hint>
               ) : (
@@ -273,6 +281,7 @@ export function Inspector({
                 </Hint>
               )}
             </Section>
+            {music && <LyricsSection {...lyrics} />}
             <Section title="Doğruluk">
               {info.id === "seda" ? (
                 <MethodPicker

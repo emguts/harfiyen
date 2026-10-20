@@ -39,8 +39,10 @@ export function buildCues(words: Word[], rules: CueRules = SUBTITLE_RULES): Cue[
     // and never past a sentence end.
     const brief = !!cur && w.start - cur.start < (rules.minDuration ?? 0) && !/[.?!…]$/.test(prev);
     const full = !!cur && cur.words.length >= (rules.maxWords ?? Infinity) && !brief;
+    // A line of an imported subtitle file or of pasted lyrics always starts anew.
     const brk =
       !cur ||
+      !!w.cue ||
       sentenceEnd ||
       full ||
       w.start - cur.end >= rules.gap ||

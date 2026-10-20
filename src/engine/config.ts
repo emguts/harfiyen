@@ -46,6 +46,11 @@ export type SpeechLang = "tr" | "en";
 export interface DecodeOptions {
   /** Missing in jobs and projects from before there was a choice: Turkish. */
   lang?: SpeechLang;
+  /**
+   * Songs: Whisper decodes every window and keeps every word. The speech VAD
+   * mistakes sung vocals over instruments for silence.
+   */
+  music?: boolean;
   method: DecodingMethod;
   /** Beam size for modified beam search. */
   maxActivePaths: number;

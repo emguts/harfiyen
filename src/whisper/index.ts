@@ -7,7 +7,7 @@
 import { OnlineFbank } from "../engine/fbank";
 import type { SmallProvider } from "../engine";
 import type { EncoderProvider, Ort } from "../engine/models";
-import type { DecodeOptions } from "../engine/config";
+import type { DecodeOptions, SpeechLang } from "../engine/config";
 import type { SpeechEngine, SpeechStream } from "../engine/stream";
 import type { Word } from "../engine/tokens";
 import { alignWords, FRAME_SEC, tokenFrames } from "./alignment";
@@ -32,6 +32,8 @@ const LOGPROB_FLOOR = -1;
 /** A finished stream's leftover shorter than this is not decoded. */
 const MIN_TAIL = SAMPLE_RATE / 10;
 const SAMPLES_PER_TS = FRAME_SEC * SAMPLE_RATE;
+/** Forced text longer than this leaves too little of the decoder's 448 positions. */
+const MAX_FORCED_TOKENS = 400;
 
 export class WhisperEngine implements SpeechEngine {
   private constructor(
@@ -56,10 +58,38 @@ export class WhisperEngine implements SpeechEngine {
     return this.model.provider;
   }
 
+  /**
+   * Times for known text in up to 30 s of 16 kHz audio starting `offset`
+   * seconds into the file: the alignment heads' attention over the forced
+   * text, as for transcribed words. One time per word, or null when the
+   * words could not be told apart (too many tokens, lone punctuation).
+   */
+  async alignText(
+    pcm: Float32Array,
+    offset: number,
+    words: string[],
+    lang: SpeechLang,
+  ): Promise<{ start: number; end: number }[] | null> {
+    const text = words.flatMap((w) => this.tok.encodeWord(w));
+    if (!text.length || text.length > MAX_FORCED_TOKENS) return null;
+    this.model.setLanguage(lang);
+    const n = Math.min(pcm.length, WINDOW_SAMPLES);
+    const enc = await this.model.encode(new LogMel(this.model.config.numMel).compute(pcm.subarray(0, n)));
+    try {
+      const att = await this.model.attention(enc, text);
+      const frames = tokenFrames(att.heads, att.rows, Math.floor(n / (HOP * 2)), att.promptLen, this.model.config.medianFilterWidth);
+      const timed = alignWords(this.tok, text, frames, offset);
+      if (timed.length !== words.length) return null;
+      return timed.map((w) => ({ start: w.start, end: w.end }));
+    } finally {
+      this.model.release(enc);
+    }
+  }
+
   createRecognizer(opts?: DecodeOptions): SpeechStream {
     this.model.setLanguage(opts?.lang ?? "tr");
     this.vad.reset();
-    return new WhisperRecognizer(this.model, this.tok, this.vad);
+    return new WhisperRecognizer(this.model, this.tok, this.vad, !!opts?.music);
   }
 }
 
@@ -104,6 +134,7 @@ class WhisperRecognizer implements SpeechStream {
     private model: WhisperModel,
     private tok: WhisperTokenizer,
     private vad: SileroVad,
+    private music = false,
   ) {
     this.mel = new LogMel(model.config.numMel);
   }
@@ -142,7 +173,7 @@ class WhisperRecognizer implements SpeechStream {
     await this.vad.push(this.audio.subarray(this.vadSamples - this.windowStart, n), last);
     this.vadSamples = this.windowStart + n;
     const from = this.decodedSeconds;
-    if (!this.vad.hasSpeech(from, from + n / SAMPLE_RATE, 0)) {
+    if (!this.music && !this.vad.hasSpeech(from, from + n / SAMPLE_RATE, 0)) {
       this.consume(n);
       return;
     }
@@ -151,7 +182,7 @@ class WhisperRecognizer implements SpeechStream {
     let advance = n;
     try {
       const gen = await this.model.generate(enc);
-      const silent = gen.noSpeechProb > NO_SPEECH_PROB && gen.avgLogprob < LOGPROB_FLOOR;
+      const silent = !this.music && gen.noSpeechProb > NO_SPEECH_PROB && gen.avgLogprob < LOGPROB_FLOOR;
       if (!silent && gen.tokens.length) {
         const seg = splitSegments(gen.tokens, this.model.config.tokens.timestampBegin, n, last || gen.looped);
         advance = seg.advance;
@@ -165,10 +196,12 @@ class WhisperRecognizer implements SpeechStream {
             this.model.config.medianFilterWidth,
           );
           for (const w of alignWords(this.tok, seg.text, frames, from)) {
-            if (!this.vad.hasSpeech(w.start, w.end)) continue;
-            // Words at a pause soak up the silence next to them (half a
-            // second at sentence starts); keep them to the speech.
-            Object.assign(w, this.vad.speechSpan(w.start, w.end));
+            if (!this.music) {
+              if (!this.vad.hasSpeech(w.start, w.end)) continue;
+              // Words at a pause soak up the silence next to them (half a
+              // second at sentence starts); keep them to the speech.
+              Object.assign(w, this.vad.speechSpan(w.start, w.end));
+            }
             // Windows overlap a little where a segment was decoded again.
             w.start = Math.max(w.start, this.lastEnd);
             w.end = Math.max(w.end, w.start);

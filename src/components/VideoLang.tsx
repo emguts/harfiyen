@@ -10,14 +10,19 @@ const BTN =
 export function VideoLang({
   value,
   onChange,
+  music,
+  onMusic,
   disabled,
 }: {
   value: SpeechLang;
   onChange: (l: SpeechLang) => void;
+  /** Songs: Whisper keeps sung words the speech VAD would drop. */
+  music?: boolean;
+  onMusic?: (on: boolean) => void;
   disabled?: boolean;
 }) {
   return (
-    <span className="flex items-center gap-2.5 text-[12px] text-fg-2">
+    <span className="flex flex-wrap items-center gap-2.5 text-[12px] text-fg-2">
       Videodaki dil
       <span className="flex gap-0.5 rounded-md border border-line-soft bg-well p-0.5" role="group" aria-label="Videodaki dil">
         {LANGS.map((l) => (
@@ -33,6 +38,12 @@ export function VideoLang({
           </button>
         ))}
       </span>
+      {onMusic && (
+        <label className="flex items-center gap-1.5" title="Whisper'da ses etkinliği algılayıcı kapanır; şarkı sözleri atılmaz">
+          <input type="checkbox" checked={!!music} disabled={disabled} onChange={(e) => onMusic(e.target.checked)} />
+          Müzik modu
+        </label>
+      )}
     </span>
   );
 }
