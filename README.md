@@ -84,7 +84,7 @@ canlı çalışır.
 - Kelime düzeyinde zaman: bir kelimeye tıkla, kayıt o ana atlasın; çalarken konuşulan kelime vurgulanır.
 - Düzenleme: satıra çift tıkla ve düzelt, satırı sil, ⌘Z ile geri al. Değişmeyen kelimelerin zamanları
   korunur.
-- **Zaman düzenleme** (fork): transkriptte satırın üstüne gelip saat simgesine tıkla. Satırın ya da seçilen tek
+- **Zaman düzenleme:** transkriptte satırın üstüne gelip saat simgesine tıkla. Satırın ya da seçilen tek
   kelimenin başlangıç ve bitiş zamanı yazılarak, ±0,1 sn (Shift ile 0,5) adımlarla ya da **Şu an** ile oynatıcının
   bulunduğu ana getirilerek değiştirilir; **Alt + ← / →** satırı kaydırır. Satır uzayıp kısalınca kelimeleri aynı
   oranda yayılır; zamanlar önceki ve sonraki kelimeleri geçmez. **Yazıya döküm → Zamanlama** bütün altyazıyı
@@ -178,8 +178,6 @@ canlı çalışır.
   Her yönün modeli ilk kullanımda yaklaşık 360 MB indirir ve işlemcide (WASM) çalışır.
 
 ### Şarkılar
-
-> Bu bölüm [emguts/harfiyen](https://github.com/emguts/harfiyen) fork'unun eklemeleridir (`muzik-modu` dalı).
 
 - **Müzik modu:** **Videodaki dil** seçiminin yanındaki kutu. Açıkken Whisper ses etkinliği algılayıcıya (VAD)
   takılmaz: her 30 saniyelik parçayı işler, hiçbir kelimeyi atmaz. VAD konuşma için eğitildiğinden müziğin altındaki
@@ -369,7 +367,7 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [x] **Projeyi kaydetme ve geri açma:** transkript ve düzeltmeler için otomatik yerel kayıt;
       projeyi dosya olarak indirip yeniden açma.
 - [x] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
-      tüm altyazıya toplu zaman kaydırma (fork: emguts/harfiyen).
+      tüm altyazıya toplu zaman kaydırma.
 - [x] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
 - [x] **Noktalama için Türkçe testleri:** sedalib ile birebir karşılaştırma ve tekrar uygulama;
       Vikipedi metniyle kesme işareti, büyük harf ve noktalama ölçümü.
