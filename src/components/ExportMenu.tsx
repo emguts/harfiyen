@@ -4,6 +4,7 @@ import { buildCues, importedCues } from "../lib/cues";
 import { download, toJson, toSrt, toText, toVtt } from "../lib/exporters";
 import { duration as fmtDuration, megabytes, remaining } from "../lib/format";
 import type { BurnState } from "../lib/useBurner";
+import { hasGpu } from "../render/compositor";
 import {
   effectiveOutput,
   estimateSize,
@@ -98,6 +99,11 @@ export function ExportMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Without WebGPU the video is still made, on the 2D canvas; null while it is asked.
+  const [gpu, setGpu] = useState<boolean | null>(null);
+  useEffect(() => {
+    void hasGpu().then(setGpu);
+  }, []);
   // Open the menu by itself when a video render finishes.
   useEffect(() => {
     if (burn.status === "done") setOpen(true);
@@ -259,6 +265,9 @@ export function ExportMenu({
                   , MP4
                   {source && `, yaklaşık ${size(out)}`}.
                 </MenuNote>
+              )}
+              {!badCodec && gpu === false && (
+                <MenuNote>Ekran kartı kullanılamıyor: video daha yavaş oluşur, buzlu cam ve aura sadeleşir.</MenuNote>
               )}
             </div>
           </div>

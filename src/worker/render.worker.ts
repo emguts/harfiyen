@@ -2,7 +2,7 @@
 // Writes captions into a video.
 //
 // Video files: mediabunny decodes and re-encodes (WebCodecs, hardware H.264
-// or HEVC where available, at the bitrate chosen in the export menu), the WebGPU compositor draws every frame with its caption,
+// or HEVC where available, at the bitrate chosen in the export menu), the compositor (WebGPU, else 2D canvas) draws every frame with its caption,
 // and the audio track is copied over untouched. A slice that fills the frame (upright, for Reels, say) is cut
 // out while decoding; a picture fitted into the frame is scaled down while decoding and placed by the compositor.
 //
@@ -179,7 +179,7 @@ async function burn(
   const pictureW = fit ? even(fit.dst.w * width) : width;
   const pictureH = fit ? even(fit.dst.h * height) : height;
   const canvas = new OffscreenCanvas(width, height);
-  const compositor = await createCompositor(canvas, false);
+  const compositor = await createCompositor(canvas);
   compositor.setPlacement(fit);
   compositor.setLogo(logo);
   const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
@@ -281,7 +281,7 @@ async function burnAudio(
   const { width, height } = encode.size ?? AUDIO_VIDEO;
   const { fps } = AUDIO_VIDEO;
   const canvas = new OffscreenCanvas(width, height);
-  const compositor = await createCompositor(canvas, false);
+  const compositor = await createCompositor(canvas);
   compositor.setLogo(logo);
   const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
   const palette = paletteById(settings.aura).colors;

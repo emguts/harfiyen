@@ -106,6 +106,12 @@ function getDevice(): Promise<GPUDevice> {
   return devicePromise;
 }
 
+/** Whether WebGPU works in this context (the export worker gets the same answer). */
+export const hasGpu = (): Promise<boolean> => getDevice().then(
+  () => true,
+  () => false,
+);
+
 const isAura = (p: Picture): p is AuraFrame => !!p && "kind" in p && p.kind === "aura";
 
 /** Video elements can only be sampled once they have a current frame (and a picture at all). */
@@ -395,7 +401,7 @@ class GpuCompositor implements Compositor {
   }
 }
 
-/** Fallback for browsers without WebGPU (preview only). */
+/** Fallback for browsers without WebGPU, for the player and the export alike. */
 class CanvasCompositor implements Compositor {
   readonly kind = "2d" as const;
   private g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -518,12 +524,11 @@ class CanvasCompositor implements Compositor {
   destroy() {}
 }
 
-export async function createCompositor(canvas: AnyCanvas, allowFallback = true): Promise<Compositor> {
+export async function createCompositor(canvas: AnyCanvas): Promise<Compositor> {
   try {
     return new GpuCompositor(await getDevice(), canvas);
   } catch (e) {
-    if (!allowFallback) throw e;
-    console.warn("[harfiyen] WebGPU unavailable for the player, using 2D canvas", e);
+    console.warn("[harfiyen] WebGPU unavailable, using 2D canvas", e);
     return new CanvasCompositor(canvas);
   }
 }

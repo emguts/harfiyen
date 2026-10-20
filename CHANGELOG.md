@@ -2,6 +2,12 @@
 
 Yeni sürümler en üstte.
 
+## v0.4.1 (20 Ekim 2026)
+
+- **Ekran kartı olmadan video:** WebGPU'yu desteklemeyen tarayıcılarda ve ekran kartı bulunamayan bilgisayarlarda da
+  altyazılı video oluşturulabilir. Görüntü 2D canvas'ta çizilir; daha yavaştır, buzlu cam ve aura sadeleşir. Dışa
+  aktarma menüsü bunu not olarak gösterir.
+
 ## v0.4.0 (19 Ekim 2026)
 
 - **Seda v0.2:** Seda, [seda-v0.2](https://huggingface.co/atasoglu/seda-v0.2)'ye geçti. Daha çok veriyle eğitildi;
