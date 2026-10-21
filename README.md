@@ -260,6 +260,25 @@ npm run dev        # https://<bilgisayarın-yerel-IP'si>:5173
 Telefonda uyarısız açılması için `mkcert -CAROOT` klasöründeki `rootCA.pem` dosyasını cihaza yükleyip
 güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarları).
 
+### Masaüstü uygulaması
+
+Aynı uygulama [Electron](https://www.electronjs.org) ile kendi penceresinde de açılır. Adres çubuğu ve sekme
+olmaz, bağlantılar varsayılan tarayıcıda açılır, simge durumuna küçültülünce döküm yavaşlamaz:
+
+```bash
+npm run desktop      # derler ve dist/ klasörünü pencerede açar
+npm run desktop:dev  # geliştirme sunucusunu pencerenin içinde başlatır, pencere kapanınca o da kapanır
+```
+
+Derlenmiş uygulama ağa hiç çıkmayan sabit bir adresten (`https://app.harfiyen.localhost`) servis edilir.
+Projeler ve indirilen modeller bu yüzden kapatıp açınca da yerinde kalır. Masaüstü penceresinin depolaması
+tarayıcınınkinden ayrıdır; tarayıcıdaki bir projeyi taşımak için **Projeler → Projeyi dosya olarak indir** ile kaydedip
+pencerede yeniden aç.
+
+Windows'ta masaüstü kısayolu için `scripts/windows/harfiyen.ps1` kullanılabilir. Electron Node.js'i
+içinde getirdiği için `npm install` dışında PATH'te Node gerekmez:
+`powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File scripts\windows\harfiyen.ps1`
+
 ## Kullanım
 
 | İşlem                      | Nasıl yapılır                                                                              |
