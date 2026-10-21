@@ -12,7 +12,7 @@
 import { OnlineFbank } from "../engine/fbank";
 import type { SmallProvider } from "../engine";
 import type { EncoderProvider, Ort } from "../engine/models";
-import type { DecodeOptions } from "../engine/config";
+import type { DecodeOptions, SpeechLang } from "../engine/config";
 import type { SpeechEngine, SpeechStream } from "../engine/stream";
 import type { Word } from "../engine/tokens";
 import { alignWords, FRAME_SEC, tokenFrames } from "./alignment";
@@ -37,6 +37,8 @@ const LOGPROB_FLOOR = -1;
 /** A finished stream's leftover shorter than this is not decoded. */
 const MIN_TAIL = SAMPLE_RATE / 10;
 const SAMPLES_PER_TS = FRAME_SEC * SAMPLE_RATE;
+/** Forced text longer than this leaves too little of the decoder's 448 positions. */
+const MAX_FORCED_TOKENS = 400;
 /**
  * After a loop the window moves at least this far; by the number of windows
  * in a row that looped. A third gives up on the window, as before, so a
@@ -106,6 +108,35 @@ export class WhisperEngine implements SpeechEngine {
 
   get provider() {
     return this.model.provider;
+  }
+
+  /**
+   * Times for known text in up to 30 s of 16 kHz audio starting `offset`
+   * seconds into the file: the alignment heads' attention over the forced
+   * text, as for transcribed words. One time per word, or null when the
+   * words could not be told apart (too many tokens, lone punctuation).
+   * From emguts/harfiyen.
+   */
+  async alignText(
+    pcm: Float32Array,
+    offset: number,
+    words: string[],
+    lang: SpeechLang,
+  ): Promise<{ start: number; end: number }[] | null> {
+    const text = words.flatMap((w) => this.tok.encodeWord(w));
+    if (!text.length || text.length > MAX_FORCED_TOKENS) return null;
+    this.model.setLanguage(lang);
+    const n = Math.min(pcm.length, WINDOW_SAMPLES);
+    const enc = await this.model.encode(new LogMel(this.model.config.numMel).compute(pcm.subarray(0, n)));
+    try {
+      const att = await this.model.attention(enc, text);
+      const frames = tokenFrames(att.heads, att.rows, Math.floor(n / (HOP * 2)), att.promptLen, this.model.config.medianFilterWidth);
+      const timed = alignWords(this.tok, text, frames, offset);
+      if (timed.length !== words.length) return null;
+      return timed.map((w) => ({ start: w.start, end: w.end }));
+    } finally {
+      this.model.release(enc);
+    }
   }
 
   createRecognizer(opts?: DecodeOptions): SpeechStream {

@@ -91,6 +91,14 @@ canlı çalışır.
   **Metin → Zamanlama** bütün altyazıyı çevirisiyle birlikte 0,1 / 0,5 sn öne ya da geriye alır (**[** ve **]**,
   Shift ile 0,5 sn). Hepsi ⌘Z / Ctrl+Z ile geri alınır. ([emguts/harfiyen](https://github.com/emguts/harfiyen)
   fork'undan uyarlandı.)
+- Metni sese hizala: elindeki doğru metni (şarkı sözü, konuşma metni, şiir) transkriptin başlığındaki düğmeyle
+  yapıştır. Kelimeler metinden, zamanlar dökümden gelir: metin dökümle yazılışa göre eşleştirilir, yanlış duyulmuş
+  ama yakın yazılan kelimeler de eşleşir; eşleşmeyenler komşularının arasına konuşma hızında dizilir. Kısa satırlı
+  metinlerde (şarkı sözü, şiir) her satır ayrı bir altyazı satırı olur, altyazı stilleri de orada kırılır;
+  paragraflarda kapalı gelir, istenirse değiştirilir. `[Nakarat]`, `(x2)` gibi tek başına duran başlıklar atlanır.
+  **Sesle ince ayar** açıkken Whisper metnin kelimelerini en fazla 30 saniyelik parçalarda doğrudan seste arar;
+  dökümün kaçırdığı kelimeler de gerçek zamanlarını alır. Eşleşen kelimelerden 2 saniyeden fazla sapan parçalar
+  eski zamanlarında kalır. Şarkılarda ve gürültülü kayıtlarda fark eder; daha yavaştır. ⌘Z / Ctrl+Z geri alır. ([emguts/harfiyen](https://github.com/emguts/harfiyen) fork'undan uyarlandı.)
 - Bul ve değiştir (⌘F / Ctrl+F): yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte düzelt. Büyük/küçük
   harfe bakmaz, istenirse yalnızca tam kelimeleri bulur.
 - SRT ve VTT açma: hazır altyazı açılıp stillendirilir ve videoya yazılır. Satırlar ve zamanlar korunur;
@@ -304,6 +312,7 @@ npm run test:formatter              # noktalamayı sedalib'in çıktısıyla kar
 npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
 npm run test:timing                 # elle zaman düzenlemeyi dener
+npm run test:align                  # yapıştırılan metni dökümle hizalamayı dener
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
 npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
 npm run build      # üretim derlemesi
@@ -324,6 +333,10 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - Altyazılı video oluşturulurken diske yazılır, uzun videolarda da bellek dolmaz: Chrome ve Edge önce kaydedilecek
   yeri sorar, diğer tarayıcılar videoyu tarayıcının kendi disk alanında hazırlayıp indirir. Sayfa ağdan `http://`
   ile açıldığında bu ikisi de kullanılamaz, video bellekte oluşturulur.
+- Metni sese hizalamak için önce yazıya dökmek gerekir; zamanlar dökümün duyduğu yerlerden gelir. Dökümün hiç
+  duymadığı bölümlerdeki satırlar (başka dilde söylenen kısımlar, müziğin bastırdığı yerler) komşularının yanına
+  tahminen yerleşir; **Sesle ince ayar** ya da zaman düzenlemeyle düzeltilir. Sesle ince ayar yalnızca model olarak
+  Whisper seçiliyken çalışır (döküm Seda ile yapılmış olabilir) ve ses dosyası gerektirir.
 - Zaman düzenleme transkriptten yapılır; zaman çizelgesinde kelime ya da satır kenarlarını sürüklemek yok. Tek
   kelimenin ya da satırın zamanı değişince çevirisi kendiliğinden kaymaz (toplu kaydırma ikisini birlikte kaydırır).
 - Kesme tek bölümle sınırlı; aradan parça çıkarmak (jump cut) yok. Bölüm dökümden sonra genişletilirse eksik

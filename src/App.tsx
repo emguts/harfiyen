@@ -21,6 +21,7 @@ import {
   toolbarButton,
 } from "./components/ui";
 import { Dropzone } from "./components/Dropzone";
+import { AlignBar } from "./components/AlignBar";
 import { FindBar, useFind } from "./components/FindBar";
 import {
   ProjectList,
@@ -38,6 +39,7 @@ import {
   IconSettings,
   IconSound,
   IconSearch,
+  IconAlignText,
   IconUndo,
 } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
@@ -56,6 +58,7 @@ import type { DecodeOptions, DecodingMethod, SpeechLang, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
 import { retime, shiftAll, shiftSpan } from "./lib/timing";
+import { alignText, applySpans, planSpans } from "./lib/align";
 import { writeNumbers, type NumberMode } from "./lib/numbers";
 import { plainWord } from "./punct/turkish";
 import { isSubtitle, parseSubtitles, readSubtitle, SUBTITLE_EXTS } from "./lib/subtitles";
@@ -195,6 +198,8 @@ export function App() {
     liveLevels,
     liveMeter,
     punctuate,
+    alignAudio,
+    aligning: alignProgress,
     punct,
   } = useTranscriber();
   const [autoPunct, setAutoPunct] = useState(
@@ -833,10 +838,47 @@ export function App() {
     () => (find.open && editable ? { matches: find.matches, current: find.current } : undefined),
     [find.open, editable, find.matches, find.current],
   );
+  // A pasted text placed on the audio in place of the transcript (song lyrics, a script). Not over a
+  // translation, nor a project made from a text, whose words are already the text.
+  const [aligning, setAligning] = useState(false);
+  const [alignDraft, setAlignDraft] = useState("");
+  const canAlign = editable && !translated && !isTts;
+  /** Why Whisper cannot look for the words in the audio ("Sesle ince ayar"), or null. */
+  const refineIssue = !job?.file
+    ? "Bu projede ses dosyası yok."
+    : modelInfo(model).engine !== "whisper"
+      ? "Whisper gerekir: model menüsünden Whisper'ı seç (döküm yeniden yapılmaz)."
+      : null;
+  // Whisper answers later: the transcript must still be the one it was asked about.
+  const latestWords = useRef(words);
+  latestWords.current = words;
+  const onAlign = async (text: string, lines: boolean, refine: boolean): Promise<string | null> => {
+    if (!job) return null;
+    try {
+      const timing = alignText(words, text, { lines });
+      let next = timing.words;
+      if (refine && job.file && !refineIssue) {
+        const spans = planSpans(timing, fileDuration);
+        const found = await alignAudio(
+          job.file,
+          sourceLang,
+          spans.map((s) => ({ start: s.start, end: s.end, words: timing.words.slice(s.first, s.last + 1).map((w) => w.text) })),
+        );
+        if (latestWords.current !== words) return "Transkript bu sırada değişti; yeniden hizala.";
+        next = applySpans(timing, spans, found);
+      }
+      commitWords(next);
+      setAligning(false);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  };
   useEffect(() => {
     history.current = [];
     setCanUndo(false);
     closeFind();
+    setAligning(false);
   }, [job?.id, closeFind]);
 
   const chosen = modelInfo(model);
@@ -1298,6 +1340,17 @@ export function App() {
             )}
             {(canUndo || editable) && (
               <span className="-my-1 -mr-1 flex gap-0.5 self-center">
+                {canAlign && (
+                  <IconButton
+                    className={aligning ? "bg-line text-fg" : ""}
+                    onClick={() => setAligning(!aligning)}
+                    aria-pressed={aligning}
+                    title="Metni sese hizala: şarkı sözü, konuşma metni ya da şiir yapıştır"
+                    aria-label="Metni sese hizala"
+                  >
+                    <IconAlignText />
+                  </IconButton>
+                )}
                 {editable && (
                   <IconButton
                     className={found ? "bg-line text-fg" : ""}
@@ -1321,6 +1374,17 @@ export function App() {
               </span>
             )}
           </PaneHead>
+          {aligning && canAlign && (
+            <AlignBar
+              text={alignDraft}
+              onText={setAlignDraft}
+              lang={sourceLang}
+              refineIssue={refineIssue}
+              progress={alignProgress}
+              onAlign={onAlign}
+              onClose={() => setAligning(false)}
+            />
+          )}
           {found && (
             <FindBar
               find={find}

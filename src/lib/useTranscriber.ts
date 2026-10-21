@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DecodeOptions, Word } from "../engine";
+import type { DecodeOptions, SpeechLang, Word } from "../engine";
 import { DEFAULT_MODEL, isModelId, modelFileUrl, modelInfo, type ModelId } from "../models";
 import { allCached } from "../worker/modelStore";
-import { BAND_RATE, PEAK_STEP, type FromWorker, type ProviderChoice, type ToWorker } from "../worker/protocol";
+import { BAND_RATE, PEAK_STEP, type AlignSpan, type FromWorker, type ProviderChoice, type ToWorker } from "../worker/protocol";
 import { decodeWithAudioContext } from "./decodeFallback";
 import { LiveMeter, type AuraLevels } from "../render/aura";
 import { MicError, startMicrophone, type Microphone } from "./microphone";
@@ -121,6 +121,11 @@ export function useTranscriber() {
   const [punct, setPunct] = useState<PunctState>({ phase: "idle" });
   const punctWaiters = useRef(new Map<number, { resolve: (w: string[]) => void; reject: (e: Error) => void }>());
   const nextPunctId = useRef(1);
+  type Aligned = ({ start: number; end: number }[] | null)[];
+  const alignWaiters = useRef(new Map<number, { resolve: (s: Aligned) => void; reject: (e: Error) => void }>());
+  const nextAlignId = useRef(1);
+  /** A pasted text being timed in the audio: spans done of total, or null. */
+  const [aligning, setAligning] = useState<{ done: number; total: number } | null>(null);
   const nextId = useRef(1);
   /** The user's choice; the worker may run on the CPU anyway after a GPU failure. */
   const [provider, setProviderState] = useState<ProviderChoice>(loadProvider);
@@ -226,6 +231,19 @@ export function useTranscriber() {
           punctWaiters.current.get(m.id)?.resolve(m.words);
           punctWaiters.current.delete(m.id);
           break;
+        case "align-progress":
+          setAligning({ done: m.done, total: m.total });
+          break;
+        case "aligned":
+          setAligning(null);
+          alignWaiters.current.get(m.id)?.resolve(m.spans);
+          alignWaiters.current.delete(m.id);
+          break;
+        case "align-error":
+          setAligning(null);
+          alignWaiters.current.get(m.id)?.reject(new Error(m.message));
+          alignWaiters.current.delete(m.id);
+          break;
         case "punct-error":
           setPunct({ phase: "error", message: m.message });
           punctWaiters.current.get(m.id)?.reject(new Error(m.message));
@@ -296,6 +314,9 @@ export function useTranscriber() {
       for (const w of punctWaiters.current.values()) w.reject(new Error("Yarıda kaldı"));
       punctWaiters.current.clear();
       setPunct({ phase: "idle" });
+      for (const w of alignWaiters.current.values()) w.reject(new Error("Yarıda kaldı"));
+      alignWaiters.current.clear();
+      setAligning(null);
       setEngineState({ phase: "idle" });
       spawn();
     },
@@ -563,6 +584,19 @@ export function useTranscriber() {
     [send],
   );
 
+  /** Whisper times known words in spans of a file (a pasted text); one result per span. */
+  const alignAudio = useCallback(
+    (file: File, lang: SpeechLang, spans: AlignSpan[]) =>
+      new Promise<Aligned>((resolve, reject) => {
+        const id = nextAlignId.current++;
+        alignWaiters.current.set(id, { resolve, reject });
+        setAligning({ done: 0, total: spans.length });
+        prepare();
+        send({ type: "align", id, file, lang, spans });
+      }),
+    [send, prepare],
+  );
+
   /** Replace the transcript of a finished job (user edits). */
   const setWords = useCallback(
     (words: Word[]) => {
@@ -678,7 +712,7 @@ export function useTranscriber() {
     send({ type: "transcribe", jobId: j.id, file: j.file, options: j.options, startAt: at, endAt: range?.end });
   }, [prepare, send, update, setModel]);
 
-  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, setSpoken, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct };
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, setSpoken, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct, alignAudio, aligning };
 }
 
 export { MicError };

@@ -19,7 +19,8 @@ import { fetchAll } from "./modelStore";
 import { BandTracker } from "../render/aura";
 import { WhisperEngine, type WhisperConfig } from "../whisper";
 import { DuyuEngine, type DuyuConfig } from "../duyu";
-import { PEAK_STEP, type ErrorCode, type FromWorker, type ProviderChoice, type ToWorker } from "./protocol";
+import { PEAK_STEP, type AlignSpan, type ErrorCode, type FromWorker, type ProviderChoice, type ToWorker } from "./protocol";
+import type { SpeechLang } from "../engine/config";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -390,6 +391,59 @@ async function transcribeFile(job: Job, file: File, endAt?: number) {
   input.dispose();
 }
 
+/** Mono 16 kHz audio of from..to seconds of a track. */
+async function readPcm(sink: AudioSampleSink, rate: number, from: number, to: number): Promise<Float32Array> {
+  const resampler = new Resampler(rate, 16000);
+  const parts: Float32Array[] = [];
+  for await (const sample of sink.samples(from, to)) {
+    const frames = sample.numberOfFrames;
+    const skip = Math.max(0, Math.min(frames, Math.round((from - sample.timestamp) * sample.sampleRate)));
+    const stop = Math.max(skip, Math.min(frames, Math.round((to - sample.timestamp) * sample.sampleRate)));
+    const channels: Float32Array[] = [];
+    for (let ch = 0; ch < sample.numberOfChannels; ch++) {
+      const buf = new Float32Array(frames);
+      sample.copyTo(buf, { planeIndex: ch, format: "f32-planar" });
+      channels.push(buf.subarray(skip, stop));
+    }
+    sample.close();
+    if (skip < stop) parts.push(resampler.process(downmix(channels)));
+  }
+  parts.push(resampler.process(new Float32Array(0), true));
+  const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/** A pasted text: Whisper times its known words span by span. From emguts/harfiyen. */
+async function alignAudio(id: number, file: File, lang: SpeechLang, spans: AlignSpan[]) {
+  const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+  try {
+    const engine = await getEngine();
+    if (!(engine instanceof WhisperEngine)) {
+      throw new Error("Sesle ince ayar yalnızca Whisper ile çalışır; model olarak Whisper'ı seç.");
+    }
+    const track = await input.getPrimaryAudioTrack();
+    if (!track) throw new Error("Bu dosyada ses kanalı yok.");
+    const sink = new AudioSampleSink(track);
+    const out: ({ start: number; end: number }[] | null)[] = [];
+    post({ type: "align-progress", id, done: 0, total: spans.length });
+    for (const [n, s] of spans.entries()) {
+      const pcm = await readPcm(sink, track.sampleRate, s.start, s.end);
+      out.push(await engine.alignText(pcm, s.start, s.words, lang));
+      post({ type: "align-progress", id, done: n + 1, total: spans.length });
+    }
+    post({ type: "aligned", id, spans: out });
+  } catch (e) {
+    post({ type: "align-error", id, message: String((e as Error)?.message ?? e) });
+  } finally {
+    input.dispose();
+  }
+}
+
 async function transcribePcm(job: Job, pcm: Float32Array, sampleRate: number, endAt?: number) {
   post({ type: "meta", jobId: job.id, duration: pcm.length / sampleRate });
   job.setSampleRate(sampleRate);
@@ -524,6 +578,10 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
     case "punctuate":
       // Queued after transcription jobs: both use the same wasm runtime.
       queue = queue.then(() => punctuate(m.id, m.words));
+      break;
+    case "align":
+      // Queued after transcription jobs: the same model does both.
+      queue = queue.then(() => alignAudio(m.id, m.file, m.lang, m.spans));
       break;
   }
 };

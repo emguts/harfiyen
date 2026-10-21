@@ -223,3 +223,10 @@ export const IconClock = (p: P) => (
     <path d="M8 4.5V8l2.5 1.5" />
   </Svg>
 );
+
+/** Text lines with a wave beside them: a text placed on the audio. */
+export const IconAlignText = (p: P) => (
+  <Svg {...p}>
+    <path d="M2.5 4h7M2.5 8h5M2.5 12h7M12 6v4M14 7v2" />
+  </Svg>
+);
