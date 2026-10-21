@@ -136,7 +136,8 @@ canlı çalışır.
   9:16'da 1080p'yi önerir.
 - Kesme: zaman çizelgesinin sonundaki **Kes** ile videonun bir bölümü seçilir; seçilen kısım renklenir, uçlar
   sürüklenince oynatıcı o kareyi gösterir. Yalnızca o bölüm yazıya dökülür, oynatılır ve dışa aktarılır; video,
-  SRT ve VTT zamanları 0:00'dan başlar.
+  SRT ve VTT zamanları 0:00'dan başlar. **Tamam**'dan sonra zaman çizelgesi yalnızca seçilen bölümü kaplar
+  (transkript ve oynatıcıdaki zamanlar dosyanınki olarak kalır); **Kes**'e yeniden basınca bütün dosya görünür.
 - Altyazılı MP4: kareler ekran kartında birleştirilir, video H.264 ya da HEVC olarak kodlanır, ses kopyalanır.
   Tarayıcı destekliyorsa ekran kartı, desteklemiyorsa işlemci kullanılır; menü hangisinin kullanılacağını gösterir.
 - Dışa aktarırken çözünürlük (kaynakla aynı ya da daha küçük: 1080p, 720p) ve kalite seçilir; tahmini dosya

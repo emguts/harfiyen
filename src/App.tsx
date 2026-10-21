@@ -1071,8 +1071,11 @@ export function App() {
     setTrimDraft(trim);
     setTrimming(true);
   };
+  /** The range being picked, or null when it holds the whole file (the handles keep a range while dragged). */
+  const draftWhole =
+    !trimDraft || (trimDraft.start <= 0.01 && trimDraft.end >= (player.duration || job?.duration || 0) - 0.01);
   const finishTrimming = () => {
-    if (trimming) changeTrim(trimDraft);
+    if (trimming) changeTrim(draftWhole ? null : trimDraft);
     setTrimming(false);
   };
   // Transcription starting, or another file, ends the picking without a change.
@@ -1733,12 +1736,22 @@ export function App() {
         )}
         {job && !job.live && trimming ? (
           <div className="ml-2 flex flex-none items-center gap-1.5 max-[860px]:ml-auto">
-            <span className="text-[12px] text-fg-3 tabular-nums max-[1100px]:hidden">
-              {trimDraft
-                ? `${clock(trimDraft.start)} – ${clock(trimDraft.end)}, ${fmtDuration(trimDraft.end - trimDraft.start)}`
-                : "Tamamı"}
+            {/* As wide as the whole file's range (an invisible copy): text of another length would
+                resize the timeline under the dragged handle. */}
+            <span className="grid text-right text-[12px] text-fg-3 tabular-nums max-[1100px]:hidden">
+              <span className="invisible col-start-1 row-start-1" aria-hidden>
+                {`${clock(0)} – ${clock(fileDuration)}, ${fmtDuration(fileDuration)}`}
+              </span>
+              <span className="col-start-1 row-start-1">
+                {trimDraft && !draftWhole
+                  ? `${clock(trimDraft.start)} – ${clock(trimDraft.end)}, ${fmtDuration(trimDraft.end - trimDraft.start)}`
+                  : "Tamamı"}
+              </span>
             </span>
-            {trimDraft && <Button onClick={() => setTrimDraft(null)}>Sıfırla</Button>}
+            {/* Always there, so the timeline keeps its width while a handle is dragged. */}
+            <Button onClick={() => setTrimDraft(null)} disabled={draftWhole}>
+              Sıfırla
+            </Button>
             <Button onClick={() => setTrimming(false)}>Vazgeç</Button>
             <Button variant="primary" onClick={finishTrimming}>
               Tamam
