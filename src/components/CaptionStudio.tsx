@@ -91,6 +91,7 @@ export function CaptionStudio({
   disabled,
   lang = TRANSCRIPT_LANG,
   onScene,
+  speakerCount = 0,
 }: {
   settings: CaptionSettings;
   onChange: (s: CaptionSettings) => void;
@@ -99,6 +100,8 @@ export function CaptionStudio({
   lang?: string;
   /** Opens the Sahne tab, where captions are turned on or off. */
   onScene: () => void;
+  /** How many speakers the open transcript tells apart; their names can be shown from two. */
+  speakerCount?: number;
 }) {
   const userFonts = useUserFonts();
   const fontFile = useRef<HTMLInputElement>(null);
@@ -152,6 +155,19 @@ export function CaptionStudio({
           <LinkButton type="button" className="justify-self-start" onClick={onScene}>
             Sahne sekmesine git
           </LinkButton>
+        </Section>
+      )}
+      {speakerCount > 1 && (
+        <Section title="Konuşmacılar">
+          <Row>
+            <RowLabel wide>Konuşanın adını göster</RowLabel>
+            <Switch checked={!!settings.speakerNames} onChange={(e) => onChange({ ...settings, speakerNames: e.target.checked })} />
+          </Row>
+          <Hint>
+            Konuşan değişince altyazının üstünde adı, renk noktasıyla, stilin kendi görünümünde çıkar; yazı ve vurgu
+            renkleri değişmez. Kinetik tipografide ad sol üst köşede durur. Adlar Metin sekmesindeki Konuşmacılar'dan
+            değişir.
+          </Hint>
         </Section>
       )}
       <Section title="Stil">

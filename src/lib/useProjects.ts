@@ -116,6 +116,7 @@ export function useProjects(
       bands: job.bands,
       loudness: job.loudness,
       translation: job.translation,
+      speakers: job.speakers,
       settings,
       crop: crop ?? undefined,
       trim: trim ?? undefined,

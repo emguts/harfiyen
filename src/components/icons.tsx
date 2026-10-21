@@ -230,3 +230,11 @@ export const IconAlignText = (p: P) => (
     <path d="M2.5 4h7M2.5 8h5M2.5 12h7M12 6v4M14 7v2" />
   </Svg>
 );
+
+/** A head and shoulders: who speaks. */
+export const IconSpeaker = (p: P) => (
+  <Svg {...p}>
+    <circle cx="8" cy="5.5" r="2.75" />
+    <path d="M2.75 13.5a5.25 5.25 0 0 1 10.5 0" />
+  </Svg>
+);

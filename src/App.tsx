@@ -112,6 +112,8 @@ import { DUB_RATE, dubMetrics } from "./tts/dub";
 import { useProjects } from "./lib/useProjects";
 import { canResume, modelIsCached, useTranscriber, type TimeRange } from "./lib/useTranscriber";
 import { useTranslator } from "./lib/useTranslator";
+import { useSpeakers } from "./lib/useSpeakers";
+import { assign as assignSpeaker, labelWords, merge as mergeSpeakers, rename as renameSpeaker, type Speakers } from "./lib/speakers";
 import { sourceKey, type Translation } from "./lib/translation";
 import { LANG_NAMES } from "./lib/lang";
 import { DEFAULT_MODEL, modelInfo } from "./models";
@@ -215,6 +217,7 @@ export function App() {
     resume,
     setWords,
     setTranslation,
+    setSpeakers,
     liveLevels,
     liveMeter,
     punctuate,
@@ -282,6 +285,7 @@ export function App() {
   );
   const dubber = useDubber();
   const translator = useTranslator();
+  const speakerTool = useSpeakers();
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("captions");
   const [customText, setCustomText] = useState("");
   const textRef = useRef<HTMLTextAreaElement>(null);
@@ -455,6 +459,7 @@ export function App() {
           bands: p.bands,
           loudness: p.loudness ?? EMPTY_BANDS,
           translation: p.translation,
+          speakers: p.speakers,
         });
         punctuated.current.add(jobId);
         bind(jobId, p, file);
@@ -702,6 +707,12 @@ export function App() {
   /** The transcript as spoken; dubbing, punctuation and numbers always work on it. */
   const words = job?.words ?? [];
   const translation = job?.translation;
+  /** Who speaks when; the words shown carry their speaker. */
+  const speakers = job?.speakers;
+  const speakersNow = useRef(speakers);
+  speakersNow.current = speakers;
+  /** The names shown over the captions, when asked for and there is more than one speaker. */
+  const captionSpeakers = settings.speakerNames && speakers && speakers.names.length > 1 ? speakers.names : null;
   /** The language spoken in the media, as the open transcript was made in. */
   const sourceLang: SpeechLang = job ? (job.options.lang ?? "tr") : voice.lang;
   useEffect(() => {
@@ -711,15 +722,15 @@ export function App() {
   const translated = showEn && !!translation;
   const lang = translated ? translation.lang : sourceLang;
   /** What the transcript pane, the player and the exports show: the transcript or its translation. */
-  const shown = translated ? translation.words : words;
+  const shown = useMemo(() => labelWords(translated ? translation.words : words, speakers), [translated, translation, words, speakers]);
   const liveWords = useMemo(
     () =>
       translated
-        ? translation.words
+        ? shown
         : job?.tentative.length
           ? (job.words ?? []).concat(job.tentative)
-          : (job?.words ?? []),
-    [translated, translation, job?.words, job?.tentative],
+          : shown,
+    [translated, shown, job?.words, job?.tentative],
   );
   /** What the dub reads: the transcript in its own language, or the translation into the other. */
   const dubWords =
@@ -757,7 +768,10 @@ export function App() {
 
   // Transcript edits, with undo (⌘Z / Ctrl+Z outside text fields). `en`: the edit was to the translation.
   // `translation`: the translation as it was, when the edit moved it too (a shift of every caption).
-  const history = useRef<{ jobId: number; en: boolean; words: Word[]; translation?: Translation }[]>([]);
+  // An edit of who speaks keeps the speakers as they were instead.
+  const history = useRef<
+    ({ jobId: number; en: boolean; words: Word[]; translation?: Translation } | { jobId: number; speakers: Speakers | undefined })[]
+  >([]);
   const [canUndo, setCanUndo] = useState(false);
   const editable = !!job && job.status !== "running" && shown.length > 0;
   const commitWords = useCallback(
@@ -804,7 +818,9 @@ export function App() {
     const h = history.current;
     while (h.length && h[h.length - 1].jobId !== job?.id) h.pop();
     const prev = h.pop();
-    if (prev?.en && job?.translation) {
+    if (prev && "speakers" in prev) {
+      if (job) setSpeakers(job.id, prev.speakers);
+    } else if (prev?.en && job?.translation) {
       setTranslation(job.id, { ...job.translation, words: prev.words });
       setShowEn(true);
     } else if (prev && !prev.en) {
@@ -813,7 +829,45 @@ export function App() {
       else setShowEn(false);
     }
     setCanUndo(h.length > 0);
-  }, [job?.id, job?.translation, setWords, setTranslation]);
+  }, [job?.id, job?.translation, setWords, setTranslation, setSpeakers]);
+  /** A change to who speaks, with undo. */
+  const commitSpeakers = useCallback(
+    (next: Speakers | undefined) => {
+      if (!job) return;
+      history.current.push({ jobId: job.id, speakers: job.speakers });
+      setCanUndo(true);
+      setSpeakers(job.id, next);
+      if (burner.state.status === "done") resetBurn();
+    },
+    [job, setSpeakers, burner.state.status, resetBurn],
+  );
+  const onSpeaker = useCallback(
+    (start: number, end: number, speaker: number) => speakers && commitSpeakers(assignSpeaker(speakers, start, end, speaker)),
+    [speakers, commitSpeakers],
+  );
+  /** Why the speakers cannot be told apart now; null when they can. */
+  const speakersUnavailable = !job?.file
+    ? "Önce bir video ya da ses dosyası aç."
+    : job.status === "running"
+      ? "Yazıya döküm bitince kullanılabilir."
+      : !job.words.length
+        ? "Önce yazıya dök: konuşmacılar kelimelerin zamanından ayrılır."
+        : null;
+  const runSpeakers = (count: number | undefined) => {
+    if (!job?.file) return;
+    const id = job.id;
+    const end = job.duration ?? job.decoded;
+    const range = { start: Math.max(0, (job.words[0]?.start ?? 0) - 1), end: Math.min(end, (job.words.at(-1)?.end ?? end) + 1) };
+    // Called only while the job is open (it is cancelled when another opens).
+    speakerTool.diarize(job.file, range, job.words, count, (sp) => {
+      history.current.push({ jobId: id, speakers: speakersNow.current });
+      setCanUndo(true);
+      setSpeakers(id, sp);
+    });
+  };
+  // Who speaks belongs to its job.
+  const cancelSpeakers = speakerTool.cancel;
+  useEffect(() => cancelSpeakers(), [job?.id, cancelSpeakers]);
   /** `then` runs with the translation once it is made (not if it is cancelled or the job changes). */
   const translate = (then?: (t: Translation) => void) => {
     if (!job) return;
@@ -1142,7 +1196,7 @@ export function App() {
     // Translated or dub-timed words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
     const loudness = (translated || (dubTimed && !ownFileIsDub)) ? EMPTY_BANDS : job.loudness;
     // Only the trimmed part's words, so no caption line reaches outside it.
-    void burner.burn(job.file, wordsOutside(wordsIn(dubTimed ?? shown, trim), cuts), settings, job.bands, loudness, lang, encode, dubbing && !ownFileIsDub ? { clips: dubbing.clips, original: dubOriginal } : null, logo, `${exportName}${videoSuffix}`);
+    void burner.burn(job.file, wordsOutside(wordsIn(dubTimed ?? shown, trim), cuts), settings, job.bands, loudness, lang, captionSpeakers, encode, dubbing && !ownFileIsDub ? { clips: dubbing.clips, original: dubOriginal } : null, logo, `${exportName}${videoSuffix}`);
   };
 
   const changeCrop = (c: Crop | null) => {
@@ -1356,6 +1410,7 @@ export function App() {
         {job && (
           <ExportMenu
             words={exportWords}
+            speakers={speakers?.names}
             baseName={exportName}
             videoName={`${exportName}${videoSuffix}`}
             captions={!settings.hidden}
@@ -1556,6 +1611,8 @@ export function App() {
                 onRetime={editable ? onRetime : undefined}
                 onShift={editable ? onShiftSpan : undefined}
                 found={found}
+                speakerNames={speakers?.names}
+                onSpeaker={editable ? onSpeaker : undefined}
               />
             ) : (
               <EmptyNote>
@@ -1572,6 +1629,7 @@ export function App() {
             player={player}
             words={captionWords}
             settings={settings}
+            speakers={captionSpeakers}
             liveTime={job?.live && !job.file ? job.decoded : null}
             following={following}
             crop={crop}
@@ -1772,6 +1830,16 @@ export function App() {
           onJumpCut={changeJumpCut}
           jumpCutUnavailable={jumpCutUnavailable}
           jumpCutSummary={jumpCutSummary}
+          speakers={{
+            speakers,
+            state: speakerTool.state,
+            unavailable: speakersUnavailable,
+            onRun: runSpeakers,
+            onCancel: speakerTool.cancel,
+            onRename: (i, name) => speakers && commitSpeakers(renameSpeaker(speakers, i, name)),
+            onMerge: (from, into) => speakers && commitSpeakers(mergeSpeakers(speakers, from, into)),
+            onClear: () => commitSpeakers(undefined),
+          }}
           translationStale={translationStale}
           canTranslate={!!job && job.status !== "running" && words.length > 0}
           onTranslate={() => translate()}

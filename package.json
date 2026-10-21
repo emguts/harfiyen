@@ -20,6 +20,8 @@
     "test:timing": "tsx tests/timing.node.ts",
     "test:align": "tsx tests/align.node.ts",
     "test:cuts": "tsx tests/cuts.node.ts",
+    "test:speakers": "tsx tests/speakers.node.ts",
+    "test:diarize": "tsx tests/diarize.node.ts",
     "eval:numbers": "tsx tests/numbers-eval.node.ts"
   },
   "dependencies": {

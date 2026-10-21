@@ -1,9 +1,11 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Word } from "../engine";
 import { buildCues, importedCues, READING_RULES, type Cue } from "../lib/cues";
 import type { Match } from "../lib/find";
 import { clock } from "../lib/format";
-import { IconClock, IconEdit, IconTrash } from "./icons";
+import { speakerColor } from "../lib/speakers";
+import { IconCheck, IconClock, IconEdit, IconSpeaker, IconTrash } from "./icons";
+import { Menu, MenuGroup, MenuItem, MenuTitle } from "./Menu";
 import { TimingEditor } from "./TimingEditor";
 import { EmptyNote, IconButton } from "./ui";
 
@@ -25,6 +27,64 @@ interface Props {
   found?: { matches: Match[]; current: number };
   /** Language of the words, for the spelling check while editing. */
   lang: string;
+  /** The speakers' names, when they were told apart (the words then carry `speaker`). */
+  speakerNames?: string[];
+  /** Present with speakerNames when they can be changed: start..end is said by `speaker` (a new number adds one). */
+  onSpeaker?: (start: number, end: number, speaker: number) => void;
+}
+
+/** Who says a line: one speaker per line, since lines break where the speaker changes. */
+const speakerOf = (c: Cue) => c.words[0]?.speaker;
+
+/** Pick who says a line or a turn: the speakers, and a new one. */
+function SpeakerMenu({
+  names,
+  current,
+  title,
+  align,
+  onPick,
+  trigger,
+}: {
+  names: string[];
+  current: number;
+  title: string;
+  align: "left" | "right";
+  onPick: (speaker: number) => void;
+  trigger: (toggle: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Menu open={open} onOpenChange={setOpen} align={align} width="w-[220px]" trigger={trigger(() => setOpen((o) => !o))}>
+      <MenuGroup>
+        <MenuTitle>{title}</MenuTitle>
+        {names.map((n, i) => (
+          <MenuItem
+            key={i}
+            onClick={() => {
+              setOpen(false);
+              if (i !== current) onPick(i);
+            }}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="size-2 shrink-0 rounded-full" style={{ background: speakerColor(i) }} />
+              <span className="truncate">{n}</span>
+            </span>
+            {i === current && <IconCheck size={14} />}
+          </MenuItem>
+        ))}
+      </MenuGroup>
+      <MenuGroup>
+        <MenuItem
+          onClick={() => {
+            setOpen(false);
+            onPick(names.length);
+          }}
+        >
+          Yeni konuşmacı
+        </MenuItem>
+      </MenuGroup>
+    </Menu>
+  );
 }
 
 /** Index of the word being spoken at time t, or -1. */
@@ -87,6 +147,9 @@ const CueRow = memo(function CueRow({
   onRetime,
   onShift,
   now,
+  speakerNames,
+  turnEnd,
+  onSpeaker,
 }: {
   cue: Cue;
   /** Index of the active word within this cue, or -1. */
@@ -100,10 +163,15 @@ const CueRow = memo(function CueRow({
   onRetime?: (first: number, count: number, start: number, end: number) => void;
   onShift?: (first: number, count: number, seconds: number) => void;
   now: () => number;
+  speakerNames?: string[];
+  /** Set on the first line of a speaker's turn: where the turn ends. Its name shows above the line. */
+  turnEnd?: number;
+  onSpeaker?: (start: number, end: number, speaker: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [timing, setTiming] = useState(false);
   const text = cue.words.map((w) => w.text).join(" ");
+  const speaker = speakerNames ? speakerOf(cue) : undefined;
   const finish = (value: string | null) => {
     setEditing(false);
     if (value !== null && value.trim() !== text) onEdit?.(cue.first, cue.words.length, value);
@@ -115,6 +183,35 @@ const CueRow = memo(function CueRow({
       }`}
       data-start={cue.start}
     >
+      {speaker !== undefined && turnEnd !== undefined && (
+        <div className="col-span-2 pt-1 pb-0.5 pl-3">
+          {onSpeaker ? (
+            <SpeakerMenu
+              names={speakerNames!}
+              current={speaker}
+              title="Bu konuşmayı söyleyen"
+              align="left"
+              onPick={(s) => onSpeaker(cue.start, turnEnd, s)}
+              trigger={(toggle) => (
+                <button
+                  className="-mx-1.5 flex items-center gap-1.5 rounded-ui-sm border-0 bg-transparent px-1.5 py-0.5 text-[11.5px] font-semibold hover:bg-raised"
+                  style={{ color: speakerColor(speaker) }}
+                  onClick={toggle}
+                  title="Konuşmacıyı değiştir"
+                >
+                  <span className="size-2 rounded-full" style={{ background: speakerColor(speaker) }} />
+                  {speakerNames![speaker]}
+                </button>
+              )}
+            />
+          ) : (
+            <span className="flex items-center gap-1.5 text-[11.5px] font-semibold" style={{ color: speakerColor(speaker) }}>
+              <span className="size-2 rounded-full" style={{ background: speakerColor(speaker) }} />
+              {speakerNames![speaker]}
+            </span>
+          )}
+        </div>
+      )}
       <button
         className={`justify-self-start border-0 bg-transparent py-0 pr-0 pl-3 text-[11px] font-medium tabular-nums transition-colors duration-150 ease-[ease] [font-feature-settings:'tnum'_1] hover:text-wave-played ${
           active >= 0 ? "text-wave-played" : "text-fg-3"
@@ -157,6 +254,20 @@ const CueRow = memo(function CueRow({
           <IconButton onClick={() => setEditing(true)} title="Düzenle (çift tıkla)" aria-label="Satırı düzenle">
             <IconEdit />
           </IconButton>
+          {speaker !== undefined && onSpeaker && (
+            <SpeakerMenu
+              names={speakerNames!}
+              current={speaker}
+              title="Bu satırı söyleyen"
+              align="right"
+              onPick={(s) => onSpeaker(cue.start, cue.end, s)}
+              trigger={(toggle) => (
+                <IconButton onClick={toggle} title="Bu satırın konuşmacısı" aria-label="Bu satırın konuşmacısını değiştir">
+                  <IconSpeaker />
+                </IconButton>
+              )}
+            />
+          )}
           {onRetime && onShift && (
             <IconButton onClick={() => setTiming((t) => !t)} title="Zamanı düzenle" aria-label="Satırın zamanını düzenle">
               <IconClock />
@@ -182,6 +293,9 @@ const CueRow = memo(function CueRow({
   a.onEdit === b.onEdit &&
   a.onRetime === b.onRetime &&
   a.onShift === b.onShift &&
+  a.speakerNames === b.speakerNames &&
+  a.turnEnd === b.turnEnd &&
+  a.onSpeaker === b.onSpeaker &&
   a.cue.first === b.cue.first &&
   a.cue.words.length === b.cue.words.length &&
   a.cue.words.every((w, i) => w === b.cue.words[i]));
@@ -199,6 +313,8 @@ export function Transcript({
   onShift,
   found,
   lang,
+  speakerNames,
+  onSpeaker,
 }: Props) {
   // The playhead for "Şu an" buttons, without re-rendering rows as it moves.
   const timeRef = useRef(time);
@@ -216,6 +332,17 @@ export function Transcript({
       return part.some(Boolean) ? part.join("") : "";
     });
   }, [all, cues, found]);
+  // Per cue that starts a speaker's turn, where the turn ends.
+  const turnEnds = useMemo(() => {
+    if (!speakerNames) return null;
+    const out = new Map<number, number>();
+    let start = -1;
+    cues.forEach((c, i) => {
+      if (i === 0 || speakerOf(c) !== speakerOf(cues[i - 1])) start = i;
+      out.set(start, c.end);
+    });
+    return out;
+  }, [cues, speakerNames]);
   const active = playing || time > 0 ? activeIndex(all, time) : -1;
   const list = useRef<HTMLOListElement>(null);
   const userScrolledAt = useRef(0);
@@ -287,6 +414,9 @@ export function Transcript({
             onRetime={onRetime}
             onShift={onShift}
             now={now}
+            speakerNames={speakerNames}
+            turnEnd={turnEnds?.get(i)}
+            onSpeaker={onSpeaker}
           />
         );
       })}

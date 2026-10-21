@@ -71,6 +71,8 @@ export type ToRender =
       loudness: Float32Array;
       /** Language of the words; decides how they are uppercased. */
       lang: string;
+      /** The speakers' names to show over the captions; null not to. */
+      speakers: string[] | null;
       dub: DubMix | null;
       /** The user's logo, a copy of the player's (transferred). */
       logo: LogoLayer | null;
@@ -216,12 +218,13 @@ async function textLayer(
   height: number,
   loudness: Float32Array,
   lang: string,
+  speakers: string[] | null,
   picture: "video" | "blur" | null,
 ) {
   const k = settings.kinetic?.on ? { ...settings.kinetic, backdrop: backdropFor(settings.kinetic, picture) } : null;
-  if (!k) return { captions: new CaptionRenderer(words, settings, width, height, loudness, lang), kinetic: null };
+  if (!k) return { captions: new CaptionRenderer(words, settings, width, height, loudness, lang, speakers), kinetic: null };
   await loadCaptionFont(k.font, self.fonts);
-  return { captions: null, kinetic: new KineticRenderer(words, k, width, height, loudness, lang) };
+  return { captions: null, kinetic: new KineticRenderer(words, k, width, height, loudness, lang, speakers) };
 }
 
 async function burn(
@@ -232,6 +235,7 @@ async function burn(
   bands: Float32Array,
   loudness: Float32Array,
   lang: string,
+  speakers: string[] | null,
   dub: DubMix | null,
   logo: LogoLayer | null,
   encode: Encode,
@@ -244,7 +248,7 @@ async function burn(
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
   // A video used for its sound is drawn as an audio file is.
-  if (!track || settings.picture === "hidden") return burnAudio(jobId, input, words, settings, bands, loudness, lang, dub, logo, encode, sink, handle, started);
+  if (!track || settings.picture === "hidden") return burnAudio(jobId, input, words, settings, bands, loudness, lang, speakers, dub, logo, encode, sink, handle, started);
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -262,7 +266,7 @@ async function burn(
   compositor.setPlacement(fit);
   compositor.setLogo(logo);
   const picture = shownPicture(settings, true);
-  const { captions, kinetic } = await textLayer(words, settings, width, height, loudness, lang, picture);
+  const { captions, kinetic } = await textLayer(words, settings, width, height, loudness, lang, speakers, picture);
   compositor.setBlur(picture === "blur");
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
@@ -356,6 +360,7 @@ async function burnAudio(
   bands: Float32Array,
   loudness: Float32Array,
   lang: string,
+  speakers: string[] | null,
   dub: DubMix | null,
   logo: LogoLayer | null,
   encode: Encode,
@@ -377,7 +382,7 @@ async function burnAudio(
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas);
   compositor.setLogo(logo);
-  const { captions, kinetic } = await textLayer(words, settings, width, height, loudness, lang, null);
+  const { captions, kinetic } = await textLayer(words, settings, width, height, loudness, lang, speakers, null);
   const palette = paletteById(settings.aura).colors;
   // The part written: t0..t1 of the file, written from 0:00, less the cuts.
   const t0 = encode.trim?.start ?? 0;
@@ -481,7 +486,7 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
     if (cancelled.has(m.jobId)) sink.cancel();
     if (m.userFont) addUserFont(m.userFont);
     try {
-      await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.loudness, m.lang, m.dub, m.logo, m.encode, sink, m.handle);
+      await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.loudness, m.lang, m.speakers, m.dub, m.logo, m.encode, sink, m.handle);
     } finally {
       m.logo?.image.close();
     }

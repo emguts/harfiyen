@@ -64,6 +64,7 @@ export function ExportMenu({
   captions,
   kinetic,
   meta,
+  speakers,
   complete,
   isVideo,
   canBurn,
@@ -84,6 +85,8 @@ export function ExportMenu({
   /** The kinetic stage is drawn in place of the captions. */
   kinetic: boolean;
   meta: Record<string, unknown>;
+  /** The speakers' names, when they were told apart. */
+  speakers?: string[];
   /** The transcript is final (subtitle files and video need it). */
   complete: boolean;
   isVideo: boolean;
@@ -286,18 +289,18 @@ export function ExportMenu({
       </MenuGroup>
       <MenuGroup>
         <MenuTitle>Altyazı dosyası</MenuTitle>
-        {item("SRT", "Çoğu oynatıcı ve kurgu programı", () => download(`${baseName}.srt`, toSrt(cues()), "application/x-subrip"))}
-        {item("WebVTT", "Web ve YouTube", () => download(`${baseName}.vtt`, toVtt(cues()), "text/vtt"))}
+        {item("SRT", "Çoğu oynatıcı ve kurgu programı", () => download(`${baseName}.srt`, toSrt(cues(), speakers), "application/x-subrip"))}
+        {item("WebVTT", "Web ve YouTube", () => download(`${baseName}.vtt`, toVtt(cues(), speakers), "text/vtt"))}
       </MenuGroup>
       <MenuGroup>
         <MenuTitle>Metin</MenuTitle>
-        {item("Düz metin", "TXT, paragraflar", () => download(`${baseName}.txt`, toText(words), "text/plain"), has)}
-        {item("Kelime zamanları", "JSON", () => download(`${baseName}.json`, toJson(words, meta), "application/json"), has)}
+        {item("Düz metin", "TXT, paragraflar", () => download(`${baseName}.txt`, toText(words, speakers), "text/plain"), has)}
+        {item("Kelime zamanları", "JSON", () => download(`${baseName}.json`, toJson(words, meta, speakers), "application/json"), has)}
         {item(
           copied ? "Kopyalandı" : "Metni kopyala",
           "Panoya",
           async () => {
-            await navigator.clipboard.writeText(toText(words));
+            await navigator.clipboard.writeText(toText(words, speakers));
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           },

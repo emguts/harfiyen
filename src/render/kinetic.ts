@@ -12,6 +12,7 @@ import type { CaptionImage } from "../captions/renderer";
 import type { Word } from "../engine";
 import { buildCues, type Cue } from "../lib/cues";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
+import { speakerColor } from "../lib/speakers";
 import type { AuraLevels } from "./aura";
 import { Kinetic3DStage } from "./kinetic3d";
 
@@ -377,6 +378,8 @@ export class KineticRenderer {
   private bakedPhysics: BakedPhysicsWord[] | null = null;
   /** Kamera's world, laid out on first use (it measures with the canvas). */
   private camWorld: CamWorld | null = null;
+  /** Who speaks when, for the name in the corner; empty when no names are shown. */
+  private turns: { start: number; end: number; speaker: number }[] = [];
 
   constructor(
     private words: Word[],
@@ -385,8 +388,18 @@ export class KineticRenderer {
     private H: number,
     loudness: Float32Array | null = null,
     private lang: string = TRANSCRIPT_LANG,
+    /** The speakers' names to show (the words carry `speaker`); null not to. One speaker needs no name. */
+    private speakers: string[] | null = null,
   ) {
     this.loudness = loudness;
+    if (speakers && speakers.length > 1) {
+      for (const w of words) {
+        const last = this.turns.at(-1);
+        if (w.speaker === undefined || w.speaker >= speakers.length) continue;
+        if (last?.speaker === w.speaker) last.end = w.end;
+        else this.turns.push({ start: w.start, end: w.end, speaker: w.speaker });
+      }
+    }
     this.loud = loudness ? loudWords(words, loudness) : new Set();
     this.cameraGroups = buildCues(words, { gap: 0.7, maxDuration: 4.8, maxChars: 56, maxWords: 7 });
     this.posterGroups = buildCues(words, { gap: 0.55, maxDuration: 3.2, maxChars: 38, maxWords: 5 });
@@ -452,6 +465,7 @@ export class KineticRenderer {
         this.drawDarbeScene(ctx, pal, t, energy, punch);
       }
     }
+    this.drawSpeaker(ctx, pal, t);
 
     const tick = Math.floor(t * 240);
     return {
@@ -466,6 +480,63 @@ export class KineticRenderer {
       frameW: W,
       frameH: H,
     };
+  }
+
+  /**
+   * The name of who speaks, small in the top left corner, the same in every style: the styles'
+   * own layouts are left alone. It fades in as their turn starts and out after it.
+   */
+  private drawSpeaker(ctx: OffscreenCanvasRenderingContext2D, pal: KineticPalette, t: number) {
+    const ts = this.turns;
+    if (!ts.length) return;
+    let lo = 0;
+    let hi = ts.length - 1;
+    let i = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (ts[mid].start - 0.15 <= t) {
+        i = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    if (i < 0) return;
+    const turn = ts[i];
+    // Held a moment past the turn, unless the next one has started.
+    const until = Math.min(turn.end + 0.6, ts[i + 1] ? ts[i + 1].start - 0.15 : Infinity);
+    const alpha = Math.min(1, (t - (turn.start - 0.15)) / 0.2, (until - t) / 0.3);
+    if (alpha <= 0) return;
+    const { W, H } = this;
+    const font = fontById(this.k.font);
+    const px = Math.max(10, Math.round(Math.min(W, H) * 0.03));
+    const name = hasDottedI(this.lang) ? this.speakers![turn.speaker].toLocaleUpperCase(this.lang) : this.speakers![turn.speaker].toUpperCase();
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = `${font.weight} ${px}px ${captionStack(font.id)}`;
+    // The scenes leave their own text settings behind.
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.shadowColor = "transparent";
+    ctx.filter = "none";
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const dot = Math.round(px * 0.55);
+    const padX = px * 0.7;
+    const gap = px * 0.5;
+    const w = padX * 2 + dot + gap + ctx.measureText(name).width;
+    const h = px * 1.9;
+    // Clear of phone UI on vertical video.
+    const x = Math.round(W * 0.05);
+    const y = Math.round(H * (H > W ? 0.07 : 0.06));
+    ctx.fillStyle = withAlpha(pal.bg, 0.62);
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, h / 2);
+    ctx.fill();
+    ctx.fillStyle = speakerColor(turn.speaker);
+    ctx.beginPath();
+    ctx.arc(x + padX + dot / 2, y + h / 2, dot / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = pal.text;
+    ctx.fillText(name, x + padX + dot + gap, y + h / 2 + ctx.measureText("H").actualBoundingBoxAscent / 2);
+    ctx.restore();
   }
 
   private draw3DScene(

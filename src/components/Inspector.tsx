@@ -1,4 +1,4 @@
-import { useMemo, useState, type RefObject } from "react";
+import { useMemo, useState, type ComponentProps, type RefObject } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { JumpCut } from "../lib/cuts";
 import type { DecodingMethod, SpeechLang } from "../engine";
@@ -12,6 +12,7 @@ import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { SceneStudio } from "./SceneStudio";
 import { JumpCutSection, type JumpCutSummary } from "./JumpCutSection";
+import { SpeakersSection } from "./SpeakersSection";
 import { TimingSection } from "./TimingSection";
 import { VideoLang } from "./VideoLang";
 import { Progress } from "./Indicators";
@@ -106,6 +107,7 @@ export function Inspector({
   onJumpCut,
   jumpCutUnavailable,
   jumpCutSummary,
+  speakers,
   captionLang,
   tab: controlledTab,
   onTab,
@@ -179,6 +181,8 @@ export function Inspector({
   /** Why the quiet cannot be cut now; null when it can. */
   jumpCutUnavailable: string | null;
   jumpCutSummary: JumpCutSummary | null;
+  /** Telling who speaks when. */
+  speakers: ComponentProps<typeof SpeakersSection>;
   /** The language of the captions shown. */
   captionLang: string;
   tab?: InspectorTab;
@@ -273,6 +277,7 @@ export function Inspector({
             disabled={burning}
             lang={captionLang}
             onScene={() => setTab("scene")}
+            speakerCount={speakers.speakers?.names.length}
           />
         ) : tab === "scene" ? (
           <SceneStudio
@@ -333,6 +338,7 @@ export function Inspector({
               unavailable={jumpCutUnavailable}
               summary={jumpCutSummary}
             />
+            <SpeakersSection {...speakers} />
             <Section title="Doğruluk">
               {info.id === "seda" ? (
                 <MethodPicker

@@ -114,6 +114,8 @@ export function useBurner() {
       bands: Float32Array,
       loudness: Float32Array,
       lang: string,
+      /** The speakers' names to show over the captions; null not to. */
+      speakers: string[] | null,
       encode: Encode,
       dub: DubMix | null,
       logo: LogoLayer | null,
@@ -138,6 +140,7 @@ export function useBurner() {
         bands,
         loudness,
         lang,
+        speakers,
         dub,
         logo: ownLogo,
         encode,

@@ -16,6 +16,7 @@ import { modelFileUrl, modelInfo, packFileUrl, PUNCT_PACK, type ModelId, type Mo
 import { Formatter, type FormatterConfig } from "../punct/formatter";
 import type { WordPieceVocab } from "../punct/wordpiece";
 import { fetchAll } from "./modelStore";
+import { readPcm } from "./pcm";
 import { BandTracker } from "../render/aura";
 import { WhisperEngine, type WhisperConfig } from "../whisper";
 import { DuyuEngine, type DuyuConfig } from "../duyu";
@@ -389,33 +390,6 @@ async function transcribeFile(job: Job, file: File, endAt?: number) {
     if (skip < stop) await job.push(downmix(channels));
   }
   input.dispose();
-}
-
-/** Mono 16 kHz audio of from..to seconds of a track. */
-async function readPcm(sink: AudioSampleSink, rate: number, from: number, to: number): Promise<Float32Array> {
-  const resampler = new Resampler(rate, 16000);
-  const parts: Float32Array[] = [];
-  for await (const sample of sink.samples(from, to)) {
-    const frames = sample.numberOfFrames;
-    const skip = Math.max(0, Math.min(frames, Math.round((from - sample.timestamp) * sample.sampleRate)));
-    const stop = Math.max(skip, Math.min(frames, Math.round((to - sample.timestamp) * sample.sampleRate)));
-    const channels: Float32Array[] = [];
-    for (let ch = 0; ch < sample.numberOfChannels; ch++) {
-      const buf = new Float32Array(frames);
-      sample.copyTo(buf, { planeIndex: ch, format: "f32-planar" });
-      channels.push(buf.subarray(skip, stop));
-    }
-    sample.close();
-    if (skip < stop) parts.push(resampler.process(downmix(channels)));
-  }
-  parts.push(resampler.process(new Float32Array(0), true));
-  const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
 }
 
 /** A pasted text: Whisper times its known words span by span. From emguts/harfiyen. */

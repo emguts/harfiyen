@@ -44,6 +44,7 @@ export function Viewer({
   liveLevels,
   bands,
   loudness,
+  speakers,
   children,
   notice,
   lang,
@@ -60,6 +61,8 @@ export function Viewer({
   bands: Float32Array;
   /** Speech loudness, for "Sesle vurgula". */
   loudness: Float32Array;
+  /** The speakers' names to show over the captions; null not to. */
+  speakers: string[] | null;
   player: Player;
   words: Word[];
   settings: CaptionSettings;
@@ -234,19 +237,19 @@ export function Viewer({
     () =>
       // No caption while cropping: the frame is still being decided.
       words.length && !draft && !useKinetic
-        ? new CaptionRenderer(words, settings, frame.w, frame.h, settings.voiceEmphasis ? loudness : null, lang)
+        ? new CaptionRenderer(words, settings, frame.w, frame.h, settings.voiceEmphasis ? loudness : null, lang, speakers)
         : null,
     // fontTick: lay out again once the font file has loaded. Loudness only matters with voiceEmphasis.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null, lang, !draft, useKinetic],
+    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null, lang, speakers, !draft, useKinetic],
   );
   const kinetic = useMemo(
     () =>
       words.length && !draft && useKinetic && stageSettings
-        ? new KineticRenderer(words, stageSettings, frame.w, frame.h, loudness, lang)
+        ? new KineticRenderer(words, stageSettings, frame.w, frame.h, loudness, lang, speakers)
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, stageSettings, frame, fontTick, loudness, lang, !draft, useKinetic],
+    [words, stageSettings, frame, fontTick, loudness, lang, speakers, !draft, useKinetic],
   );
   const blurred = shownPic === "blur";
   useEffect(() => compositor?.setBlur(blurred), [compositor, blurred]);

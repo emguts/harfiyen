@@ -136,7 +136,7 @@ export const modelFileUrl = (m: ModelInfo, file: string) => `${MODELS_BASE}/${m.
 
 // ---- every downloadable model ----
 
-export type PackKind = "asr" | "punct" | "mt" | "tts";
+export type PackKind = "asr" | "punct" | "mt" | "tts" | "speakers";
 
 /**
  * A set of files downloaded together: a speech model above, or one of the
@@ -164,6 +164,18 @@ export const PUNCT_PACK: ModelPack = {
   dir: "seda-formatter",
   manifest: "model.json",
   files: ["formatter.int8.onnx", "vocab.json"],
+  gpuOnly: false,
+  needsF16: false,
+};
+
+export const SPEAKER_PACK: ModelPack = {
+  id: "speakers",
+  kind: "speakers",
+  name: "Konuşmacılar",
+  note: "3D-Speaker CAM++; kayıtta kimin ne zaman konuştuğunu sesinden ayırır.",
+  dir: "3dspeaker-campplus",
+  manifest: "model.json",
+  files: ["campplus.onnx"],
   gpuOnly: false,
   needsF16: false,
 };
@@ -266,6 +278,7 @@ export const PACKS: ModelPack[] = [
     }),
   ),
   PUNCT_PACK,
+  SPEAKER_PACK,
   MT_PACKS["tr-en"],
   MT_PACKS["en-tr"],
   VOICE_PACKS.ema,

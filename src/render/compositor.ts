@@ -327,11 +327,13 @@ class GpuCompositor implements Compositor {
       const sy = H / frameH;
       // The panel sits inside the image's clear margin.
       const ix = panel.insetX * scale * sx;
-      const iy = panel.insetY * scale * sy;
+      const top = panel.insetTop * scale * sy;
+      const bottom = panel.insetBottom * scale * sy;
       const { rect: r } = this.placed;
-      const rect = new Float32Array([r[0] + (ix / W) * 2, r[1] + (iy / H) * 2, r[2] - (ix / W) * 2, r[3] - (iy / H) * 2]);
+      // Clip space: r[1] is the bottom edge, r[3] the top.
+      const rect = new Float32Array([r[0] + (ix / W) * 2, r[1] + (bottom / H) * 2, r[2] - (ix / W) * 2, r[3] - (top / H) * 2]);
       const w = this.placed.w - ix * 2;
-      const h = this.placed.h - iy * 2;
+      const h = this.placed.h - top - bottom;
       const radius = panel.radius * scale * Math.min(sx, sy);
       glass.draw(enc, view, W, H, rect, w, h, Math.min(radius, w / 2, h / 2));
       pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
@@ -489,8 +491,9 @@ class CanvasCompositor implements Compositor {
       const y = (c.y + c.h / 2) * sy - h / 2;
       if (c.panel) {
         const ix = c.panel.insetX * c.scale * sx;
-        const iy = c.panel.insetY * c.scale * sy;
-        this.drawGlass(picture, x + ix, y + iy, w - ix * 2, h - iy * 2, c.panel.radius * c.scale * Math.min(sx, sy));
+        const top = c.panel.insetTop * c.scale * sy;
+        const bottom = c.panel.insetBottom * c.scale * sy;
+        this.drawGlass(picture, x + ix, y + top, w - ix * 2, h - top - bottom, c.panel.radius * c.scale * Math.min(sx, sy));
       }
       this.g.drawImage(c.source, x, y, w, h);
     }

@@ -201,6 +201,28 @@ canlı çalışır.
 - Çeviri projeyle birlikte kaydedilir. Transkript sonradan değişirse çevirinin eskidiği söylenir.
   Her yönün modeli ilk kullanımda yaklaşık 360 MB indirir ve işlemcide (WASM) çalışır.
 
+### Konuşmacılar
+
+- **Metin** sekmesindeki **Konuşmacıları ayır** kimin ne zaman konuştuğunu sesinden bulur. Konuşmalar her
+  kelimenin zamanından bulunur, her 1,5 saniyelik parçanın ses izi
+  [3D-Speaker CAM++](https://www.modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced) ile
+  çıkarılır, izler kişilere göre gruplanır. Kaç kişi konuştuğu seçilebilir ya da bulunması istenebilir; biliniyorsa
+  seçmek sonucu iyileştirir. Konuşmacılar "Konuşmacı 1", "Konuşmacı 2" diye adlandırılır, kim olduklarını sistem
+  bilmez.
+- Transkriptte her konuşmanın başında konuşanın adı renkli yazar; satırlar konuşmacı değişince bölünür. Ada
+  tıklayınca o konuşma, satırın üstündeki kişi düğmesiyle tek satır başka birine ya da yeni bir konuşmacıya
+  verilir. Adlar değiştirilir; aynı kişi iki kez çıktıysa ikisi birleştirilir. Hepsi ⌘Z ile geri alınır.
+- **Altyazı** sekmesindeki **Konuşanın adını göster** açılınca konuşan değiştiğinde altyazının üstünde adı, renk
+  noktasıyla çıkar. Ad, stilin kendi görünümünü alır: kutulu stilde küçük bir kutu, konturluda kontur, gölgelide
+  gölge, camda yarı saydam bir zemin; yazı ve vurgu renkleri değişmez. Kinetik tipografide stillerin düzenine
+  karışmamak için ad her stilde sol üst köşede durur, konuşan değişince yenisine geçer. Oynatıcı ve altyazılı MP4
+  aynıdır; tek konuşmacıda ad gösterilmez.
+- Konuşmacılar zaman aralığı olarak saklanır: transkript düzeltilse, çevrilse ya da boşluklar kesilse de her kelime
+  konuşanını bulur. SRT'de konuşan değiştiği satırın başına adı yazar ("Ayşe: …"), WebVTT'de ses etiketi
+  (`<v Ayşe>`) kullanılır, düz metin ve JSON'da da adlar yer alır. Konuşmacılar projeyle ve **.harfiyen**
+  dosyasıyla kaydedilir.
+- Model ilk kullanımda yaklaşık 28 MB indirir ve işlemcide (WASM) çalışır; bir dakikalık ses birkaç saniyede biter.
+
 ### Projeler
 
 - Otomatik kayıt: transkript, düzeltmeler, altyazı stili, kadraj, seçilen bölüm ve dalga formu tarayıcıda
@@ -328,6 +350,8 @@ npm run test:numbers                # sayıları rakama çevirme kurallarını d
 npm run test:timing                 # elle zaman düzenlemeyi dener
 npm run test:align                  # yapıştırılan metni dökümle hizalamayı dener
 npm run test:cuts                   # boşlukları kesmeyi (jump cut) dener
+npm run test:speakers               # konuşmacı düzeltmelerini ve dışa aktarımı dener
+npm run test:diarize -- ses.wav kim.txt  # konuşmacı ayırmayı bilinen bir kayıtla ölçer (model gerekir)
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
 npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
 npm run build      # üretim derlemesi
@@ -358,6 +382,11 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   geri alınamaz, transkriptten kelime silerek videodan kesmek yok. Kelime zamanları sessizliği de kapsıyorsa
   (Whisper bazen böyle yapar) o boşluk bulunamaz. Bölüm dökümden sonra genişletilirse eksik kısım için yeniden
   yazıya dökmek gerekir.
+- Konuşmacı ayırma üst üste konuşmayı ayırmaz: aynı anda konuşulan yerde kelimeler tek kişiye gider. "Evet",
+  "hı hı" gibi kısa araya girmeler ve aynı kişinin çok farklı tonda konuştuğu yerler yanlış kişiye ya da yeni bir
+  konuşmacıya düşebilir; transkriptten düzeltilir. Videoda yalnızca ad gösterilir; altyazı rengi ya da konumu
+  konuşmacıya göre değişmez, seslendirme her konuşmacıyı aynı sesle okur. Seslendirmeyi takip eden altyazıda
+  ad görünmez. Döküm sonradan sürdürülürse yeni kısım için yeniden ayırmak gerekir.
 - Kadraj videonun tamamı için sabittir; zamanla kayan kadraj yok. **Sığdır**'da videonun karedeki boyutu ve
   konumu değiştirilemez.
 - Seslendirmede Türkçe modellerin tek sesi var; konuşmacılar ayrılmaz, her konuşmacı aynı sesle okunur. Orijinal ses
@@ -388,7 +417,10 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [x] **Dikey video ve bölüm seçme:** kadraj (Doldur / Sığdır), kesme ve yalnızca seçili bölümü yazıya dökme.
 - [x] **İngilizce seslendirme (voice-over):** çeviriyi yapay sesle okuma, orijinal sesi altta tutma, altyazıyı
       sese hizalama.
-- [ ] **Konuşmacı ayırma:** konuşmacılara göre altyazı rengi ve etiket; seslendirmede konuşmacı başına ses.
+- [x] **Konuşmacı ayırma:** kimin ne zaman konuştuğunu bulma, transkriptte düzeltme, dışa aktarmada ve videoda
+      adlar.
+- [ ] **Konuşmacıya göre altyazı ve ses:** altyazı rengi ya da konumu konuşmacıya göre (vurgu rengiyle
+      karışmayacak şekilde); seslendirmede konuşmacı başına ses.
 - [x] **Jump cut:** sessizlikleri ve dolgu seslerini ("ııı", "eee") kesme.
 - [ ] **Transkriptten kesme:** kelime ya da cümle silince videodan da kesilmesi; tek tek kesimi geri alma.
 - [ ] **Değişken yazı tipleri için kalınlık ve italik:** yüklenen ve hazır değişken yazı tiplerinde kalınlık
@@ -409,6 +441,9 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
 - [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
   kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
+- Konuşmacı modeli 3D-Speaker CAM++
+  ([iic/speech_campplus_sv_zh_en_16k-common_advanced](https://www.modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced),
+  [3D-Speaker](https://github.com/modelscope/3D-Speaker)): Apache-2.0. ONNX sürümü sherpa-onnx'in.
 - [Silero VAD](https://github.com/snakers4/silero-vad) v5 (Whisper) ve v6 (Seda, seda-v0.2 ile gelir): MIT.
 - Çeviri modelleri [Helsinki-NLP/opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en)
   ve [Helsinki-NLP/opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr) (OPUS-MT,

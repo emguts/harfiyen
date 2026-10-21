@@ -14,6 +14,7 @@ import type { DecodingMethod, SpeechLang, Word } from "../engine";
 import { readCrop, type Crop } from "./crop";
 import { DEFAULT_JUMP_CUT, type JumpCut } from "./cuts";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
+import { readSpeakers, type Speakers } from "./speakers";
 import type { Translation } from "./translation";
 import type { TimeRange } from "./useTranscriber";
 import type { DubOverflow, Voice } from "../worker/tts.worker";
@@ -51,6 +52,8 @@ export interface Project {
   /** Missing in projects saved before "Sesle vurgula". */
   loudness?: Float32Array;
   translation?: Translation;
+  /** Who speaks when; missing when the speakers were never told apart. */
+  speakers?: Speakers;
   settings: CaptionSettings;
   /** The part of the picture shown and exported; missing shows all of it. */
   crop?: Crop;
@@ -309,6 +312,12 @@ export function projectToFile(p: Project): string {
         words: p.translation.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end) })),
       },
     }),
+    ...(p.speakers && {
+      speakers: {
+        names: p.speakers.names,
+        turns: p.speakers.turns.map((t) => ({ start: r(t.start), end: r(t.end), speaker: t.speaker })),
+      },
+    }),
     peaks: toBase64(p.peaks),
     bands: toBase64(p.bands),
     ...(p.loudness?.length && { loudness: toBase64(p.loudness) }),
@@ -383,6 +392,7 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     bands: fromBase64(d.bands),
     loudness: fromBase64(d.loudness),
     translation,
+    speakers: readSpeakers(d.speakers),
     settings: { ...defaults, ...(d.settings as Partial<CaptionSettings>) },
     crop: readCrop(d.crop) ?? undefined,
     trim: readTrim(d.trim),

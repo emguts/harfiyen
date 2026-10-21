@@ -87,9 +87,9 @@ function StyleCard({
       img.panel
         ? {
             left: (img.x + img.panel.insetX) * css,
-            top: (img.y + img.panel.insetY) * css,
+            top: (img.y + img.panel.insetTop) * css,
             width: (img.w - img.panel.insetX * 2) * css,
-            height: (img.h - img.panel.insetY * 2) * css,
+            height: (img.h - img.panel.insetTop - img.panel.insetBottom) * css,
             radius: img.panel.radius * css,
           }
         : null,

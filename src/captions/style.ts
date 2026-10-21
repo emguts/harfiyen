@@ -68,6 +68,8 @@ export interface CaptionSettings {
   auraStyle?: AuraStyleId;
   /** "Sesle vurgula": words said louder than those around them are larger and in the accent colour. */
   voiceEmphasis: boolean;
+  /** The speaker's name above the caption where they start talking (when the speakers were told apart). */
+  speakerNames?: boolean;
   /** Missing in settings saved before there was a logo. */
   logo?: LogoSettings;
   /** No captions in the player or the video (a dub-only video, say); kept with the project. */
@@ -100,7 +102,10 @@ export interface Preset {
   pop: boolean;
   /** How each word comes in as it is spoken: fade and grow, or out of blur (rising, or shrinking into place). */
   wordIn?: "grow" | "focus" | "sharpen";
-  defaults: Omit<CaptionSettings, "preset" | "aura" | "auraStyle" | "voiceEmphasis" | "logo" | "hidden" | "kinetic" | "picture" | "overrides">;
+  defaults: Omit<
+    CaptionSettings,
+    "preset" | "aura" | "auraStyle" | "voiceEmphasis" | "speakerNames" | "logo" | "hidden" | "kinetic" | "picture" | "overrides"
+  >;
 }
 
 export const PRESETS: Preset[] = [
@@ -328,6 +333,7 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
     aura: prev?.aura ?? "cini",
     auraStyle: prev?.auraStyle ?? "aura",
     voiceEmphasis: prev?.voiceEmphasis ?? false,
+    speakerNames: prev?.speakerNames ?? false,
     logo: prev?.logo ?? DEFAULT_LOGO,
     hidden: prev?.hidden ?? false,
     kinetic: prev?.kinetic ?? DEFAULT_KINETIC,

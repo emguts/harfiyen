@@ -6,6 +6,7 @@ import { BAND_RATE, PEAK_STEP, type AlignSpan, type FromWorker, type ProviderCho
 import { decodeWithAudioContext } from "./decodeFallback";
 import { LiveMeter, type AuraLevels } from "../render/aura";
 import { MicError, startMicrophone, type Microphone } from "./microphone";
+import type { Speakers } from "./speakers";
 import type { Translation } from "./translation";
 
 export type EngineState =
@@ -55,6 +56,8 @@ export interface Job {
   elapsed: number | null;
   error: string | null;
   translation?: Translation;
+  /** Who speaks when, once the speakers were told apart. */
+  speakers?: Speakers;
   /** Where the current run started in the file: 0, the range's start, or where a stopped job was continued from. */
   startAt?: number;
   /** The part of the file being transcribed; missing for all of it. */
@@ -410,6 +413,7 @@ export function useTranscriber() {
         elapsed: null,
         error: null,
         translation: undefined,
+        speakers: undefined,
         startAt: at,
         range,
       };
@@ -428,7 +432,18 @@ export function useTranscriber() {
     (
       p: Pick<
         Job,
-        "file" | "model" | "imported" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands" | "loudness" | "translation"
+                | "file"
+        | "model"
+        | "imported"
+        | "options"
+        | "duration"
+        | "elapsed"
+        | "words"
+        | "peaks"
+        | "bands"
+        | "loudness"
+        | "translation"
+        | "speakers"
       > & { stoppedAt?: number | null },
     ) => {
       const prev = jobRef.current;
@@ -615,6 +630,15 @@ export function useTranscriber() {
     [update],
   );
 
+  /** Set, edit or drop who speaks when, if the job is still open. */
+  const setSpeakers = useCallback(
+    (jobId: number, speakers: Speakers | undefined) => {
+      const j = jobRef.current;
+      if (j && j.status !== "running") update(jobId, (x) => ({ ...x, speakers }));
+    },
+    [update],
+  );
+
   // WebGPU failed (loading or mid-file): go on with the CPU. A file starts
   // over there; a recording stops, since its audio so far went to the old worker.
   onGpuFailure.current = () => {
@@ -712,7 +736,7 @@ export function useTranscriber() {
     send({ type: "transcribe", jobId: j.id, file: j.file, options: j.options, startAt: at, endAt: range?.end });
   }, [prepare, send, update, setModel]);
 
-  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, setSpoken, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct, alignAudio, aligning };
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, setSpoken, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, setSpeakers, liveLevels, liveMeter, punctuate, punct, alignAudio, aligning };
 }
 
 export { MicError };
