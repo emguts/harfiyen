@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { lyricLines } from "../lib/lyrics";
 import { Progress } from "./Indicators";
 import { Button, Hint, Section, SectionActions } from "./ui";
@@ -8,6 +8,11 @@ const MAX_OFFSET = 600;
 const OFFSET_STEP = 25;
 /** Arrow-key jump while timing by hand, seconds. */
 const JUMP = 5;
+/** Going back to a line plays this much before it, seconds. */
+const PREROLL = 2;
+
+/** m:ss */
+const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 
 const FIELD =
   "min-h-[140px] w-full resize-y rounded-ui-sm border border-line bg-bg px-2 py-1.5 text-[12.5px] leading-[1.5] text-fg outline-none placeholder:text-fg-3 focus:border-cini";
@@ -37,7 +42,14 @@ export function LyricsSection({
   aligning: { done: number; total: number } | null;
   onAlign: (text: string, opts: LyricsOptions) => Promise<string | null>;
   onTaps: (text: string, taps: number[], opts: LyricsOptions) => Promise<string | null>;
-  playback: { start: () => void; stop: () => void; time: () => number; seek: (t: number) => void };
+  playback: {
+    start: () => void;
+    stop: () => void;
+    toggle: () => void;
+    playing: boolean;
+    time: () => number;
+    seek: (t: number) => void;
+  };
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -56,10 +68,29 @@ export function LyricsSection({
   const opts = { acoustic: acoustic && !canRefine };
   const busy = !!aligning;
 
+  /** Playback time, refreshed while timing by hand. */
+  const [now, setNow] = useState(0);
+  const timeRef = useRef(playback.time);
+  timeRef.current = playback.time;
+  const timing = !!taps;
+  useEffect(() => {
+    if (!timing) return;
+    const id = setInterval(() => setNow(timeRef.current()), 100);
+    return () => clearInterval(id);
+  }, [timing]);
+  const listRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    listRef.current?.querySelector("[data-current]")?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [taps?.length]);
+
   const finish = async (done: number[]) => {
     setTaps(null);
     playback.stop();
     if (done.length) setError(await onTaps(text, done, opts));
+  };
+  const cancel = () => {
+    setTaps(null);
+    playback.stop();
   };
   const tap = () => {
     if (!taps) return;
@@ -68,13 +99,23 @@ export function LyricsSection({
     if (next.length >= lines.length) void finish(next);
     else setTaps(next);
   };
-  const undoTap = () => taps && setTaps(taps.slice(0, -1));
+  /** Time line `n` again: forget its mark and the ones after, and play from just before it. */
+  const redoFrom = (n: number) => {
+    if (!taps || n >= taps.length) return;
+    playback.seek(Math.max(taps[n - 1] ?? 0, taps[n] - PREROLL, 0));
+    setTaps(taps.slice(0, n));
+  };
+  const undoTap = () => taps?.length && redoFrom(taps.length - 1);
   /** Jump back or ahead; going back forgets the lines marked after the new time. */
   const jump = (d: number) => {
     if (!taps) return;
     const t = Math.max(0, playback.time() + d);
     playback.seek(t);
     if (d < 0) setTaps(taps.filter((x) => x < t));
+  };
+  const restart = () => {
+    setTaps([]);
+    playback.start();
   };
 
   // While timing by hand these keys come before the page's own shortcuts
@@ -101,11 +142,42 @@ export function LyricsSection({
     const n = taps.length;
     return (
       <Section title="Şarkı sözleri · elle tempo">
-        <p className="m-0 text-[12px] text-fg-3 tabular-nums">
-          Dize {n + 1} / {lines.length}
-        </p>
-        <p className="m-0 text-[13px] leading-[1.5] text-fg-strong">{lines[n]?.join(" ")}</p>
-        {lines[n + 1] && <p className="m-0 text-[12px] leading-[1.5] text-fg-3">Sonra: {lines[n + 1].join(" ")}</p>}
+        <div className="flex items-center gap-2 text-[12px] text-fg-3 tabular-nums">
+          <span className="flex-1">
+            Dize {n + 1} / {lines.length} · {clock(now)}
+          </span>
+          <Button onClick={playback.toggle} title="Boşluk">
+            {playback.playing ? "Duraklat" : "Çal"}
+          </Button>
+          <Button onClick={restart} title="İşaretleri silip baştan başla">
+            Baştan
+          </Button>
+        </div>
+        <ol ref={listRef} className="m-0 max-h-[260px] list-none overflow-y-auto rounded-ui-sm border border-line p-1">
+          {lines.map((l, i) => {
+            const current = i === n;
+            return (
+              <li key={i} data-current={current || undefined}>
+                <button
+                  type="button"
+                  disabled={i > n}
+                  onClick={() => redoFrom(i)}
+                  title={i < n ? "Bu dizeden yeniden işaretle" : undefined}
+                  className={`flex w-full gap-2 rounded-ui-sm border-0 border-l-2 bg-transparent px-1.5 py-1 text-left text-[12.5px] leading-[1.45] ${
+                    current
+                      ? "border-cini text-fg-strong"
+                      : i < n
+                        ? "cursor-pointer border-transparent text-fg-2 hover:bg-line"
+                        : "border-transparent text-fg-3"
+                  }`}
+                >
+                  <span className="w-9 shrink-0 text-[11px] text-fg-3 tabular-nums">{i < n ? clock(taps[i]) : ""}</span>
+                  <span>{l.join(" ")}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
         <div className="flex items-center gap-2 text-[12px] text-fg-2">
           <span className="flex-1 tabular-nums">Tepki payı: {offset} ms</span>
           <Button onClick={() => nudgeOffset(-OFFSET_STEP)} title="Eksi (−)">
@@ -116,10 +188,11 @@ export function LyricsSection({
           </Button>
         </div>
         <Hint>
-          <b>Enter</b> dize başladı · <b>Backspace</b> son işareti sil · <b>←</b> / <b>→</b> {JUMP} sn geri / ileri (geri
-          gidince sonraki işaretler silinir) · <b>Boşluk</b> duraklat · <b>+</b> / <b>−</b> tepki payı · <b>Esc</b> bitir.
-          Tepki payı her basıştan düşülür: altyazılar geç geliyorsa artır, erken geliyorsa azalt. Kalan dizeler sonuncunun
-          ardına dizilir.
+          <b>Enter</b> dize başladı · <b>Backspace</b> son işareti sil ve şarkıyı o dizenin {PREROLL} sn öncesine al ·{" "}
+          <b>←</b> / <b>→</b> {JUMP} sn geri / ileri (geri gidince sonraki işaretler silinir) · <b>Boşluk</b> duraklat ·{" "}
+          <b>+</b> / <b>−</b> tepki payı · <b>Esc</b> bitir. Listede işaretli bir dizeye tıklarsan oradan yeniden
+          işaretlersin. Tepki payı her basıştan düşülür: altyazılar geç geliyorsa artır, erken geliyorsa azalt. Kalan
+          dizeler sonuncunun ardına dizilir.
         </Hint>
         <SectionActions>
           <Button variant="primary" onClick={tap}>
@@ -129,6 +202,9 @@ export function LyricsSection({
             Geri
           </Button>
           <Button onClick={() => void finish(taps)}>Bitir</Button>
+          <Button onClick={cancel} title="İşaretleri uygulamadan çık">
+            Vazgeç
+          </Button>
         </SectionActions>
       </Section>
     );

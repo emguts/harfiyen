@@ -841,6 +841,8 @@ export function App() {
       stop: () => {
         if (player.playing) player.toggle();
       },
+      toggle: () => player.toggle(),
+      playing: player.playing,
       time: () => player.el?.currentTime ?? player.time,
     },
   };
