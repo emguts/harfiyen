@@ -307,6 +307,18 @@ function contrastText(hex: string): string {
   return l > 150 ? "#0c0e12" : "#ffffff";
 }
 
+/**
+ * Half the height of a box around an uppercase word, centred on the capital
+ * height as captions are: the same for every word of a size, whatever its
+ * letters, with room for the dots of İ Ö Ü Ğ and the tails of Ç Ş. `ctx`
+ * must hold the font.
+ */
+function capBoxHalf(ctx: OffscreenCanvasRenderingContext2D, capH: number, pad: number) {
+  const above = ctx.measureText("İÖÜĞ").actualBoundingBoxAscent || capH;
+  const below = ctx.measureText("ÇŞ").actualBoundingBoxDescent || 0;
+  return Math.max(above - capH / 2, capH / 2 + below) + pad;
+}
+
 /** Pre-baked Matter.js word metadata and per-frame (x, y, angle) trajectories. */
 interface BakedPhysicsWord {
   text: string;
@@ -315,8 +327,10 @@ interface BakedPhysicsWord {
   px: number;
   w: number;
   h: number;
-  /** Baseline Y offset from the box center: (ascent - descent) / 2 so İ/Ö/Ü/Ç/Ş sit dead-center in the pill. */
+  /** Baseline Y offset from the box center: half the capital height, so capitals sit centred as in captions. */
   baselineY: number;
+  /** Height of the spoken word's pill: room for İ's dot and Ç's tail, the same for every word of a size. */
+  pillH: number;
   loud: boolean;
   /** First simulation frame where this word exists. */
   firstFrame: number;
@@ -886,13 +900,13 @@ export class KineticRenderer {
       const m = ctx.measureText(text);
       const tw = m.width;
       const capH = ctx.measureText("H").actualBoundingBoxAscent || px * 0.72;
-      const ascent = Math.max(capH, m.actualBoundingBoxAscent || capH);
-      const descent = Math.max(0, m.actualBoundingBoxDescent || 0);
-      const glyphH = ascent + descent;
-      const baselineY = (ascent - descent) * 0.5;
-      // Tight collider around the word's true glyph bounds (including İ dot and Ç/Ş cedilla).
+      // Centred on the capitals, as captions are; İ's dot and Ç's tail reach
+      // into the padding. The collider hugs the capitals, so a word with an İ
+      // does not stand off the word above it.
+      const baselineY = capH / 2;
       const w = tw + px * 0.34;
-      const h = glyphH + px * 0.28;
+      const h = capH + px * 0.28;
+      const pillH = Math.max(h, capBoxHalf(ctx, capH, px * 0.1) * 2);
 
       const seed = Math.sin((i * 37 + 13) * 12.9898) * 43758.5453;
       const frac = seed - Math.floor(seed) - 0.5;
@@ -922,6 +936,7 @@ export class KineticRenderer {
           w,
           h,
           baselineY,
+          pillH,
           loud,
           firstFrame: spawnFrame,
           lastFrame: spawnFrame,
@@ -1073,7 +1088,7 @@ export class KineticRenderer {
         ctx.shadowOffsetY = bw.px * 0.08;
         ctx.fillStyle = pal.accent;
         ctx.beginPath();
-        ctx.roundRect(-bw.w / 2, -bw.h / 2, bw.w, bw.h, bw.px * 0.18);
+        ctx.roundRect(-bw.w / 2, -bw.pillH / 2, bw.w, bw.pillH, bw.px * 0.18);
         ctx.fill();
         ctx.shadowColor = "transparent";
         ctx.fillStyle = contrastText(pal.accent);
@@ -1516,14 +1531,12 @@ export class KineticRenderer {
       ctx.translate(W / 2, cy);
       ctx.scale(scale, scale);
       ctx.font = css(r.px);
-      const m = ctx.measureText(r.txt);
-      const ascent = Math.max(r.capH, m.actualBoundingBoxAscent || r.capH);
-      const descent = Math.max(0, m.actualBoundingBoxDescent || 0);
-      const ty = (ascent - descent) * 0.5;
+      // Centred on the capitals, as captions are, so a word with an İ does not sit lower.
+      const ty = r.capH / 2;
 
       if (invertBand) {
-        const padY = r.px * 0.16;
-        const bandH = ascent + descent + padY * 2;
+        // The same height for every word of a size, with room for İ's dot and Ç's tail.
+        const bandH = capBoxHalf(ctx, r.capH, r.px * 0.08) * 2;
         const bandW = Math.min(W * 0.88, r.w + r.px * 0.65);
         ctx.fillStyle = pal.accent;
         ctx.beginPath();
