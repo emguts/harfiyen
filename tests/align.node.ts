@@ -7,7 +7,7 @@
 
 import type { Word } from "../src/engine";
 import { buildCues } from "../src/lib/cues";
-import { alignText, applySpans, looksLined, matchWords, planSpans, textLines } from "../src/lib/align";
+import { alignText, applySpans, looksLined, matchWords, planSpans, tapAlign, textLines, textUnits } from "../src/lib/align";
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -140,6 +140,28 @@ check(
   ];
   const cues = buildCues(words);
   check("altyazı satırda kırılır", cues.length === 2 && cues[1].words[0].text === "üç");
+}
+
+// Taps: each line starts where it was tapped; heard words inside it keep their times.
+{
+  const h = heard("mavi deniz uzakta", 12, 0.5);
+  const t = tapAlign(h, "bir zamanlar burada\nmavi deniz uzakta\nson söz", [2, 12, 20], { lines: true });
+  const w = t.words;
+  check("dokunuş satır başı olur", w[0].start === 2 && w[3].start === 12 && w[6].start === 20);
+  check("satır içi duyulan zamanı alır", w[4].start === h[1].start && t.anchored[4]);
+  check("dokunulmayan kelime sıradaki satırı geçmez", w[2].end <= 12, JSON.stringify(w.slice(0, 3)));
+  check("dokunuşta satır başı işaretli", w[0].cue === true && w[3].cue === true);
+}
+{
+  const t = tapAlign([], "ilk satır\nikinci satır\nüçüncü satır", [1, 5], { lines: true });
+  check("dokunulmayan satır sonrakine dizilir", t.words[4].start >= t.words[3].end && t.words[4].start < 9);
+}
+// Without lines, sentences are tapped.
+{
+  const units = textUnits("Bir iki üç. Dört beş!\nAltı yedi", false);
+  check("satırsız: birimler cümleler", JSON.stringify(units) === JSON.stringify([["Bir", "iki", "üç."], ["Dört", "beş!"], ["Altı", "yedi"]]), JSON.stringify(units));
+  const t = tapAlign([], "Bir iki üç. Dört beş!", [3, 8], { lines: false });
+  check("satırsız: cümle dokunuşta başlar", t.words[0].start === 3 && t.words[3].start === 8 && t.words.every((w) => !w.cue));
 }
 
 // Audio spans: a few lines each, at most 30 s; an unmatched line looks between its neighbours.

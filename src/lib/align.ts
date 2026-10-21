@@ -200,6 +200,17 @@ interface Parsed {
   firsts: Set<number>;
 }
 
+/**
+ * The units a text is timed by hand in: its lines with `lines`, else its
+ * sentences (a paragraph's lines mean nothing). One tap starts each.
+ */
+export function textUnits(text: string, lines: boolean): string[][] {
+  const p = parse(text, lines);
+  const units: string[][] = [];
+  p.words.forEach((w, i) => (units[p.groupOf[i]] ??= []).push(w));
+  return units;
+}
+
 function parse(text: string, lines: boolean): Parsed {
   const ls = textLines(text);
   const words = ls.flat();
@@ -274,22 +285,79 @@ export interface TextTiming {
  * own line's matched word where there is one) and squeezed in when the gap is
  * short. With `lines`, the first word of each line starts a caption line.
  */
-export function alignText(heard: Word[], text: string, { lines }: { lines: boolean }): TextTiming {
-  const p = parse(text, lines);
-  const out: Word[] = p.words.map((t, i) => (p.firsts.has(i) ? { text: t, start: NaN, end: NaN, cue: true } : { text: t, start: NaN, end: NaN }));
-  const anchored = p.words.map(() => false);
+/** The text's words, untimed (NaN), the first of each line marked when `lines`. */
+const blank = (p: Parsed): Word[] =>
+  p.words.map((t, i) => (p.firsts.has(i) ? { text: t, start: NaN, end: NaN, cue: true } : { text: t, start: NaN, end: NaN }));
+
+/** Text words `idx` take the times of the transcribed words they match. */
+function timesFromHeard(p: Parsed, idx: number[], heard: Word[], out: Word[], anchored: boolean[]) {
+  const text = idx.map((i) => p.words[i]);
   const match = matchWords(
-    p.words,
+    text,
     heard.map((w) => w.text),
   );
-  keepPlausible(match, p.words, heard);
+  keepPlausible(match, text, heard);
   match.forEach((j, n) => {
     if (j < 0) return;
-    Object.assign(out[n], { start: heard[j].start, end: heard[j].end });
-    anchored[n] = true;
+    Object.assign(out[idx[n]], { start: heard[j].start, end: heard[j].end });
+    anchored[idx[n]] = true;
   });
+}
+
+export function alignText(heard: Word[], text: string, { lines }: { lines: boolean }): TextTiming {
+  const p = parse(text, lines);
+  const out = blank(p);
+  const anchored = p.words.map(() => false);
+  timesFromHeard(
+    p,
+    p.words.map((_, i) => i),
+    heard,
+    out,
+    anchored,
+  );
   if (!anchored.some(Boolean)) throw new Error("Metin dökümle eşleşmedi; doğru dosya ve dil mi?");
   fill(out, p, heard[0]?.start ?? 0);
+  return { words: out, anchored };
+}
+
+/**
+ * The text timed by hand: `taps[n]` is when unit n (a line, or without
+ * lines a sentence; see textUnits) starts, as the user pressed a key when it
+ * began. Within a unit, words take the times of the transcribed words heard
+ * between its tap and the next; units after the last tap follow it at
+ * speaking pace. From emguts/harfiyen.
+ */
+export function tapAlign(heard: Word[], text: string, taps: number[], { lines }: { lines: boolean }): TextTiming {
+  const p = parse(text, lines);
+  if (!taps.length) throw new Error("Hiç işaret konmadı.");
+  const out = blank(p);
+  const anchored = p.words.map(() => false);
+  const members: number[][] = [];
+  p.groupOf.forEach((g, i) => (members[g] ??= []).push(i));
+  taps.slice(0, members.length).forEach((t, n) => {
+    const end = taps[n + 1] ?? Infinity;
+    const idx = members[n];
+    timesFromHeard(
+      p,
+      idx,
+      heard.filter((w) => w.start >= t - 0.2 && w.start < end),
+      out,
+      anchored,
+    );
+    // The tap is when the unit starts, whatever was heard.
+    const f = out[idx[0]];
+    const fEnd = isNaN(f.end) ? t + length(f.text) : Math.min(Math.max(f.end, t + 0.1), end);
+    Object.assign(f, { start: t, end: fEnd });
+    anchored[idx[0]] = true;
+    // Heard words before the tap, or past the next one, do not belong to this unit.
+    for (const i of idx.slice(1)) {
+      if (anchored[i] && (out[i].start < t || out[i].end > end)) {
+        Object.assign(out[i], { start: NaN, end: NaN });
+        anchored[i] = false;
+      }
+    }
+  });
+  fill(out, p, taps[0]);
   return { words: out, anchored };
 }
 

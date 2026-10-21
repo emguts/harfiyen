@@ -98,7 +98,12 @@ canlı çalışır.
   paragraflarda kapalı gelir, istenirse değiştirilir. `[Nakarat]`, `(x2)` gibi tek başına duran başlıklar atlanır.
   **Sesle ince ayar** açıkken Whisper metnin kelimelerini en fazla 30 saniyelik parçalarda doğrudan seste arar;
   dökümün kaçırdığı kelimeler de gerçek zamanlarını alır. Eşleşen kelimelerden 2 saniyeden fazla sapan parçalar
-  eski zamanlarında kalır. Şarkılarda ve gürültülü kayıtlarda fark eder; daha yavaştır. ⌘Z / Ctrl+Z geri alır. ([emguts/harfiyen](https://github.com/emguts/harfiyen) fork'undan uyarlandı.)
+  eski zamanlarında kalır. Şarkılarda ve gürültülü kayıtlarda fark eder; daha yavaştır. Dökümün hiç duymadığı
+  bölümler için **Elle tempo tut**: kayıt baştan (kesilmişse bölümün başından) çalar, her satır (satır kırma kapalıysa
+  her cümle) başlarken **Enter**'a basılır. **Backspace** son işareti siler, **←** / **→** 5 saniye sarar (geri
+  gidince sonraki işaretler silinir), **Boşluk** duraklatır, **+** / **−** tepki payını 25 ms değiştirir (her basıştan
+  düşülür, varsayılan 150 ms), **Esc** bitirir. Satırın içindeki kelimeler o aralıkta duyulan kelimelerin zamanını
+  alır; işaretlenmeyen satırlar sonuncunun ardına dizilir. ⌘Z / Ctrl+Z geri alır. ([emguts/harfiyen](https://github.com/emguts/harfiyen) fork'undan uyarlandı.)
 - Bul ve değiştir (⌘F / Ctrl+F): yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte düzelt. Büyük/küçük
   harfe bakmaz, istenirse yalnızca tam kelimeleri bulur.
 - SRT ve VTT açma: hazır altyazı açılıp stillendirilir ve videoya yazılır. Satırlar ve zamanlar korunur;

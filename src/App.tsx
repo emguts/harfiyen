@@ -58,7 +58,7 @@ import type { DecodeOptions, DecodingMethod, SpeechLang, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
 import { retime, shiftAll, shiftSpan } from "./lib/timing";
-import { alignText, applySpans, planSpans } from "./lib/align";
+import { alignText, applySpans, planSpans, tapAlign, type TextTiming } from "./lib/align";
 import { writeNumbers, type NumberMode } from "./lib/numbers";
 import { plainWord } from "./punct/turkish";
 import { isSubtitle, parseSubtitles, readSubtitle, SUBTITLE_EXTS } from "./lib/subtitles";
@@ -852,10 +852,11 @@ export function App() {
   // Whisper answers later: the transcript must still be the one it was asked about.
   const latestWords = useRef(words);
   latestWords.current = words;
-  const onAlign = async (text: string, lines: boolean, refine: boolean): Promise<string | null> => {
+  /** Places the text with `time` (from the transcript, or from taps), then optionally refines it in the audio. */
+  const placeText = async (time: (heard: Word[]) => TextTiming, refine: boolean): Promise<string | null> => {
     if (!job) return null;
     try {
-      const timing = alignText(words, text, { lines });
+      const timing = time(words);
       let next = timing.words;
       if (refine && job.file && !refineIssue) {
         const spans = planSpans(timing, fileDuration);
@@ -873,6 +874,23 @@ export function App() {
     } catch (e) {
       return e instanceof Error ? e.message : String(e);
     }
+  };
+  const onAlign = (text: string, lines: boolean, refine: boolean) =>
+    placeText((heard) => alignText(heard, text, { lines }), refine);
+  const onTaps = (text: string, lines: boolean, taps: number[], refine: boolean) =>
+    placeText((heard) => tapAlign(heard, text, taps, { lines }), refine);
+  /** The player, for timing by hand: from the trim's start, if there is one. */
+  const tapPlayback = {
+    start: () => {
+      player.seek(trim?.start ?? 0);
+      if (!player.playing) player.toggle();
+    },
+    stop: () => {
+      if (player.playing) player.toggle();
+    },
+    toggle: player.toggle,
+    seek: player.seek,
+    time: () => player.el?.currentTime ?? player.time,
   };
   useEffect(() => {
     history.current = [];
@@ -1384,7 +1402,9 @@ export function App() {
               lang={sourceLang}
               refineIssue={refineIssue}
               progress={alignProgress}
+              playback={job?.file ? tapPlayback : null}
               onAlign={onAlign}
+              onTaps={onTaps}
               onClose={() => setAligning(false)}
             />
           )}
