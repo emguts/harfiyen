@@ -322,7 +322,7 @@ Senin edinmen gerekenler:
 **Güncelleme.** Kurulu uygulama açılışta ve 6 saatte bir GitHub Releases'e bakar, yeni sürümü arka planda indirir ve
 yeniden başlatmayı sorar; "Sonra" denirse uygulama kapanırken kurulur. Sunucuya ulaşamazsa sessiz kalır. `--dev`, `electron .`
 ve mağaza sürümlerinde (MSIX, Mac App Store) hiç bakmaz; onları mağaza günceller. Yayın deposu `electron-builder.yml`
-içindeki `publish` bölümünde tek yerde durur (şimdi `ozcancelik/harfiyen`; kendi kopyanda değiştir). Yayınlamak için
+içindeki `publish` bölümünde tek yerde durur (şimdi `emguts/harfiyen`; kendi kopyanda değiştir). Yayınlamak için
 `package.json` sürümünü artır, `GH_TOKEN` ortam değişkenine `repo` yetkili bir GitHub token'ı koy ve
 `npm run release:win` (macOS'ta `release:mac`) çalıştır; bu, taslak bir sürüm açıp dosyaları ve `latest.yml` /
 `latest-mac.yml` dosyasını yükler. Taslağı GitHub'da yayınlayınca kullanıcılara ulaşır.
@@ -331,6 +331,8 @@ içindeki `publish` bölümünde tek yerde durur (şimdi `ozcancelik/harfiyen`; 
 `https://cdn.harfiyen.dev/models` adresinden indirir (harfiyen.dev'in kullandığı adres); istek uygulamanın kendi
 adresine yapılmış gibi görünür, bu yüzden CORS gerekmez ve indirilenler eskisi gibi saklanır. Başka bir sunucu için
 `HARFIYEN_MODELS_URL` ortam değişkenini ayarla. `dist/models` doluysa (yerel geliştirme) önce oradakiler kullanılır.
+O sunucuda henüz olmayan vokal ayırma modeli (Mel-Band RoFormer) sabitlenmiş sürümüyle doğrudan Hugging Face'ten
+([audiojs/mel-roformer](https://huggingface.co/audiojs/mel-roformer)) iner; `electron/models.js` içindeki listeye bak.
 
 ## Kullanım
 

@@ -24,7 +24,7 @@ compression: normal
 # change the release repository.
 publish:
   provider: github
-  owner: ozcancelik
+  owner: emguts
   repo: harfiyen
 
 win:

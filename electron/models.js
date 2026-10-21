@@ -11,6 +11,25 @@ export const MODELS_URL = (process.env.HARFIYEN_MODELS_URL || "https://cdn.harfi
 
 export const isModelPath = (pathname) => pathname.startsWith("/models/");
 
+// Models the public host does not carry (yet): their files from Hugging Face, pinned, and their
+// manifest as `npm run models` writes it (scripts/prepare_models.py).
+const VOCALS_HF = "https://huggingface.co/audiojs/mel-roformer/resolve/c1aba02c00a0bee852d6754fe6ede8164f90a4b3";
+const FALLBACK = {
+  "/models/mel-roformer/model.json": {
+    json: {
+      name: "mel-roformer",
+      sampleRate: 44100,
+      nFft: 2048,
+      hop: 441,
+      segment: 352800,
+      step: 0.5,
+      fade: 0.1,
+      files: { "mel-roformer.fp16.onnx": 464050097 },
+    },
+  },
+  "/models/mel-roformer/mel-roformer.fp16.onnx": { url: `${VOCALS_HF}/mel-roformer.fp16.onnx` },
+};
+
 /** Fetch `/models/<rest>` from the model host. Range requests pass through, so resumed downloads work. */
 export async function fetchModel(req, pathname, isolation) {
   const headers = new Headers();
@@ -19,7 +38,12 @@ export async function fetchModel(req, pathname, isolation) {
     if (v) headers.set(name, v);
   }
   try {
-    const res = await net.fetch(MODELS_URL + pathname.slice("/models".length), { headers });
+    let res = await net.fetch(MODELS_URL + pathname.slice("/models".length), { headers });
+    const fallback = res.status === 404 && FALLBACK[pathname];
+    if (fallback?.json) {
+      return new Response(JSON.stringify(fallback.json), { headers: { ...isolation, "Content-Type": "application/json" } });
+    }
+    if (fallback) res = await net.fetch(fallback.url, { headers });
     const out = new Headers(res.headers);
     // net.fetch hands over a decoded body; the original length/encoding no longer describe it.
     if (out.has("content-encoding")) {
