@@ -1,5 +1,6 @@
 import { useMemo, useState, type RefObject } from "react";
 import type { CaptionSettings } from "../captions/style";
+import type { JumpCut } from "../lib/cuts";
 import type { DecodingMethod, SpeechLang } from "../engine";
 import { LANG_NAMES } from "../lib/lang";
 import { writeNumbers, type NumberMode } from "../lib/numbers";
@@ -10,6 +11,7 @@ import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { SceneStudio } from "./SceneStudio";
+import { JumpCutSection, type JumpCutSummary } from "./JumpCutSection";
 import { TimingSection } from "./TimingSection";
 import { VideoLang } from "./VideoLang";
 import { Progress } from "./Indicators";
@@ -100,6 +102,10 @@ export function Inspector({
   onVideoLang,
   langIssue,
   onShiftAll,
+  jumpCut,
+  onJumpCut,
+  jumpCutUnavailable,
+  jumpCutSummary,
   captionLang,
   tab: controlledTab,
   onTab,
@@ -168,6 +174,11 @@ export function Inspector({
   langIssue: string | null;
   /** Moves every caption by `seconds`; null when there is nothing to move. */
   onShiftAll: ((seconds: number) => void) | null;
+  jumpCut: JumpCut;
+  onJumpCut: (j: JumpCut) => void;
+  /** Why the quiet cannot be cut now; null when it can. */
+  jumpCutUnavailable: string | null;
+  jumpCutSummary: JumpCutSummary | null;
   /** The language of the captions shown. */
   captionLang: string;
   tab?: InspectorTab;
@@ -316,6 +327,12 @@ export function Inspector({
               )}
             </Section>
             <TimingSection onShiftAll={onShiftAll} />
+            <JumpCutSection
+              value={jumpCut}
+              onChange={onJumpCut}
+              unavailable={jumpCutUnavailable}
+              summary={jumpCutSummary}
+            />
             <Section title="Doğruluk">
               {info.id === "seda" ? (
                 <MethodPicker

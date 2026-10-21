@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { TimeRange } from "../lib/useTranscriber";
 import type { Cue } from "../lib/cues";
 import { clock } from "../lib/format";
@@ -27,6 +27,8 @@ export const TIMELINE =
  * the range is tinted, what is outside it dimmed, and two handles move its
  * ends; dragging a handle shows that moment in the player.
  *
+ * Jump cuts are dimmed like what is outside the trim, a thin line at each.
+ *
  * Nothing is drawn while nothing changes.
  */
 export function Timeline({
@@ -41,6 +43,7 @@ export function Timeline({
   onSeek,
   range = null,
   onRange,
+  cuts = NO_CUTS,
 }: {
   peaks: Float32Array;
   duration: number;
@@ -58,6 +61,8 @@ export function Timeline({
   range?: TimeRange | null;
   /** Editing the trim: shows the handles. null is the whole file again. */
   onRange?: (r: TimeRange | null) => void;
+  /** Stretches the jump cut takes out, in file time. */
+  cuts?: TimeRange[];
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const total = Math.max(duration, decoded, peaks.length * PEAK_STEP, 1);
@@ -66,8 +71,11 @@ export function Timeline({
 
   // Latest props for the animation loop, which never restarts.
   const editing = !!onRange;
-  const props = useRef({ peaks, total, decoded, doneFrom, time, media, cues, live, range, editing });
-  props.current = { peaks, total, decoded, doneFrom, time, media, cues, live, range, editing };
+  // Counts the cut lists seen, so a new one redraws without comparing them.
+  const cutsSeen = useRef(0);
+  const cutsVersion = useMemo(() => ++cutsSeen.current, [cuts]);
+  const props = useRef({ peaks, total, decoded, doneFrom, time, media, cues, live, range, editing, cuts, cutsVersion });
+  props.current = { peaks, total, decoded, doneFrom, time, media, cues, live, range, editing, cuts, cutsVersion };
   // The colours are read once per theme.
   const theme = useTheme();
 
@@ -130,7 +138,7 @@ export function Timeline({
 
       const key = p.live
         ? `live${now}`
-        : `${w}x${h}|${dpr}|${shown}|${p.doneFrom}|${t}|${p.peaks.length}|${p.total}|${p.cues.length}|${p.range?.start}|${p.range?.end}|${p.editing}|${view[0]}|${view[1]}`;
+        : `${w}x${h}|${dpr}|${shown}|${p.doneFrom}|${t}|${p.peaks.length}|${p.total}|${p.cues.length}|${p.range?.start}|${p.range?.end}|${p.editing}|${view[0]}|${view[1]}|${p.cutsVersion}`;
       if (key === lastKey) return;
       lastKey = key;
 
@@ -217,6 +225,20 @@ export function Timeline({
         g.fill();
       }
 
+      // The jump cuts: dimmed, an edge at each so cuts side by side stay apart (not while the trim is edited).
+      if (!p.editing) {
+        for (const cut of p.cuts) {
+          if (cut.end < v0 || cut.start > v1) continue;
+          const x0 = X(cut.start);
+          const x1 = Math.max(x0 + 1, X(cut.end));
+          g.fillStyle = C.dim;
+          g.fillRect(x0, 0, x1 - x0, h);
+          g.fillStyle = C.empty;
+          g.fillRect(x0, 0, 1, h);
+          g.fillRect(x1 - 1, 0, 1, h);
+        }
+      }
+
       // Outside the trim: dimmed; while editing, the range framed in its colour.
       if (p.range) {
         g.fillStyle = C.dim;
@@ -291,6 +313,8 @@ function spanOf(range: TimeRange | null, editing: boolean, total: number): [numb
   // A trim always has length; this only guards against a range past the end of what is known.
   return b - a > 0.05 ? [a, b] : [0, total];
 }
+
+const NO_CUTS: TimeRange[] = [];
 
 /** How long the timeline takes to zoom to the trim and back, ms. */
 const ZOOM_MS = 260;

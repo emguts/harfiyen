@@ -143,6 +143,14 @@ canlı çalışır.
   sürüklenince oynatıcı o kareyi gösterir. Yalnızca o bölüm yazıya dökülür, oynatılır ve dışa aktarılır; video,
   SRT ve VTT zamanları 0:00'dan başlar. **Tamam**'dan sonra zaman çizelgesi yalnızca seçilen bölümü kaplar
   (transkript ve oynatıcıdaki zamanlar dosyanınki olarak kalır); **Kes**'e yeniden basınca bütün dosya görünür.
+- Boşlukları kesme (jump cut): **Metin** sekmesinde **Sessizlikleri at** açılınca kelimeler arasındaki uzun
+  sessizlikler videodan çıkar, cümleler arka arkaya gelir. Sessizlikler transkriptin kelime zamanlarından bulunur,
+  sesin düzeyiyle inceltilir: transkriptte olmayan bir ses (gülme, öksürük) kesilmez. **En kısa** kaç saniyelik
+  sessizliğin kesileceğini, **Pay** konuşmanın iki yanında ne kadar sessizlik kalacağını belirler; "ııı", "eee",
+  "hmm" gibi dolgu sesleri de istenirse kesilir ve altyazıda görünmez. Oynatırken kesilen yerler atlanır, zaman
+  çizelgesinde soluk görünür. Video, SRT ve VTT kesilmiş hâliyle dışa aktarılır, sesin her kesimde birkaç
+  milisaniyelik geçişi olur. Seslendirme açıksa okunan cümlelerin altı kesilmez. Transkript ve zamanları
+  değişmez; kapatınca video eski hâline döner.
 - Altyazılı MP4: kareler ekran kartında birleştirilir, video H.264 ya da HEVC olarak kodlanır, ses kopyalanır.
   Tarayıcı destekliyorsa ekran kartı, desteklemiyorsa işlemci kullanılır; menü hangisinin kullanılacağını gösterir.
 - Dışa aktarırken çözünürlük (kaynakla aynı ya da daha küçük: 1080p, 720p) ve kalite seçilir; tahmini dosya
@@ -319,6 +327,7 @@ npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (pu
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
 npm run test:timing                 # elle zaman düzenlemeyi dener
 npm run test:align                  # yapıştırılan metni dökümle hizalamayı dener
+npm run test:cuts                   # boşlukları kesmeyi (jump cut) dener
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
 npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
 npm run build      # üretim derlemesi
@@ -345,8 +354,10 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   Whisper seçiliyken çalışır (döküm Seda ile yapılmış olabilir) ve ses dosyası gerektirir.
 - Zaman düzenleme transkriptten yapılır; zaman çizelgesinde kelime ya da satır kenarlarını sürüklemek yok. Tek
   kelimenin ya da satırın zamanı değişince çevirisi kendiliğinden kaymaz (toplu kaydırma ikisini birlikte kaydırır).
-- Kesme tek bölümle sınırlı; aradan parça çıkarmak (jump cut) yok. Bölüm dökümden sonra genişletilirse eksik
-  kısım için yeniden yazıya dökmek gerekir.
+- Kesme tek bölümle sınırlı. Boşlukları kesme yalnızca sessizlikleri ve dolgu seslerini çıkarır; tek tek kesim
+  geri alınamaz, transkriptten kelime silerek videodan kesmek yok. Kelime zamanları sessizliği de kapsıyorsa
+  (Whisper bazen böyle yapar) o boşluk bulunamaz. Bölüm dökümden sonra genişletilirse eksik kısım için yeniden
+  yazıya dökmek gerekir.
 - Kadraj videonun tamamı için sabittir; zamanla kayan kadraj yok. **Sığdır**'da videonun karedeki boyutu ve
   konumu değiştirilemez.
 - Seslendirmede Türkçe modellerin tek sesi var; konuşmacılar ayrılmaz, her konuşmacı aynı sesle okunur. Orijinal ses
@@ -378,7 +389,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [x] **İngilizce seslendirme (voice-over):** çeviriyi yapay sesle okuma, orijinal sesi altta tutma, altyazıyı
       sese hizalama.
 - [ ] **Konuşmacı ayırma:** konuşmacılara göre altyazı rengi ve etiket; seslendirmede konuşmacı başına ses.
-- [ ] **Jump cut:** sessizlikleri ve dolgu kelimeleri ("ııı", "şey") kesme; transkriptten kesme.
+- [x] **Jump cut:** sessizlikleri ve dolgu seslerini ("ııı", "eee") kesme.
+- [ ] **Transkriptten kesme:** kelime ya da cümle silince videodan da kesilmesi; tek tek kesimi geri alma.
 - [ ] **Değişken yazı tipleri için kalınlık ve italik:** yüklenen ve hazır değişken yazı tiplerinde kalınlık
       kaydırıcısı (yazı tipinin kendi aralığında) ve italik anahtarı.
 

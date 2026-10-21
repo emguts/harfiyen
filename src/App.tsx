@@ -74,6 +74,16 @@ import type { LogoLayer } from "./render/logoLayer";
 import { framing, type Crop } from "./lib/crop";
 import { wordsIn } from "./lib/trim";
 import {
+  DEFAULT_JUMP_CUT,
+  findCuts,
+  keptLength,
+  keptParts,
+  wordsOutside,
+  wordsThrough,
+  type JumpCut,
+} from "./lib/cuts";
+import { readJumpCut } from "./lib/projectStore";
+import {
   effectiveOutput,
   loadOutput,
   resolutionOf,
@@ -98,7 +108,7 @@ import {
   wordsFromText,
   type Voice,
 } from "./lib/useDubber";
-import { dubMetrics } from "./tts/dub";
+import { DUB_RATE, dubMetrics } from "./tts/dub";
 import { useProjects } from "./lib/useProjects";
 import { canResume, modelIsCached, useTranscriber, type TimeRange } from "./lib/useTranscriber";
 import { useTranslator } from "./lib/useTranslator";
@@ -107,6 +117,7 @@ import { LANG_NAMES } from "./lib/lang";
 import { DEFAULT_MODEL, modelInfo } from "./models";
 
 const EMPTY_BANDS = new Float32Array(0);
+const NO_CUTS: TimeRange[] = [];
 /** Play and mute in the transport bar. */
 const TP_BTN =
   "grid size-8 flex-none place-items-center rounded-ui border-0 bg-transparent text-fg transition-all duration-150 ease-[ease] hover:not-disabled:bg-raised hover:not-disabled:text-fg-strong disabled:opacity-35 max-[860px]:size-10";
@@ -158,6 +169,15 @@ function loadSettings(): CaptionSettings {
 }
 
 // A new project starts without "Sesle vurgula", with its captions shown (not the kinetic stage) and its picture; the rest of the look carries over.
+/** The jump cut a new project starts with: off, with the lengths last used. */
+function offJumpCut(): JumpCut {
+  try {
+    return { ...(readJumpCut(JSON.parse(localStorage.getItem("harfiyen.jumpCut") ?? "null")) ?? DEFAULT_JUMP_CUT), on: false };
+  } catch {
+    return DEFAULT_JUMP_CUT;
+  }
+}
+
 const forNewProject = (s: CaptionSettings): CaptionSettings => {
   const preset = presetById(s.preset).id;
   return s.voiceEmphasis || s.hidden || s.kinetic?.on || (s.picture ?? "video") !== "video" || s.preset !== preset
@@ -231,6 +251,12 @@ export function App() {
   const [trimming, setTrimming] = useState(false);
   const [trimDraft, setTrimDraft] = useState<TimeRange | null>(null);
   const trimAtRef = useRef<(end: "start" | "end", t: number) => void>(() => {});
+  /** Cutting out the quiet between words; belongs to the project, its lengths are remembered for the next. */
+  const [jumpCut, setJumpCut] = useState<JumpCut>(offJumpCut);
+  useEffect(() => {
+    const { gap, pad, fillers } = jumpCut;
+    localStorage.setItem("harfiyen.jumpCut", JSON.stringify({ gap, pad, fillers }));
+  }, [jumpCut]);
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const burner = useBurner();
@@ -241,7 +267,6 @@ export function App() {
     () => setVideoOutput((o) => ({ ...o, resolution: reels ? "1080" : loadOutput().resolution })),
     [reels],
   );
-  const player = usePlayer(job?.file ?? null, trimming ? trimDraft : trim);
   const wave = useWaveform(job?.live ? null : (job?.file ?? null));
   const { logo: logoImage } = useLogo();
   // A video made with another logo (or none) is out of date.
@@ -255,7 +280,6 @@ export function App() {
         : null,
     [logoImage, logoSettings],
   );
-  const following = useFollow(player, job);
   const dubber = useDubber();
   const translator = useTranslator();
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("captions");
@@ -280,6 +304,36 @@ export function App() {
   useEffect(() => localStorage.setItem("harfiyen.dubOriginal", String(dubOriginal)), [dubOriginal]);
   /** A text-to-speech job's own file is already the dub in its source language. */
   const ownFileIsDub = isTts && dubbing?.voice.lang === (job?.options.lang ?? "tr");
+  /** The part of the file used, as the jump cut sees it. */
+  const span = useMemo(() => trim ?? { start: 0, end: job?.duration ?? job?.decoded ?? 0 }, [trim, job?.duration, job?.decoded]);
+  /** Why the quiet cannot be cut now; null when it can. */
+  const jumpCutUnavailable = !job?.file
+    ? "Önce bir video ya da ses dosyası aç."
+    : job.live
+      ? "Canlı kayıtta kullanılmaz."
+      : job.status === "running"
+        ? "Yazıya döküm bitince kullanılabilir."
+        : !job.words.length
+          ? "Önce yazıya dök: boşluklar transkriptten bulunur."
+          : null;
+  /** Where the dub's voice is heard: never cut, so no line of it is cut off. */
+  const dubSpans = useMemo(
+    () =>
+      dubbing && !ownFileIsDub
+        ? dubbing.clips.map((c) => ({ start: c.start, end: c.start + c.audio.length / DUB_RATE }))
+        : NO_CUTS,
+    [dubbing, ownFileIsDub],
+  );
+  /** The stretches the jump cut takes out, in file time; none while it is off. */
+  const cuts = useMemo(
+    () =>
+      jumpCut.on && !jumpCutUnavailable && job
+        ? findCuts(job.words, span, jumpCut, job.loudness, dubSpans)
+        : NO_CUTS,
+    [jumpCut, jumpCutUnavailable, job?.words, job?.loudness, span, dubSpans],
+  );
+  const player = usePlayer(job?.file ?? null, trimming ? trimDraft : trim, trimming ? NO_CUTS : cuts);
+  const following = useFollow(player, job);
   useDubPlayback(player.el, dub?.url ?? null, !!dubbing && !ownFileIsDub, dubOriginal);
   const [voice, setVoice] = useState<Voice>(() => {
     try {
@@ -301,7 +355,7 @@ export function App() {
     rename,
     importFile,
     exportText,
-  } = useProjects(job, settings, crop, trim);
+  } = useProjects(job, settings, crop, trim, jumpCut);
   /** A saved project opened without its media (not stored, or not found). */
   const needsMedia =
     !!job && !job.file && !job.live && (!!current || !!job.imported);
@@ -385,6 +439,7 @@ export function App() {
         setSettings(p.settings);
         setCrop(p.crop ?? null);
         setTrim(p.trim ?? null);
+        setJumpCut(p.jumpCut ?? offJumpCut());
         setMethod(p.method);
         setVideoLang(p.lang ?? "tr");
         const jobId = load({
@@ -487,6 +542,7 @@ export function App() {
       resetBurn();
       setCrop(null);
       setTrim(null);
+      setJumpCut(offJumpCut());
       // Not transcribed yet: first the frame and the part to use, then "Yazıya dök".
       open(f, optionsFor(method, videoLang));
     },
@@ -539,6 +595,7 @@ export function App() {
     resetBurn();
     setCrop(null);
     setTrim(null);
+    setJumpCut(offJumpCut());
     setCustomText("");
     clear();
   };
@@ -681,7 +738,8 @@ export function App() {
    */
   const dubTimed = dubbing && !dubStale && dubbing.voice.lang === lang ? dubbing.timed : null;
   /** What the player, the timeline and the exports caption with. */
-  const captionWords = dubTimed ?? liveWords;
+  /** A filler the jump cut takes out is not captioned either. */
+  const captionWords = useMemo(() => wordsOutside(dubTimed ?? liveWords, cuts), [dubTimed, liveWords, cuts]);
   // Timeline blocks follow the grouping of the chosen caption style.
   const groups = useMemo(
     () => buildCues(captionWords, presetById(settings.preset).grouping),
@@ -810,6 +868,7 @@ export function App() {
           });
           setCrop(null);
           setTrim(null);
+          setJumpCut(offJumpCut());
           setVideoLang(langChoice);
           const id = load({
             file,
@@ -1031,12 +1090,23 @@ export function App() {
   const sourceInfo = useSourceInfo(job?.file ?? null, crop);
   // A picture this browser cannot decode (AV1 in Safari without the hardware for it): said up front, not at export.
   const badCodec = undecodable(sourceInfo);
-  // Exports are of the trimmed part: subtitle times from its start, sizes for its length.
-  const exportWords = useMemo(() => wordsIn(dubTimed ?? shown, trim, true), [dubTimed, shown, trim]);
-  const exportSource = useMemo(
-    () => (sourceInfo && trim ? { ...sourceInfo, duration: trim.end - trim.start } : sourceInfo),
-    [sourceInfo, trim],
+  // Exports are of the trimmed part, less the jump cuts: subtitle times from its start, sizes for its length.
+  const kept = useMemo(() => (cuts.length ? keptParts(span, cuts) : null), [span, cuts]);
+  const exportWords = useMemo(
+    () => (cuts.length ? wordsThrough(dubTimed ?? shown, span, cuts) : wordsIn(dubTimed ?? shown, trim, true)),
+    [dubTimed, shown, trim, span, cuts],
   );
+  const exportSource = useMemo(
+    () =>
+      sourceInfo && (trim || kept)
+        ? { ...sourceInfo, duration: kept ? keptLength(kept) : trim!.end - trim!.start }
+        : sourceInfo,
+    [sourceInfo, trim, kept],
+  );
+  const jumpCutSummary =
+    jumpCut.on && !jumpCutUnavailable
+      ? { count: cuts.length, before: span.end - span.start, after: kept ? keptLength(kept) : span.end - span.start }
+      : null;
   // The preview draws a video at the size it is written at.
   const outputSize = useMemo(() => {
     if (!sourceInfo?.video) return null;
@@ -1067,15 +1137,22 @@ export function App() {
       crop: framed?.crop ?? null,
       fit: framed && !framed.crop ? framed.placement : null,
       trim,
+      cuts: cuts.length ? cuts : null,
     };
     // Translated or dub-timed words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
     const loudness = (translated || (dubTimed && !ownFileIsDub)) ? EMPTY_BANDS : job.loudness;
     // Only the trimmed part's words, so no caption line reaches outside it.
-    void burner.burn(job.file, wordsIn(dubTimed ?? shown, trim), settings, job.bands, loudness, lang, encode, dubbing && !ownFileIsDub ? { clips: dubbing.clips, original: dubOriginal } : null, logo, `${exportName}${videoSuffix}`);
+    void burner.burn(job.file, wordsOutside(wordsIn(dubTimed ?? shown, trim), cuts), settings, job.bands, loudness, lang, encode, dubbing && !ownFileIsDub ? { clips: dubbing.clips, original: dubOriginal } : null, logo, `${exportName}${videoSuffix}`);
   };
 
   const changeCrop = (c: Crop | null) => {
     setCrop(c);
+    if (burner.state.status === "done" || burner.state.status === "error")
+      burner.reset();
+  };
+
+  const changeJumpCut = (j: JumpCut) => {
+    setJumpCut(j);
     if (burner.state.status === "done" || burner.state.status === "error")
       burner.reset();
   };
@@ -1198,6 +1275,7 @@ export function App() {
     setSettings(forNewProject);
     setCrop(null);
     setTrim(null);
+    setJumpCut(offJumpCut());
     try {
       // The microphone goes through Seda, which knows only Turkish.
       await startLive(optionsFor(method, "tr"));
@@ -1690,6 +1768,10 @@ export function App() {
           langIssue={langIssue}
           captionLang={lang}
           onShiftAll={editable ? onShiftAll : null}
+          jumpCut={jumpCut}
+          onJumpCut={changeJumpCut}
+          jumpCutUnavailable={jumpCutUnavailable}
+          jumpCutSummary={jumpCutSummary}
           translationStale={translationStale}
           canTranslate={!!job && job.status !== "running" && words.length > 0}
           onTranslate={() => translate()}
@@ -1750,6 +1832,7 @@ export function App() {
             onSeek={player.seek}
             range={trimming ? trimDraft : trim}
             onRange={trimming ? setTrimDraft : undefined}
+            cuts={cuts}
           />
         ) : (
           <div className={TIMELINE} />
