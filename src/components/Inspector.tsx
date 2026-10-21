@@ -10,6 +10,7 @@ import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
 import { SceneStudio } from "./SceneStudio";
+import { TimingSection } from "./TimingSection";
 import { VideoLang } from "./VideoLang";
 import { Progress } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
@@ -98,6 +99,7 @@ export function Inspector({
   videoLang,
   onVideoLang,
   langIssue,
+  onShiftAll,
   captionLang,
   tab: controlledTab,
   onTab,
@@ -164,6 +166,8 @@ export function Inspector({
   onVideoLang: (l: SpeechLang) => void;
   /** Why the chosen model cannot transcribe `videoLang`, if it cannot. */
   langIssue: string | null;
+  /** Moves every caption by `seconds`; null when there is nothing to move. */
+  onShiftAll: ((seconds: number) => void) | null;
   /** The language of the captions shown. */
   captionLang: string;
   tab?: InspectorTab;
@@ -311,6 +315,7 @@ export function Inspector({
                 </Hint>
               )}
             </Section>
+            <TimingSection onShiftAll={onShiftAll} />
             <Section title="Doğruluk">
               {info.id === "seda" ? (
                 <MethodPicker

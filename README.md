@@ -84,6 +84,13 @@ canlı çalışır.
 - Kelime düzeyinde zaman: bir kelimeye tıkla, kayıt o ana atlasın; çalarken konuşulan kelime vurgulanır.
 - Düzenleme: satıra çift tıkla ve düzelt, satırı sil, ⌘Z ile geri al. Değişmeyen kelimelerin zamanları
   korunur.
+- Zaman düzenleme: transkriptte satırın üstüne gelip saat simgesine tıkla. Satırın ya da seçilen tek kelimenin
+  başlangıç ve bitiş zamanı yazılarak, ±0,1 sn (Shift ile 0,5) adımlarla ya da **Şu an** ile oynatıcının bulunduğu
+  ana getirilerek değiştirilir; **Alt + ← / →** kaydırır. Satır uzayıp kısalınca kelimeleri aynı oranda yayılır.
+  Zamanlar önceki ve sonraki kelimeleri geçmez; bitişik kelime aradaki sınırla birlikte uzar ya da kısalır.
+  **Metin → Zamanlama** bütün altyazıyı çevirisiyle birlikte 0,1 / 0,5 sn öne ya da geriye alır (**[** ve **]**,
+  Shift ile 0,5 sn). Hepsi ⌘Z / Ctrl+Z ile geri alınır. ([emguts/harfiyen](https://github.com/emguts/harfiyen)
+  fork'undan uyarlandı.)
 - Bul ve değiştir (⌘F / Ctrl+F): yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte düzelt. Büyük/küçük
   harfe bakmaz, istenirse yalnızca tam kelimeleri bulur.
 - SRT ve VTT açma: hazır altyazı açılıp stillendirilir ve videoya yazılır. Satırlar ve zamanlar korunur;
@@ -296,6 +303,7 @@ npm run test:whisper -- kayit.wav   # Whisper motorunu Node'da dener (16 bit WAV
 npm run test:formatter              # noktalamayı sedalib'in çıktısıyla karşılaştırır (model gerekir)
 npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
+npm run test:timing                 # elle zaman düzenlemeyi dener
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
 npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
 npm run build      # üretim derlemesi
@@ -316,7 +324,8 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - Altyazılı video oluşturulurken diske yazılır, uzun videolarda da bellek dolmaz: Chrome ve Edge önce kaydedilecek
   yeri sorar, diğer tarayıcılar videoyu tarayıcının kendi disk alanında hazırlayıp indirir. Sayfa ağdan `http://`
   ile açıldığında bu ikisi de kullanılamaz, video bellekte oluşturulur.
-- Düzenleme metinle sınırlı; kelime zamanlarını elle kaydırmak yok.
+- Zaman düzenleme transkriptten yapılır; zaman çizelgesinde kelime ya da satır kenarlarını sürüklemek yok. Tek
+  kelimenin ya da satırın zamanı değişince çevirisi kendiliğinden kaymaz (toplu kaydırma ikisini birlikte kaydırır).
 - Kesme tek bölümle sınırlı; aradan parça çıkarmak (jump cut) yok. Bölüm dökümden sonra genişletilirse eksik
   kısım için yeniden yazıya dökmek gerekir.
 - Kadraj videonun tamamı için sabittir; zamanla kayan kadraj yok. **Sığdır**'da videonun karedeki boyutu ve
@@ -337,7 +346,7 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 
 - [x] **Projeyi kaydetme ve geri açma:** transkript ve düzeltmeler için otomatik yerel kayıt;
       projeyi dosya olarak indirip yeniden açma.
-- [ ] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
+- [x] **Kelime zamanlarını düzenleme:** başlangıç ve bitiş zamanlarını değiştirme;
       tüm altyazıya toplu zaman kaydırma.
 - [x] **Uzun video dışa aktarma:** büyük çıktıları belleği tüketmeden doğrudan diske yazma.
 - [x] **Noktalama için Türkçe testleri:** sedalib ile birebir karşılaştırma ve tekrar uygulama;

@@ -42,6 +42,7 @@ import {
 } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
 import { Inspector, type InspectorTab } from "./components/Inspector";
+import { SHIFT, SHIFT_BIG } from "./components/TimingSection";
 import { ModelMenu } from "./components/ModelMenu";
 import { langProblem, VideoLang } from "./components/VideoLang";
 import { MoreMenu } from "./components/MoreMenu";
@@ -54,6 +55,7 @@ import { Viewer } from "./components/Viewer";
 import type { DecodeOptions, DecodingMethod, SpeechLang, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
+import { retime, shiftAll, shiftSpan } from "./lib/timing";
 import { writeNumbers, type NumberMode } from "./lib/numbers";
 import { plainWord } from "./punct/turkish";
 import { isSubtitle, parseSubtitles, readSubtitle, SUBTITLE_EXTS } from "./lib/subtitles";
@@ -691,7 +693,8 @@ export function App() {
   useEffect(() => resetBurn(), [lang, resetBurn]);
 
   // Transcript edits, with undo (⌘Z / Ctrl+Z outside text fields). `en`: the edit was to the translation.
-  const history = useRef<{ jobId: number; en: boolean; words: Word[] }[]>([]);
+  // `translation`: the translation as it was, when the edit moved it too (a shift of every caption).
+  const history = useRef<{ jobId: number; en: boolean; words: Word[]; translation?: Translation }[]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const editable = !!job && job.status !== "running" && shown.length > 0;
   const commitWords = useCallback(
@@ -709,6 +712,31 @@ export function App() {
     (first: number, count: number, text: string) => commitWords(replaceRange(shown, first, count, text)),
     [shown, commitWords],
   );
+  // Hand-edited times: a line or a word placed or moved in what is shown.
+  const onRetime = useCallback(
+    (first: number, count: number, start: number, end: number) => commitWords(retime(shown, first, count, start, end)),
+    [shown, commitWords],
+  );
+  const onShiftSpan = useCallback(
+    (first: number, count: number, seconds: number) => commitWords(shiftSpan(shown, first, count, seconds)),
+    [shown, commitWords],
+  );
+  /** Every caption moved: the transcript and its translation together, so they stay in step; one undo. */
+  const onShiftAll = useCallback(
+    (seconds: number) => {
+      if (!job) return;
+      // The earliest word of either stops at 0, so both move by the same amount.
+      const first = Math.min(words[0]?.start ?? Infinity, translation?.words[0]?.start ?? Infinity);
+      const d = Math.max(seconds, -(Number.isFinite(first) ? first : 0));
+      if (!d) return;
+      history.current.push({ jobId: job.id, en: false, words, translation });
+      setCanUndo(true);
+      setWords(shiftAll(words, d));
+      if (translation) setTranslation(job.id, { ...translation, words: shiftAll(translation.words, d) });
+      if (burner.state.status === "done") resetBurn();
+    },
+    [job, words, translation, setWords, setTranslation, burner.state.status, resetBurn],
+  );
   const undo = useCallback(() => {
     const h = history.current;
     while (h.length && h[h.length - 1].jobId !== job?.id) h.pop();
@@ -718,7 +746,8 @@ export function App() {
       setShowEn(true);
     } else if (prev && !prev.en) {
       setWords(prev.words);
-      setShowEn(false);
+      if (prev.translation && job) setTranslation(job.id, prev.translation);
+      else setShowEn(false);
     }
     setCanUndo(h.length > 0);
   }, [job?.id, job?.translation, setWords, setTranslation]);
@@ -899,6 +928,14 @@ export function App() {
         if (!job?.file || job.live || job.status === "running" || !player.el) return;
         e.preventDefault();
         trimAtRef.current(key === "i" ? "start" : "end", player.el.currentTime);
+        return;
+      }
+      // [ and ]: every caption earlier or later (with Shift: the bigger step).
+      if (!inField && !e.metaKey && !e.ctrlKey && !e.altKey && (e.code === "BracketLeft" || e.code === "BracketRight")) {
+        if (!editable) return;
+        e.preventDefault();
+        const step = e.shiftKey ? SHIFT_BIG : SHIFT;
+        onShiftAll(e.code === "BracketLeft" ? -step : step);
         return;
       }
       if (
@@ -1351,6 +1388,8 @@ export function App() {
                 playing={player.playing}
                 onSeek={player.seek}
                 onEdit={editable ? onEdit : undefined}
+                onRetime={editable ? onRetime : undefined}
+                onShift={editable ? onShiftSpan : undefined}
                 found={found}
               />
             ) : (
@@ -1563,6 +1602,7 @@ export function App() {
           onVideoLang={chooseVideoLang}
           langIssue={langIssue}
           captionLang={lang}
+          onShiftAll={editable ? onShiftAll : null}
           translationStale={translationStale}
           canTranslate={!!job && job.status !== "running" && words.length > 0}
           onTranslate={() => translate()}
