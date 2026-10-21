@@ -279,6 +279,52 @@ Windows'ta masaüstü kısayolu için `scripts/windows/harfiyen.ps1` kullanılab
 içinde getirdiği için `npm install` dışında PATH'te Node gerekmez:
 `powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File scripts\windows\harfiyen.ps1`
 
+#### Yükleyici ve mağaza paketleri
+
+[electron-builder](https://www.electron.build) ile paketlenir; ayarlar `electron-builder.yml`, simge ve
+entitlements dosyaları `build/` altındadır. Çıktı `release/` klasörüne yazılır. Her komut önce `npm run build` çalıştırır.
+
+| Komut                  | Çıktı                                                                 | Nerede çalışır |
+| ---------------------- | --------------------------------------------------------------------- | -------------- |
+| `npm run dist:win`     | `Harfiyen-Setup-<sürüm>.exe` (NSIS, x64, kullanıcıya kurulur, kısayollu) | Windows        |
+| `npm run dist:appx`    | `Harfiyen-<sürüm>.appx` (Microsoft Store için MSIX/AppX)              | Windows        |
+| `npm run dist:mac`     | `.dmg` ve `.zip` (arm64 + x64, hardened runtime, notarization)        | macOS          |
+| `npm run dist:mas`     | Mac App Store paketi (sandbox)                                        | macOS          |
+| `npm run dist:win:azure` | `dist:win`, Azure Trusted Signing ile imzalı                        | Windows        |
+
+İmza olmadan da hepsi yerelde derlenir (imzasız `.exe` SmartScreen uyarısı verir). İmza ve notarization yalnızca
+ortam değişkenlerinden okunur, depoya hiçbir sır girmez:
+
+- **Windows sertifikası:** `CSC_LINK` (`.pfx` yolu ya da base64) ve `CSC_KEY_PASSWORD`.
+- **Azure Trusted Signing:** `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` ve
+  `AZURE_SIGNING_PUBLISHER_NAME`, `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE`.
+- **macOS imzası:** `CSC_LINK` / `CSC_KEY_PASSWORD` (Developer ID Application sertifikası; `mas` için "3rd Party Mac
+  Developer Application/Installer" sertifikaları) ya da anahtar zincirindeki sertifika.
+- **macOS notarization:** `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
+
+Senin edinmen gerekenler:
+
+- Windows için bir kod imzalama sertifikası (EV/OV) ya da Azure Trusted Signing hesabı.
+- Microsoft Store için [Partner Center](https://partner.microsoft.com/dashboard) hesabı ve uygulama adı rezervasyonu.
+  Orada **Product identity** bölümündeki `Package/Identity/Name`, `Publisher` ve `PublisherDisplayName` değerlerini
+  `electron-builder.yml` içindeki `appx` bölümüne yaz. Paketi Store imzalar, ayrıca imzalaman gerekmez.
+- Apple Developer Program üyeliği; Mac App Store için App Store Connect'te `dev.harfiyen.app` kimliği, bir provisioning
+  profile (`build/embedded.provisionprofile` olarak koy, depoya girmez) ve `build/entitlements.mas.plist` içinde
+  gerekirse takım kimliği.
+
+**Güncelleme.** Kurulu uygulama açılışta ve 6 saatte bir GitHub Releases'e bakar, yeni sürümü arka planda indirir ve
+yeniden başlatmayı sorar; "Sonra" denirse uygulama kapanırken kurulur. Sunucuya ulaşamazsa sessiz kalır. `--dev`, `electron .`
+ve mağaza sürümlerinde (MSIX, Mac App Store) hiç bakmaz; onları mağaza günceller. Yayın deposu `electron-builder.yml`
+içindeki `publish` bölümünde tek yerde durur (şimdi `ozcancelik/harfiyen`; kendi kopyanda değiştir). Yayınlamak için
+`package.json` sürümünü artır, `GH_TOKEN` ortam değişkenine `repo` yetkili bir GitHub token'ı koy ve
+`npm run release:win` (macOS'ta `release:mac`) çalıştır; bu, taslak bir sürüm açıp dosyaları ve `latest.yml` /
+`latest-mac.yml` dosyasını yükler. Taslağı GitHub'da yayınlayınca kullanıcılara ulaşır.
+
+**Modeller yükleyicide yoktur.** `dist/models` (yaklaşık 1,8 GB) pakete girmez. Uygulama modelleri ilk kullanımda
+`https://cdn.harfiyen.dev/models` adresinden indirir (harfiyen.dev'in kullandığı adres); istek uygulamanın kendi
+adresine yapılmış gibi görünür, bu yüzden CORS gerekmez ve indirilenler eskisi gibi saklanır. Başka bir sunucu için
+`HARFIYEN_MODELS_URL` ortam değişkenini ayarla. `dist/models` doluysa (yerel geliştirme) önce oradakiler kullanılır.
+
 ## Kullanım
 
 | İşlem                      | Nasıl yapılır                                                                              |

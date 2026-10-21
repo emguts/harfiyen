@@ -2,6 +2,8 @@
   "name": "harfiyen",
   "private": true,
   "version": "0.4.1",
+  "description": "Türkçe konuşmayı yazıya döken, videoya altyazı yazan masaüstü uygulaması",
+  "author": "Harfiyen contributors",
   "license": "MIT",
   "type": "module",
   "main": "electron/main.js",
@@ -22,9 +24,19 @@
     "test:numbers": "tsx tests/numbers.node.ts",
     "test:lyrics": "tsx tests/lyrics.node.ts",
     "test:timing": "tsx tests/timing.node.ts",
-    "eval:numbers": "tsx tests/numbers-eval.node.ts"
+    "eval:numbers": "tsx tests/numbers-eval.node.ts",
+    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "dist:win:azure": "npm run build && electron-builder --win nsis --x64 --publish never --config electron-builder.azure.yml",
+    "dist:appx": "npm run build && electron-builder --win appx --x64 --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:mas": "npm run build && electron-builder --mac mas --publish never",
+    "release:win": "npm run build && electron-builder --win nsis --x64 --publish always",
+    "release:mac": "npm run build && electron-builder --mac --publish always"
   },
   "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "devDependencies": {
     "@fontsource-variable/google-sans-flex": "^5.3.1",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/literata": "^5.3.0",
@@ -35,12 +47,6 @@
     "@fontsource/bebas-neue": "^5.3.0",
     "@fontsource/luckiest-guy": "^5.3.0",
     "@fontsource/poppins": "^5.3.0",
-    "mediabunny": "^1.61.3",
-    "onnxruntime-web": "^1.30.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
-  },
-  "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
@@ -48,7 +54,12 @@
     "@vitejs/plugin-react": "^6.1.2",
     "@webgpu/types": "^0.1.74",
     "electron": "^45.0.0",
+    "electron-builder": "26.15.3",
+    "mediabunny": "^1.61.3",
     "onnxruntime-node": "^1.30.0",
+    "onnxruntime-web": "^1.30.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

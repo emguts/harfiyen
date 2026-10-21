@@ -1,0 +1,10 @@
+# Windows installer signed with Azure Trusted Signing (`npm run dist:win:azure`).
+# Authentication comes from AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET;
+# the account details below from the variables named here. Nothing is stored in the repo.
+extends: electron-builder.yml
+win:
+  azureSignOptions:
+    publisherName: ${env.AZURE_SIGNING_PUBLISHER_NAME}
+    endpoint: ${env.AZURE_SIGNING_ENDPOINT}
+    codeSigningAccountName: ${env.AZURE_SIGNING_ACCOUNT}
+    certificateProfileName: ${env.AZURE_SIGNING_PROFILE}

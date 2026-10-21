@@ -1,5 +1,7 @@
 node_modules
 dist
+release
+build/embedded.provisionprofile
 .cache
 public/models
 *.local

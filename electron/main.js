@@ -13,6 +13,8 @@ import { existsSync, statSync } from "node:fs";
 import { extname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { BrowserWindow, app, dialog, net, protocol, shell } from "electron";
+import { fetchModel, isModelPath } from "./models.js";
+import { setupUpdater } from "./updater.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const dist = join(root, "dist");
@@ -51,7 +53,12 @@ function fileFor(pathname) {
 }
 
 async function serve(req) {
-  const file = fileFor(new URL(req.url).pathname);
+  const { pathname } = new URL(req.url);
+  // Installed builds carry no models (see models.js); a dist/models copy still wins.
+  if (isModelPath(pathname) && !existsSync(join(dist, decodeURIComponent(pathname)))) {
+    return fetchModel(req, pathname, isolation);
+  }
+  const file = fileFor(pathname);
   if (!file) return new Response("Not found", { status: 404, headers: isolation });
   const res = await net.fetch(pathToFileURL(file).href);
   const headers = new Headers(res.headers);
@@ -117,6 +124,7 @@ app.whenReady().then(async () => {
   const url = await start();
   if (!url) return;
   let win = open(url);
+  if (!dev) setupUpdater();
   app.on("second-instance", () => {
     if (win.isMinimized()) win.restore();
     win.focus();

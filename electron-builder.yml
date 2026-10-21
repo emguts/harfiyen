@@ -1,0 +1,91 @@
+# Packaging for the desktop app. See README ("Masaüstü uygulaması") for the commands.
+# Nothing secret lives here: signing and notarization read environment variables.
+
+appId: dev.harfiyen.app # same id as app.setAppUserModelId in electron/main.js
+productName: Harfiyen
+copyright: Harfiyen contributors
+directories:
+  output: release
+  buildResources: build # icon.png here becomes .ico / .icns
+
+# Only the shell and the built page. dist/models (local ONNX models, ~1.8 GB) stays
+# out; the app downloads models on first use (electron/models.js).
+files:
+  - package.json
+  - electron/**
+  - dist/**
+  - "!dist/models/**"
+  - public/icon-512.png
+
+asar: true
+compression: normal
+
+# Where the installed app looks for updates (electron/updater.js). The one place to
+# change the release repository.
+publish:
+  provider: github
+  owner: ozcancelik
+  repo: harfiyen
+
+win:
+  target:
+    - target: nsis
+      arch: x64
+  artifactName: Harfiyen-Setup-${version}.${ext}
+  # Unsigned unless CSC_LINK / CSC_KEY_PASSWORD (certificate) or the AZURE_TRUSTED_SIGNING_*
+  # variables (see README) are set; electron-builder then signs by itself.
+  signtoolOptions:
+    signingHashAlgorithms: [sha256]
+
+nsis:
+  oneClick: true
+  perMachine: false # per-user install, no admin prompt
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Harfiyen
+  deleteAppDataOnUninstall: false # projects and downloaded models live there
+
+appx:
+  # Microsoft Store identity. These three are placeholders that only make an unsigned
+  # local test package; for the Store, replace them with the values Partner Center shows
+  # under Product identity (Package/Identity/Name, Publisher, PublisherDisplayName).
+  applicationId: Harfiyen
+  identityName: Harfiyen
+  publisher: CN=Harfiyen
+  publisherDisplayName: Harfiyen
+  displayName: Harfiyen
+  backgroundColor: "#16191d"
+  languages: [tr-TR, en-US]
+  artifactName: Harfiyen-${version}.${ext}
+
+mac:
+  category: public.app-category.video
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: Harfiyen mikrofonla kayıt alıp konuşmayı yazıya dökmek için mikrofona erişir.
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip # electron-updater updates macOS from the zip, not the dmg
+      arch: [arm64, x64]
+  artifactName: Harfiyen-${version}-${arch}.${ext}
+  # Notarized automatically when APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID are set.
+  notarize: true
+
+dmg:
+  sign: false # the app inside is signed; the dmg itself need not be
+
+mas:
+  # Mac App Store: sandboxed, signed with the "3rd Party Mac Developer" certificates
+  # and a provisioning profile (build/embedded.provisionprofile, see README).
+  hardenedRuntime: false
+  entitlements: build/entitlements.mas.plist
+  entitlementsInherit: build/entitlements.mas.inherit.plist
+  provisioningProfile: build/embedded.provisionprofile
+  category: public.app-category.video
+  type: distribution
+  extendInfo:
+    NSMicrophoneUsageDescription: Harfiyen mikrofonla kayıt alıp konuşmayı yazıya dökmek için mikrofona erişir.
