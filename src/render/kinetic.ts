@@ -7,6 +7,7 @@
 import Matter from "matter-js";
 import { loudWords } from "../captions/emphasis";
 import { captionStack, fontById, type FontId } from "../captions/fonts";
+import { BLOCK_W, blockAt, buildCameraWorld, cameraAt, lineAt, REF, type CamState, type CamWorld } from "./kineticCamera";
 import type { CaptionImage } from "../captions/renderer";
 import type { Word } from "../engine";
 import { buildCues, type Cue } from "../lib/cues";
@@ -85,7 +86,7 @@ export const KINETIC_STYLES: KineticStyleInfo[] = [
   {
     id: "kamera",
     label: "2D Kamera",
-    note: "Kelimeler 2D uzaya yatay ve 90° dikey açılarla yerleşir; kamera söylenen kelimeye kayar, yaklaşır ve döner.",
+    note: "Her cümle iki yana yaslı bir blok olur; yeni kelime öncekileri iter, küçük kelimeler yan durur. Cümle bitince kamera geri çekilir, dönerek sıradakine geçer.",
   },
   {
     id: "poster",
@@ -306,20 +307,6 @@ function contrastText(hex: string): string {
   return l > 150 ? "#0c0e12" : "#ffffff";
 }
 
-interface PlacedWord {
-  text: string;
-  start: number;
-  end: number;
-  cx: number;
-  cy: number;
-  w: number;
-  h: number;
-  px: number;
-  capH: number;
-  angle: number;
-  loud: boolean;
-}
-
 /** Pre-baked Matter.js word metadata and per-frame (x, y, angle) trajectories. */
 interface BakedPhysicsWord {
   text: string;
@@ -340,6 +327,15 @@ interface BakedPhysicsWord {
 }
 
 const PHYS_FPS = 60;
+
+/**
+ * The last fall worked out for each word list, with what else it depends on. The preview builds a
+ * new renderer for every settings change, and the style cards have word lists of their own.
+ */
+const physicsCache = new WeakMap<
+  Word[],
+  { W: number; H: number; font: FontId; lang: string; loudness: Float32Array | null; baked: BakedPhysicsWord[] }
+>();
 const MAX_ACTIVE_BODIES = 7;
 
 let sharedStage3D: Kinetic3DStage | null = null;
@@ -353,6 +349,7 @@ export class KineticRenderer {
   private readonly id = nextKineticId++;
   private canvas = new OffscreenCanvas(8, 8);
   private loud: Set<Word>;
+  private loudness: Float32Array | null;
   private cameraGroups: Cue[];
   private posterGroups: Cue[];
   private darbeGroups: Cue[];
@@ -364,6 +361,8 @@ export class KineticRenderer {
   private boardRows: number;
   private boardLayouts = new Map<number, BoardLayout>();
   private bakedPhysics: BakedPhysicsWord[] | null = null;
+  /** Kamera's world, laid out on first use (it measures with the canvas). */
+  private camWorld: CamWorld | null = null;
 
   constructor(
     private words: Word[],
@@ -373,6 +372,7 @@ export class KineticRenderer {
     loudness: Float32Array | null = null,
     private lang: string = TRANSCRIPT_LANG,
   ) {
+    this.loudness = loudness;
     this.loud = loudness ? loudWords(words, loudness) : new Set();
     this.cameraGroups = buildCues(words, { gap: 0.7, maxDuration: 4.8, maxChars: 56, maxWords: 7 });
     this.posterGroups = buildCues(words, { gap: 0.55, maxDuration: 3.2, maxChars: 38, maxWords: 5 });
@@ -396,7 +396,7 @@ export class KineticRenderer {
       maxWords: upright ? 3 : 5,
     });
     if (k.style === "fizik" && words.length) {
-      this.bakedPhysics = this.bakeMatterPhysics();
+      this.bakedPhysics = this.cachedPhysics();
     }
   }
 
@@ -572,9 +572,12 @@ export class KineticRenderer {
     const cellX = (c: number) => x0 + c * (cellW + gap);
     const cellY = (r: number) => y0 + r * (cellH + gap) + (r > 0 ? headGap : 0);
 
+    // Over a picture or an aura the board is glass: a faint frame, empty cells barely there, the
+    // cells in use half see-through and their letters solid. On the plain ground it is solid.
+    const glass = k.backdrop !== "stage";
     const pad = gap * 3;
     ctx.save();
-    ctx.fillStyle = withAlpha(pal.bg, 0.9);
+    ctx.fillStyle = withAlpha(pal.bg, glass ? 0.18 : 0.9);
     ctx.strokeStyle = pal.muted;
     ctx.lineWidth = Math.max(1, cellW * 0.02);
     ctx.beginPath();
@@ -590,8 +593,11 @@ export class KineticRenderer {
     const capH = ctx.measureText("H").actualBoundingBoxAscent || cellH * 0.45;
     const radius = cellW * 0.1;
 
-    /** Half a flap (0 top, 1 bottom) showing `ch`, folded towards the axis by sy; shade darkens it as it turns. */
-    const half = (ch: string, color: string, x: number, y: number, which: 0 | 1, sy: number, shade: number) => {
+    /**
+     * Half a flap (0 top, 1 bottom) showing `ch`, folded towards the axis by sy; shade darkens it as it turns.
+     * On glass a turning flap is nearly solid, so the letter behind it does not show through.
+     */
+    const half = (ch: string, color: string, x: number, y: number, which: 0 | 1, sy: number, shade: number, turning = false) => {
       const mid = y + cellH / 2;
       ctx.save();
       ctx.beginPath();
@@ -600,7 +606,7 @@ export class KineticRenderer {
       ctx.translate(0, mid);
       ctx.scale(1, sy);
       ctx.translate(0, -mid);
-      ctx.fillStyle = pal.bgGlow;
+      ctx.fillStyle = glass ? withAlpha(pal.bgGlow, turning ? 0.92 : ch === " " ? 0.12 : 0.62) : pal.bgGlow;
       ctx.beginPath();
       ctx.roundRect(x, y, cellW, cellH, radius);
       ctx.fill();
@@ -635,11 +641,11 @@ export class KineticRenderer {
         half(b, colorOf(j + 1), x, y, 0, 1, 0);
         half(a, colorOf(j), x, y, 1, 1, 0);
         const c = Math.cos(p * Math.PI);
-        if (p < 0.5) half(a, colorOf(j), x, y, 0, c, 0.5 * (1 - c));
-        else half(b, colorOf(j + 1), x, y, 1, -c, 0.4 * (1 + c));
+        if (p < 0.5) half(a, colorOf(j), x, y, 0, c, 0.5 * (1 - c), true);
+        else half(b, colorOf(j + 1), x, y, 1, -c, 0.4 * (1 + c), true);
       }
       // The split between the flaps.
-      ctx.fillStyle = pal.bg;
+      ctx.fillStyle = glass ? withAlpha(pal.bg, 0.45) : pal.bg;
       ctx.fillRect(x, y + cellH / 2 - Math.max(1, cellH * 0.012), cellW, Math.max(2, cellH * 0.024));
     };
 
@@ -811,6 +817,17 @@ export class KineticRenderer {
    * Pre-bakes a real Matter.js 2D rigid-body simulation across the entire word
    * list at 60 Hz so timeline scrubbing and MP4 export are 100% deterministic.
    */
+  /** The fall as last worked out, when only what does not move the words changed (the palette, say). */
+  private cachedPhysics(): BakedPhysicsWord[] {
+    const { words, W, H, loudness, lang } = this;
+    const font = this.k.font;
+    const c = physicsCache.get(words);
+    if (c && c.W === W && c.H === H && c.font === font && c.lang === lang && c.loudness === loudness) return c.baked;
+    const baked = this.bakeMatterPhysics();
+    physicsCache.set(words, { W, H, font, lang, loudness, baked });
+    return baked;
+  }
+
   private bakeMatterPhysics(): BakedPhysicsWord[] {
     const { W, H, k, words } = this;
     const short = Math.min(W, H);
@@ -963,8 +980,14 @@ export class KineticRenderer {
 
       Matter.Engine.update(engine, 1000 / PHYS_FPS);
 
-      for (const it of spawned) {
-        if (it.body.position.y - it.meta.h > H * 1.25 && simT > it.meta.end + 0.5) continue;
+      for (let i = 0; i < spawned.length; i++) {
+        const it = spawned[i];
+        // Fallen off the stage and said: out of the world, so the simulation stays as small as the pile on screen.
+        if (it.body.position.y - it.meta.h > H * 1.25 && simT > it.meta.end + 0.5) {
+          Matter.Composite.remove(world, it.body);
+          spawned.splice(i--, 1);
+          continue;
+        }
         it.history.push(it.body.position.x, it.body.position.y, it.body.angle);
         it.meta.lastFrame = f;
       }
@@ -983,7 +1006,7 @@ export class KineticRenderer {
     energy: number,
     punch: number,
   ) {
-    const baked = (this.bakedPhysics ??= this.bakeMatterPhysics());
+    const baked = (this.bakedPhysics ??= this.cachedPhysics());
     if (!baked.length) return;
 
     const { W, H, k } = this;
@@ -1122,146 +1145,165 @@ export class KineticRenderer {
     energy: number,
     punch: number,
   ) {
-    const gi = this.groupAt(this.cameraGroups, t, 0.5);
-    if (gi < 0) return;
-    const g = this.cameraGroups[gi];
-    let active = 0;
-    for (let i = 0; i < g.words.length && g.words[i].start <= t; i++) active = i;
-
     const { W, H, k } = this;
-    const short = Math.min(W, H);
     const font = fontById(k.font);
-    const upper = true;
-    const css = (sz: number) => `${font.weight} ${Math.round(sz)}px ${captionStack(font.id)}`;
-    const basePx = Math.max(18, Math.round(short * 0.095));
+    const css = (sz: number) => `${font.weight} ${Math.round(sz * 100) / 100}px ${captionStack(font.id)}`;
+    const world = (this.camWorld ??= buildCameraWorld(
+      this.cameraGroups,
+      {
+        width: (text) => {
+          ctx.font = css(REF);
+          return ctx.measureText(text).width;
+        },
+        cap: (() => {
+          ctx.font = css(REF);
+          return ctx.measureText("H").actualBoundingBoxAscent || REF * 0.72;
+        })(),
+      },
+      (text) => (hasDottedI(this.lang) ? text.toLocaleUpperCase(this.lang) : text.toUpperCase()),
+      this.loud,
+      this.lang,
+      W,
+      H,
+    ));
+    const cur = blockAt(world, t);
+    if (cur < 0) return;
+    const last = world.blocks[world.blocks.length - 1];
+    // Gone a while after the last phrase.
+    const fade = 1 - Math.max(0, Math.min(1, (t - last.end - 3) / 0.5));
+    if (fade <= 0) return;
 
-    const placed: PlacedWord[] = [];
-    let wx = 0;
-    let wy = 0;
-    let dirAngle = 0;
-
-    g.words.forEach((wd, i) => {
-      const text = upper && hasDottedI(this.lang) ? wd.text.toLocaleUpperCase(this.lang) : wd.text.toUpperCase();
-      const len = [...text].length;
-      const loud = this.loud.has(wd);
-      const scale = loud ? 1.38 : len <= 3 ? 0.78 : len >= 8 ? 0.92 : 1.12;
-      const px = basePx * scale;
-      ctx.font = css(px);
-      const w = ctx.measureText(text).width;
-      const capH = ctx.measureText("H").actualBoundingBoxAscent || px * 0.72;
-      const h = capH * 1.25;
-
-      if (i > 0) {
-        const prev = placed[i - 1];
-        const pivot = i % 3 === 2;
-        if (pivot) {
-          dirAngle = dirAngle === 0 ? -Math.PI / 2 : 0;
-          if (dirAngle !== 0) {
-            wx = prev.cx + prev.w / 2 + h * 0.75;
-            wy = prev.cy;
-          } else {
-            wx = prev.cx + w / 2 + prev.h * 0.75;
-            wy = prev.cy;
-          }
-        } else if (dirAngle === 0) {
-          wy = prev.cy + prev.h / 2 + h / 2 + basePx * 0.24;
-          wx = prev.cx + ((i % 2 === 1 ? 1 : -1) * (w - prev.w)) * 0.18;
-        } else {
-          wx = prev.cx + prev.h / 2 + h / 2 + basePx * 0.24;
-          wy = prev.cy;
-        }
-      }
-
-      placed.push({
-        text,
-        start: wd.start,
-        end: wd.end,
-        cx: wx,
-        cy: wy,
-        w,
-        h,
-        px,
-        capH,
-        angle: dirAngle,
-        loud,
-      });
-    });
-
-    const cur = placed[active];
-    const prev = active > 0 ? placed[active - 1] : cur;
-    const camDur = 0.28;
-    const camP = active > 0 ? easeInOutCubic((t - cur.start) / camDur) : 1;
-    const camX = prev.cx + (cur.cx - prev.cx) * camP;
-    const camY = prev.cy + (cur.cy - prev.cy) * camP;
-    const camAngle = prev.angle + (cur.angle - prev.angle) * camP;
-    const fitZoom = Math.min(1.25, Math.max(0.72, (W * 0.62) / Math.max(cur.w, basePx * 3)));
-    const prevZoom = Math.min(1.25, Math.max(0.72, (W * 0.62) / Math.max(prev.w, basePx * 3)));
-    const camZoom = (prevZoom + (fitZoom - prevZoom) * camP) * (1 + energy * 0.05 + punch * 0.06);
+    const short = Math.min(W, H);
+    const cam = cameraAt(world, t);
+    // A stressed syllable jolts the camera (a function of t, so the export matches).
+    const n = Math.floor(t * 24);
+    const jolt = punch * short * 0.012;
+    const rnd = (x: number) => {
+      const v = Math.sin(x * 12.9898) * 43758.5453;
+      return v - Math.floor(v) - 0.5;
+    };
+    const view = (c: CamState) => {
+      const zoom = c.zoom * (1 + energy * 0.03);
+      ctx.translate(W / 2 + rnd(n) * jolt, H / 2 + rnd(n + 7.3) * jolt);
+      ctx.scale(zoom, zoom);
+      ctx.rotate(-c.angle);
+      ctx.translate(-c.x, -c.y);
+      return zoom;
+    };
 
     ctx.save();
-    ctx.translate(W / 2, H / 2);
-    ctx.scale(camZoom, camZoom);
-    ctx.rotate(-camAngle);
-    ctx.translate(-camX, -camY);
-
-    // A dot grid fixed to the world, so every pan, zoom and turn of the camera is felt.
-    const step = basePx * 1.2;
-    const reach = Math.hypot(W, H) / camZoom / 2;
-    const dot = Math.max(1.5, short / 420) / camZoom;
+    const zoom = view(cam);
+    // A dot grid fixed to the world, so every pan, zoom and turn of the camera is felt. Its spacing
+    // doubles as the camera pulls back, so there are never more than a few hundred dots.
+    const minStep = (short * 0.09) / zoom;
+    const step = BLOCK_W * 0.06 * Math.pow(2, Math.max(0, Math.ceil(Math.log2(minStep / (BLOCK_W * 0.06)))));
+    const reach = Math.hypot(W, H) / zoom / 2;
+    const dot = Math.max(1.5, short / 420) / zoom;
+    ctx.globalAlpha = fade;
     ctx.fillStyle = pal.muted;
-    for (let gx = Math.floor((camX - reach) / step) * step; gx <= camX + reach; gx += step) {
-      for (let gy = Math.floor((camY - reach) / step) * step; gy <= camY + reach; gy += step) {
+    for (let gx = Math.floor((cam.x - reach) / step) * step; gx <= cam.x + reach; gx += step) {
+      for (let gy = Math.floor((cam.y - reach) / step) * step; gy <= cam.y + reach; gy += step) {
         ctx.fillRect(gx - dot / 2, gy - dot / 2, dot, dot);
       }
     }
+    ctx.restore();
 
-    ctx.textBaseline = "alphabetic";
-    ctx.lineJoin = "round";
-
-    for (let i = 0; i <= active; i++) {
-      const pw = placed[i];
-      const dt = Math.max(0, t - pw.start);
-      const p = Math.min(1, dt / 0.22);
-      const e = easeOutCubic(p);
-      const spring = easeOutBack(p);
-      const isCurrent = i === active;
-
-      ctx.save();
-      ctx.translate(pw.cx, pw.cy);
-      ctx.rotate(pw.angle);
-      const wordScale = 0.65 + 0.35 * spring;
-      ctx.scale(wordScale, wordScale);
-      ctx.globalAlpha = e * (isCurrent ? 1 : Math.max(0.28, 0.72 - (active - i) * 0.14));
-
-      ctx.font = css(pw.px);
-      const ty = pw.capH / 2;
-      if (isCurrent && pw.loud) {
-        const m = ctx.measureText(pw.text);
-        const ascent = Math.max(pw.capH, m.actualBoundingBoxAscent || pw.capH);
-        const descent = Math.max(0, m.actualBoundingBoxDescent || 0);
-        const padX = pw.px * 0.2;
-        const padY = pw.px * 0.14;
-        ctx.fillStyle = pal.accent;
-        ctx.beginPath();
-        ctx.roundRect(
-          -pw.w / 2 - padX,
-          ty - ascent - padY,
-          pw.w + padX * 2,
-          ascent + descent + padY * 2,
-          pw.px * 0.16,
-        );
-        ctx.fill();
-        ctx.fillStyle = contrastText(pal.accent);
-      } else {
-        ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
-        ctx.shadowBlur = pw.px * 0.22;
-        ctx.fillStyle = isCurrent ? pal.accent : pal.text;
+    // Motion blur without a filter: on a fast move the words are drawn again, fainter, where the
+    // camera was a moment ago.
+    const before = cameraAt(world, t - 1 / 30);
+    const moved =
+      Math.hypot(cam.x - before.x, cam.y - before.y) * cam.zoom +
+      Math.abs(cam.angle - before.angle) * short * 0.5 +
+      Math.abs(Math.log(cam.zoom / before.zoom)) * short;
+    const smear = Math.min(1, Math.max(0, (moved - short * 0.02) / (short * 0.06)));
+    if (smear > 0) {
+      for (const [dt, a] of [
+        [1 / 40, 0.3],
+        [1 / 20, 0.15],
+      ]) {
+        ctx.save();
+        view(cameraAt(world, t - dt));
+        this.drawCameraWords(ctx, pal, world, cur, t, fade * a * smear, css);
+        ctx.restore();
       }
-      ctx.fillText(pw.text, -pw.w / 2, ty);
+    }
+    ctx.save();
+    view(cam);
+    this.drawCameraWords(ctx, pal, world, cur, t, fade, css);
+    ctx.restore();
+  }
+
+  /** Kamera's words in the world (the camera already applied): the block being said, and up to three before it, faint. */
+  private drawCameraWords(
+    ctx: OffscreenCanvasRenderingContext2D,
+    pal: KineticPalette,
+    world: CamWorld,
+    cur: number,
+    t: number,
+    alpha: number,
+    css: (px: number) => string,
+  ) {
+    ctx.textBaseline = "alphabetic";
+    const cap = world.capRef;
+    // The word being said: the last one started in the current block.
+    let said: Word | null = null;
+    for (const l of world.blocks[cur].lines) for (const it of l.items) if (it.word.start <= t) said = it.word;
+    const b0 = world.blocks[cur];
+    const travelIn = Math.max(0, Math.min(1, (t - b0.enter) / Math.max(0.2, b0.start - b0.enter)));
+
+    for (let bi = Math.max(0, cur - 3); bi <= cur; bi++) {
+      const b = world.blocks[bi];
+      // Phrases left behind stay in the world, faint.
+      const dim = bi === cur ? 1 : bi === cur - 1 ? 1 - 0.78 * travelIn : 0.22;
+      ctx.save();
+      ctx.translate(b.ox, b.oy);
+      ctx.rotate(b.angle);
+      for (const line of b.lines) {
+        const placed = lineAt(line, t);
+        if (!placed) continue;
+        const baseline = line.top + placed.h;
+        for (const p of placed.items) {
+          const it = p.item;
+          const px = REF * it.f;
+          const current = bi === cur && it.word === said;
+          ctx.save();
+          ctx.globalAlpha = alpha * dim * p.enter * (it.stop ? 0.78 : 1);
+          ctx.font = css(px);
+          if (it.tag) {
+            // Sideways at the head of the line, reading upwards from the baseline.
+            ctx.translate(p.x + cap * it.f * p.s, baseline);
+            ctx.rotate(-Math.PI / 2);
+            ctx.scale(p.s, p.s);
+            ctx.fillStyle = current ? pal.accent : pal.text;
+            ctx.fillText(it.text, 0, 0);
+            ctx.restore();
+            continue;
+          }
+          // A new word slides in from the right and grows into place.
+          const w = it.w * p.s;
+          const capH = cap * it.f * p.s;
+          const grow = 0.55 + 0.45 * p.enter;
+          ctx.translate(p.x + w / 2 + (1 - p.enter) * REF * 0.5 * p.s, baseline - capH / 2);
+          ctx.scale(p.s * grow, p.s * grow);
+          ctx.translate(-it.w / 2, (cap * it.f) / 2);
+          if (current && it.loud && !it.stop) {
+            const padX = px * 0.2;
+            const padY = px * 0.14;
+            ctx.fillStyle = pal.accent;
+            ctx.beginPath();
+            ctx.roundRect(-padX, -cap * it.f - padY, it.w + padX * 2, cap * it.f + padY * 2, px * 0.16);
+            ctx.fill();
+            ctx.fillStyle = contrastText(pal.accent);
+          } else {
+            // No shadow: a blurred shadow costs more than everything else in the scene put together.
+            ctx.fillStyle = current || (it.loud && it.word.start <= t) ? pal.accent : pal.text;
+          }
+          ctx.fillText(it.text, 0, 0);
+          ctx.restore();
+        }
+      }
       ctx.restore();
     }
-
-    ctx.restore();
   }
 
   /**

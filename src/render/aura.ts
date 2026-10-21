@@ -194,7 +194,7 @@ export const AURA_STYLES: { id: AuraStyleId; label: string; note: string }[] = [
   { id: "halo", label: "Halo", note: "Merkezde sesin frekanslarıyla bükülen ipeksi sonik enerji halkaları." },
   { id: "spektrum", label: "Ufuk", note: "Sesin son saniyeleri üzerinde uçulan retro bir dalga arazisi olur: her hece önde bir tepe olarak doğar, çizgili güneşe doğru uzaklaşır." },
   { id: "kure", label: "Küre", note: "Sesle şekil değiştiren yanardöner 3 boyutlu bir damla; bas onu şişirir, tiz yüzeyini ürpertir, vurgular onu zıplatır." },
-  { id: "akis", label: "Akış", note: "Kendi içine katlanan sıvı renk akışı; ses yükseldikçe girdaplar derinleşir, vurgularda ışık parlar." },
+  { id: "akis", label: "Sırtlar", note: "Sesin son saniyeleri üst üste dizilmiş ışık çizgileri olur: öndeki çizgi şimdiki ses, her an bir geriye kayar. Bas ortada büyük tepeler, tizler ince pürüzler çıkarır." },
 ];
 
 export const AURA_PALETTES: { id: AuraPaletteId; label: string; colors: [string, string, string] }[] = [
@@ -241,6 +241,9 @@ export function historyAt(levelsAtTime: (time: number) => AuraLevels, t: number)
 }
 
 /** The last few seconds of live levels (the microphone), for historyAt. */
+/** Styles drawn from the sound's last seconds (`historyAt`), not only from the sound now. */
+export const usesHistory = (style: AuraStyleId | undefined) => style === "spektrum" || style === "akis";
+
 export class LiveHistory {
   private times: number[] = [];
   private levels: AuraLevels[] = [];
@@ -323,26 +326,6 @@ fn hash2(p: vec2f) -> f32 {
   var p3 = fract(vec3f(p.x, p.y, p.x) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
-}
-
-fn vnoise(p: vec2f) -> f32 {
-  let i = floor(p);
-  let f = fract(p);
-  let u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash2(i), hash2(i + vec2f(1.0, 0.0)), u.x),
-             mix(hash2(i + vec2f(0.0, 1.0)), hash2(i + vec2f(1.0, 1.0)), u.x), u.y);
-}
-
-fn fbm(p0: vec2f) -> f32 {
-  var p = p0;
-  var s = 0.0;
-  var amp = 0.5;
-  for (var k = 0; k < 4; k++) {
-    s += amp * vnoise(p);
-    p = mat2x2f(1.6, 1.2, -1.2, 1.6) * p;
-    amp *= 0.5;
-  }
-  return s;
 }
 
 // Mesh gradient: four colour points drifting on slow Lissajous paths,
@@ -598,28 +581,95 @@ fn draw_kure(uv: vec2f, aspect: f32, t: f32, low: f32, mid: f32, high: f32, punc
   return col;
 }
 
-// Style 4 ("akis"): domain-warped liquid colour. Speeds stay fixed (so seeking
-// never jumps); the voice only deepens the warp and lights the folds.
+// Style 4 ("akis", shown as Sırtlar; the id stays so saved projects keep it): the sound's last
+// seconds as lines stacked one above another, as on Unknown Pleasures' cover. The front line is
+// the sound now; each step it moves back, keeping its shape, and the one before hides what is
+// behind it. The bass raises broad peaks in the middle, the mids smaller ones, the highs a fine
+// rasp; a punch lights the front line.
+fn n1(x: f32, s: f32) -> f32 {
+  let i = floor(x);
+  let f = fract(x);
+  let u = f * f * (3.0 - 2.0 * f);
+  return mix(hash2(vec2f(i, s)), hash2(vec2f(i + 1.0, s)), u);
+}
+
+// The tallest a peak gets, in lines: heights ease off towards it, so the loudest sound still fits.
+const RIDGE_MAX = 7.0;
+fn ridge_squash(raw: f32) -> f32 {
+  return RIDGE_MAX * (1.0 - exp(-raw / RIDGE_MAX));
+}
+
+fn ridge_height(x: f32, id: f32, h: vec4f, half_w: f32) -> f32 {
+  // Flat towards the ends, the peaks in the middle.
+  let e = x / (half_w * 0.5);
+  let env = exp(-e * e);
+  let wl = n1(x * 9.0, id);
+  let wm = n1(x * 26.0, id + 101.0);
+  let wh = n1(x * 90.0, id + 211.0);
+  // Peaks even in a pause (the cover's look); the voice raises them well over the lines behind.
+  let rest = n1(x * 40.0, id + 307.0) * 0.15;
+  return ridge_squash(rest + env * (1.1 * wl * wl + h.x * 5.0 * wl * wl + h.y * 2.4 * wm + h.z * 0.7 * wh + h.w * 1.6 * wl));
+}
+
 fn draw_akis(uv: vec2f, aspect: f32, t: f32, low: f32, mid: f32, high: f32, punch: f32) -> vec3f {
   let energy = (low + mid + high) / 3.0;
-  var p = (uv - 0.5) * vec2f(aspect, 1.0) * 1.7;
-  // A punch sends a soft ripple out of the centre.
-  p *= 1.0 - 0.12 * punch * exp(-dot(p, p) * 1.5);
+  let ground = mix(a.c1.rgb, a.c3.rgb, 0.5) * 0.025;
+  let sx = (uv.x - 0.5) * aspect;
+  // The lines run across the whole frame, edge to edge; the peaks stay in its middle.
+  let half_w = aspect * 0.34;
+  // The lines and the room above the back one for its tallest peak fit between 6% and 90% of the height.
+  let bottom = 0.9;
+  let gap = (bottom - 0.06) / (f32(ROWS) + RIDGE_MAX);
+  let top = bottom - f32(ROWS) * gap;
+  let scale = a.res.y / 1080.0;
+  // A faint glow behind the peaks.
+  var col = ground + a.c1.rgb * 0.05 * exp(-dot(vec2f(sx, uv.y - 0.55), vec2f(sx, uv.y - 0.55)) * 6.0) * (0.7 + 0.6 * energy);
 
-  let q = vec2f(fbm(p + vec2f(t * 0.05, 0.0)), fbm(p + vec2f(5.2, 1.3 - t * 0.04)));
-  let warp = 1.5 + 1.1 * low + 0.7 * punch;
-  let w = vec2f(fbm(p + warp * q + vec2f(1.7 + t * 0.07, 9.2)), fbm(p + warp * q + vec2f(8.3, 2.8 - t * 0.06)));
-  let f = fbm(p + (2.0 + 0.9 * mid) * w);
-
-  let deep = mix(a.c1.rgb, a.c3.rgb, 0.5) * 0.12;
-  var col = mix(deep, a.c1.rgb, clamp(f * f * 2.4, 0.0, 1.0));
-  col = mix(col, a.c2.rgb, clamp(length(q) * 0.9 - 0.25, 0.0, 1.0) * (0.55 + 0.45 * mid));
-  col = mix(col, a.c3.rgb, clamp(w.x * w.x * 1.5, 0.0, 1.0) * (0.45 + 0.55 * high));
-  col *= 0.35 + 0.9 * f * (1.0 + 0.5 * energy);
-  // Silky sheen where the field folds over itself.
-  let sheen = pow(clamp(1.0 - abs(f - 0.58) * 9.0, 0.0, 1.0), 4.0);
-  col += mix(a.c2.rgb, vec3f(1.0), 0.6) * sheen * (0.08 + 0.3 * high + 0.45 * punch);
-  return col;
+  let n = floor(t / STEP);
+  let phase = fract(t / STEP);
+  // Only the lines that can reach this pixel: a line well above it only hides it (the pixel is
+  // under its body), one further below than its tallest peak here never gets up to it. Away from
+  // the middle the peaks are low, so there only a line or two is looked at.
+  var peak = vec4f(0.0);
+  for (var k = 0; k < ROWS; k++) { peak = max(peak, a.hist[k]); }
+  let e = sx / (half_w * 0.5);
+  let env = exp(-e * e);
+  let tallest = ridge_squash(0.15 + env * (1.1 + 5.0 * peak.x + 2.4 * peak.y + 0.7 * peak.z + 1.6 * peak.w)) * gap + 2.0 / a.res.y;
+  let i_back = min(ROWS - 1, i32(ceil((bottom - uv.y) / gap - phase)) + 1);
+  let i_front = max(0, i32(floor((bottom - uv.y - tallest) / gap - phase)));
+  if (i_back < ROWS - 2 && uv.y > top) { col = ground; }
+  // Back to front, each line's dark body hiding the ones behind it.
+  for (var i = i_back; i >= i_front; i--) {
+    let pos = f32(i) + phase;
+    let base = bottom - pos * gap;
+    let h = a.hist[i];
+    let id = n - f32(i) + 1.0;
+    let ex = aspect / a.res.x;
+    let r0 = ridge_height(sx, id, h, half_w) * gap;
+    let crest = base - r0;
+    let dy = uv.y - crest;
+    // Distance to the line in pixels, the same on its steep sides as on the flat. The slope is
+    // worked out here: screen derivatives do not hold in a loop whose length differs per pixel.
+    let slope = (ridge_height(sx + ex, id, h, half_w) * gap - r0) / ex;
+    let px = abs(dy) * a.res.y / sqrt(1.0 + slope * slope);
+    let age = pos / f32(ROWS);
+    // The back line fades out before it leaves; the front one fades in as it is born.
+    let vis = (1.0 - smoothstep(f32(ROWS) - 2.0, f32(ROWS), pos)) * smoothstep(0.0, 0.6, pos + 0.4);
+    if (dy > 0.0) {
+      col = mix(col, ground, vis);
+    }
+    let tint = mix(mix(a.c2.rgb, vec3f(1.0), 0.7), a.c1.rgb, age * 0.5);
+    let lit = (0.6 + 0.5 * (1.0 - age)) * (0.85 + 0.45 * (h.x + h.y + h.z) / 3.0) + select(0.0, 0.8 * punch, i == 0);
+    let line = 1.0 - smoothstep(0.9 * scale, 2.0 * scale, px);
+    col = mix(col, tint * lit, line * vis);
+    // A soft light just above the line.
+    if (dy < 0.0) {
+      col += tint * exp(dy * a.res.y / (10.0 * scale)) * 0.08 * lit * vis;
+    }
+  }
+  let c = uv - 0.5;
+  col *= 1.0 - 0.5 * dot(c, c);
+  return col + (hash(floor(uv * a.res)) - 0.5) * 0.01;
 }
 
 @fragment fn fs_aura(in: VsOut) -> @location(0) vec4f {

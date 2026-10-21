@@ -36,7 +36,7 @@ import {
   Quality,
   QUALITY_HIGH,
 } from "mediabunny";
-import { historyAt, levelsAt, paletteById } from "../render/aura";
+import { historyAt, levelsAt, paletteById, usesHistory } from "../render/aura";
 import { addUserFont, loadCaptionFont, type UserFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
 import { shownPicture, type CaptionSettings } from "../captions/style";
@@ -345,7 +345,7 @@ async function burnAudio(
           levels,
           palette,
           style: settings.auraStyle ?? "aura",
-          history: settings.auraStyle === "spektrum" ? historyAt((s) => levelsAt(bands, s), at) : undefined,
+          history: usesHistory(settings.auraStyle) ? historyAt((s) => levelsAt(bands, s), at) : undefined,
         },
         kinetic ? kinetic.frame(at, levels) : (captions?.frame(at) ?? null),
       );

@@ -239,7 +239,7 @@ export function Inspector({
           aria-selected={tab === "transcribe"}
           onClick={() => setTab("transcribe")}
         >
-          Yazıya döküm
+          Metin
         </button>
         <button
           className={TAB}

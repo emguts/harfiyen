@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { loadCaptionFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
 import { shownPicture, type CaptionSettings } from "../captions/style";
@@ -12,6 +12,7 @@ import {
   LiveHistory,
   paletteById,
   RelativeLevels,
+  usesHistory,
   type AuraFrame,
   type AuraLevels,
 } from "../render/aura";
@@ -214,12 +215,21 @@ export function Viewer({
     setPickingAspect(false);
   }, [url, cropLocked]);
 
-  const useKinetic = !!settings.kinetic?.on;
   // A video's kinetic stage goes over its picture (or its plain ground); an audio project's over the aura.
   const kineticSettings = useMemo(
     () => settings.kinetic && { ...settings.kinetic, backdrop: backdropFor(settings.kinetic, shownPic) },
     [settings.kinetic, shownPic],
   );
+  // The stage (and the captions it replaces) follows in a deferred render: building it can take a
+  // moment (Fizik works out its whole fall), so the switch shows at once, with "Hazırlanıyor…".
+  const stageSettings = useDeferredValue(kineticSettings);
+  // Only for what builds a stage anew (palette and font are quick): shown at once, since a delay
+  // could not run out while the build holds the page.
+  const preparing =
+    stageSettings !== kineticSettings &&
+    !!kineticSettings?.on &&
+    (!stageSettings?.on || stageSettings.style !== kineticSettings.style);
+  const useKinetic = !!stageSettings?.on;
   const captions = useMemo(
     () =>
       // No caption while cropping: the frame is still being decided.
@@ -232,11 +242,11 @@ export function Viewer({
   );
   const kinetic = useMemo(
     () =>
-      words.length && !draft && useKinetic && kineticSettings
-        ? new KineticRenderer(words, kineticSettings, frame.w, frame.h, loudness, lang)
+      words.length && !draft && useKinetic && stageSettings
+        ? new KineticRenderer(words, stageSettings, frame.w, frame.h, loudness, lang)
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, kineticSettings, frame, fontTick, loudness, lang, !draft, useKinetic],
+    [words, stageSettings, frame, fontTick, loudness, lang, !draft, useKinetic],
   );
   const blurred = shownPic === "blur";
   useEffect(() => compositor?.setBlur(blurred), [compositor, blurred]);
@@ -292,10 +302,10 @@ export function Viewer({
           levels = relativeLive.current.apply({ ...sm, punch }, dt);
         }
         const time = live ? (performance.now() - auraClock.current) / 1000 : t;
-        // Ufuk draws the last seconds: from the bands, or from what the microphone gave so far.
+        // Ufuk and Sırtlar draw the last seconds: from the bands, or from what the microphone gave so far.
         let history: Float32Array | undefined;
         if (live) liveHistory.current.push(time, levels);
-        if (auraStyleRef.current === "spektrum") {
+        if (usesHistory(auraStyleRef.current)) {
           const bands = bandsRef.current;
           history = historyAt(live ? liveHistory.current.at : (at) => levelsAt(bands, at), time);
         }
@@ -533,6 +543,15 @@ export function Viewer({
             })}
           </div>
         </div>
+      )}
+      {url && preparing && !notice && (
+        <p
+          className="pointer-events-none absolute top-2.5 right-2.5 m-0 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white/85"
+          role="status"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-cini motion-reduce:animate-none" aria-hidden />
+          Hazırlanıyor…
+        </p>
       )}
       {url && following && !notice && !pickingAspect && (
         <p
