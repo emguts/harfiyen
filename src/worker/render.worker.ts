@@ -36,7 +36,7 @@ import {
   Quality,
   QUALITY_HIGH,
 } from "mediabunny";
-import { levelsAt, paletteById } from "../render/aura";
+import { historyAt, levelsAt, paletteById } from "../render/aura";
 import { addUserFont, loadCaptionFont, type UserFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
 import type { CaptionSettings } from "../captions/style";
@@ -44,6 +44,7 @@ import type { Word } from "../engine";
 import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
 import type { Placement } from "../lib/crop";
 import { createCompositor } from "../render/compositor";
+import { KineticRenderer } from "../render/kinetic";
 import type { LogoLayer } from "../render/logoLayer";
 import { DUB_RATE, dubAt, type DubMix } from "../tts/dub";
 import { clearRenders, openSink, type Sink } from "./sink";
@@ -283,7 +284,13 @@ async function burnAudio(
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas);
   compositor.setLogo(logo);
-  const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
+  const useKinetic = !!settings.kinetic?.on;
+  if (useKinetic && settings.kinetic) await loadCaptionFont(settings.kinetic.font, self.fonts);
+  const captions = useKinetic ? null : new CaptionRenderer(words, settings, width, height, loudness, lang);
+  const kinetic =
+    useKinetic && settings.kinetic
+      ? new KineticRenderer(words, settings.kinetic, width, height, loudness, lang)
+      : null;
   const palette = paletteById(settings.aura).colors;
   // The part written: t0..t1 of the file, written from 0:00.
   const t0 = encode.trim?.start ?? 0;
@@ -313,9 +320,17 @@ async function burnAudio(
     for (; frame < totalFrames && frame / fps < t && !stop; frame++) {
       const time = frame / fps;
       const at = time + t0;
+      const levels = levelsAt(bands, at);
       compositor.render(
-        { kind: "aura", time: at, levels: levelsAt(bands, at), palette },
-        captions.frame(at),
+        {
+          kind: "aura",
+          time: at,
+          levels,
+          palette,
+          style: settings.auraStyle ?? "aura",
+          history: settings.auraStyle === "spektrum" ? historyAt((s) => levelsAt(bands, s), at) : undefined,
+        },
+        kinetic ? kinetic.frame(at, levels) : (captions?.frame(at) ?? null),
       );
       await video.add(time, 1 / fps);
     }

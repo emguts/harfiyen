@@ -1,5 +1,6 @@
 import type { CueRules } from "../lib/cues";
-import type { AuraPaletteId } from "../render/aura";
+import type { AuraPaletteId, AuraStyleId } from "../render/aura";
+import { DEFAULT_KINETIC, type KineticSettings } from "../render/kinetic";
 import type { FontId } from "./fonts";
 
 export type PresetId =
@@ -57,12 +58,16 @@ export interface CaptionSettings {
   background: "box" | "outline" | "shadow" | "glass";
   /** Background for audio-only projects. */
   aura: AuraPaletteId;
+  /** Audio-reactive visualizer style ("aura" | "halo" | "spektrum"). */
+  auraStyle?: AuraStyleId;
   /** "Sesle vurgula": words said louder than those around them are larger and in the accent colour. */
   voiceEmphasis: boolean;
   /** Missing in settings saved before there was a logo. */
   logo?: LogoSettings;
   /** No captions in the player or the video (a dub-only video, say); kept with the project. */
   hidden?: boolean;
+  /** Independent full-screen kinetic typography stage for audio-only and TTS projects. */
+  kinetic?: KineticSettings;
   /** Settings the user changed by hand: switching preset keeps them. Missing before there was this. */
   overrides?: StyleKey[];
 }
@@ -83,7 +88,7 @@ export interface Preset {
   pop: boolean;
   /** How each word comes in as it is spoken: fade and grow, or out of blur (rising, or shrinking into place). */
   wordIn?: "grow" | "focus" | "sharpen";
-  defaults: Omit<CaptionSettings, "preset" | "aura" | "voiceEmphasis" | "logo" | "hidden" | "overrides">;
+  defaults: Omit<CaptionSettings, "preset" | "aura" | "auraStyle" | "voiceEmphasis" | "logo" | "hidden" | "kinetic" | "overrides">;
 }
 
 export const PRESETS: Preset[] = [
@@ -301,7 +306,7 @@ export const PRESETS: Preset[] = [
   },
 ];
 
-export const presetById = (id: PresetId) => PRESETS.find((p) => p.id === id)!;
+export const presetById = (id: PresetId) => PRESETS.find((p) => p.id === id) ?? PRESETS[1];
 
 /** Switch preset: its look, except what the user changed by hand and choices that are not part of a look. */
 export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettings => {
@@ -309,9 +314,11 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
   return {
     preset: id,
     aura: prev?.aura ?? "cini",
+    auraStyle: prev?.auraStyle ?? "aura",
     voiceEmphasis: prev?.voiceEmphasis ?? false,
     logo: prev?.logo ?? DEFAULT_LOGO,
     hidden: prev?.hidden ?? false,
+    kinetic: prev?.kinetic ?? DEFAULT_KINETIC,
     ...presetById(id).defaults,
     ...Object.fromEntries(overrides.map((k) => [k, prev![k]])),
     overrides,

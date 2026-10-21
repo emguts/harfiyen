@@ -2,7 +2,12 @@
 // decoded with timestamps (openai-whisper's sequential long-form scheme: a
 // cut-off last segment is decoded again at the start of the next window) and
 // its words timed from cross-attention. A voice activity detector skips
-// silent windows and drops words Whisper invents over silence.
+// silent windows and drops words Whisper invents over silence; a loud window
+// it hears no speech in (singing over music, which Silero does not take for
+// speech) is decoded anyway, on Whisper's own no-speech check. A window whose
+// decoding fell into a loop (music, a chorus, a repeated phrase) keeps what
+// came before the loop and is decoded again from there, so nothing after it
+// is lost.
 
 import { OnlineFbank } from "../engine/fbank";
 import type { SmallProvider } from "../engine";
@@ -32,6 +37,53 @@ const LOGPROB_FLOOR = -1;
 /** A finished stream's leftover shorter than this is not decoded. */
 const MIN_TAIL = SAMPLE_RATE / 10;
 const SAMPLES_PER_TS = FRAME_SEC * SAMPLE_RATE;
+/**
+ * After a loop the window moves at least this far; by the number of windows
+ * in a row that looped. A third gives up on the window, as before, so a
+ * stretch Whisper cannot get through costs two extra decodes at most.
+ */
+const LOOP_ADVANCE = [SAMPLE_RATE, 3 * SAMPLE_RATE];
+/** A window louder than this (RMS, dBFS) is not silence, whatever the VAD says. */
+const LOUD_DB = -40;
+
+/**
+ * Lines Whisper is known to invent over music and silence (from subtitle
+ * credits in its training data). Where the VAD heard no speech it cannot
+ * catch them, so they are taken out by their words. Lowercase, no punctuation.
+ */
+const STOCK_LINES = [
+  "altyazı mk",
+  "izlediğiniz için teşekkürler",
+  "izlediğiniz için teşekkür ederim",
+  "abone olmayı unutmayın",
+  "thanks for watching",
+  "thank you for watching",
+  "subtitles by the amaraorg community",
+].map((l) => l.split(" "));
+
+const bare = (text: string) => text.toLocaleLowerCase("tr").replace(/[^\p{L}\p{N}]/gu, "");
+
+/** words without any run that spells one of STOCK_LINES. */
+export function dropStockLines(words: Word[]): Word[] {
+  const keys = words.map((w) => bare(w.text));
+  const drop = new Set<number>();
+  for (let i = 0; i < words.length; i++) {
+    for (const line of STOCK_LINES) {
+      // A line's words may come split or joined ("M.K." can be one word or two).
+      let j = i;
+      let rest = line.join("");
+      while (j < words.length && rest.startsWith(keys[j]) && keys[j]) rest = rest.slice(keys[j++].length);
+      if (!rest && j > i) for (let k = i; k < j; k++) drop.add(k);
+    }
+  }
+  return drop.size ? words.filter((_, k) => !drop.has(k)) : words;
+}
+
+function rmsDb(x: Float32Array): number {
+  let e = 0;
+  for (let i = 0; i < x.length; i++) e += x[i] * x[i];
+  return 10 * Math.log10(e / Math.max(1, x.length) + 1e-12);
+}
 
 export class WhisperEngine implements SpeechEngine {
   private constructor(
@@ -61,6 +113,18 @@ export class WhisperEngine implements SpeechEngine {
     this.vad.reset();
     return new WhisperRecognizer(this.model, this.tok, this.vad);
   }
+}
+
+/**
+ * After a loop (the repeats already cut off): the complete segments before
+ * it and the window's move to their end, or null when no segment closed.
+ */
+export function beforeLoop(tokens: number[], tsBegin: number, windowSamples: number) {
+  let end = 0;
+  for (let i = 1; i < tokens.length; i++) if (tokens[i - 1] >= tsBegin && tokens[i] >= tsBegin) end = i;
+  const advance = end ? (tokens[end - 1] - tsBegin) * SAMPLES_PER_TS : 0;
+  if (advance <= 0) return null;
+  return { text: tokens.slice(0, end).filter((t) => t < tsBegin), advance: Math.min(advance, windowSamples) };
 }
 
 /**
@@ -99,6 +163,8 @@ class WhisperRecognizer implements SpeechStream {
   private vadSamples = 0;
   private lastEnd = 0;
   private committed: Word[] = [];
+  /** Windows in a row whose decoding looped. */
+  private loops = 0;
 
   constructor(
     private model: WhisperModel,
@@ -142,7 +208,10 @@ class WhisperRecognizer implements SpeechStream {
     await this.vad.push(this.audio.subarray(this.vadSamples - this.windowStart, n), last);
     this.vadSamples = this.windowStart + n;
     const from = this.decodedSeconds;
-    if (!this.vad.hasSpeech(from, from + n / SAMPLE_RATE, 0)) {
+    // No speech to the VAD: silence is skipped; a loud window may be singing
+    // over music, so Whisper decides, and its words are not held to the VAD.
+    const vadSpeech = this.vad.hasSpeech(from, from + n / SAMPLE_RATE, 0);
+    if (!vadSpeech && rmsDb(this.audio.subarray(0, n)) < LOUD_DB) {
       this.consume(n);
       return;
     }
@@ -153,7 +222,23 @@ class WhisperRecognizer implements SpeechStream {
       const gen = await this.model.generate(enc);
       const silent = gen.noSpeechProb > NO_SPEECH_PROB && gen.avgLogprob < LOGPROB_FLOOR;
       if (!silent && gen.tokens.length) {
-        const seg = splitSegments(gen.tokens, this.model.config.tokens.timestampBegin, n, last || gen.looped);
+        const tsBegin = this.model.config.tokens.timestampBegin;
+        let seg = splitSegments(gen.tokens, tsBegin, n, last);
+        // No closed segment before the loop: keep the text up to its last whole
+        // word (the cut may split a word, even a letter's bytes) and move on to
+        // where those words end, known once they are timed below.
+        let toWordsEnd = false;
+        if (gen.looped) {
+          const kept = beforeLoop(gen.tokens, tsBegin, n);
+          if (kept) seg = kept;
+          else {
+            const text = gen.tokens.filter((t) => t < tsBegin);
+            let cut = 0;
+            for (let i = text.length - 1; i > 0 && !cut; i--) if (this.tok.startsWord(text[i])) cut = i;
+            seg = { text: text.slice(0, cut), advance: 0 };
+            toWordsEnd = true;
+          }
+        }
         advance = seg.advance;
         if (seg.text.length) {
           const att = await this.model.attention(enc, seg.text);
@@ -164,8 +249,10 @@ class WhisperRecognizer implements SpeechStream {
             att.promptLen,
             this.model.config.medianFilterWidth,
           );
-          for (const w of alignWords(this.tok, seg.text, frames, from)) {
-            if (!this.vad.hasSpeech(w.start, w.end)) continue;
+          const aligned = alignWords(this.tok, seg.text, frames, from);
+          for (const w of vadSpeech ? aligned : dropStockLines(aligned)) {
+            if (toWordsEnd) advance = Math.max(advance, Math.round((w.end - from) * SAMPLE_RATE));
+            if (vadSpeech && !this.vad.hasSpeech(w.start, w.end)) continue;
             // Words at a pause soak up the silence next to them (half a
             // second at sentence starts); keep them to the speech.
             Object.assign(w, this.vad.speechSpan(w.start, w.end));
@@ -176,6 +263,9 @@ class WhisperRecognizer implements SpeechStream {
             this.committed.push(w);
           }
         }
+        // Always move on after a loop, and further when they keep coming.
+        this.loops = gen.looped ? this.loops + 1 : 0;
+        if (gen.looped) advance = Math.min(n, Math.max(advance, LOOP_ADVANCE[this.loops - 1] ?? n));
       }
     } finally {
       this.model.release(enc);

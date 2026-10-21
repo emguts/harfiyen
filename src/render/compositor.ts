@@ -1,6 +1,6 @@
 import type { CaptionImage } from "../captions/renderer";
 import type { Placement, Rect } from "../lib/crop";
-import { AURA_SHADER, auraUniforms, type AuraFrame } from "./aura";
+import { AURA_SHADER, AURA_UNIFORM_BYTES, auraUniforms, type AuraFrame } from "./aura";
 import { GlassBlur } from "./glass";
 import { logoRect, type LogoLayer } from "./logoLayer";
 
@@ -192,7 +192,7 @@ class GpuCompositor implements Compositor {
       vertex: { module: auraModule, entryPoint: "vs_aura" },
       fragment: { module: auraModule, entryPoint: "fs_aura", targets: [{ format }] },
     });
-    this.auraBuffer = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.auraBuffer = device.createBuffer({ size: AURA_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.auraBind = device.createBindGroup({
       layout: this.auraPipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.auraBuffer } }],
@@ -491,11 +491,96 @@ class CanvasCompositor implements Compositor {
     g.restore();
   }
 
-  /** Simplified aura: soft colour fields and one gentle wave line. */
+  /** Simplified audio visualizer for the 2D canvas fallback. */
   private drawAura(a: AuraFrame) {
     const { width: W, height: H } = this.canvas;
     const g = this.g;
-    const lv = [a.levels.low, a.levels.mid, a.levels.high];
+    const { low, mid, high } = a.levels;
+    const energy = (low + mid + high) / 3;
+    const style = a.style ?? "aura";
+
+    if (style === "halo") {
+      const short = Math.min(W, H);
+      const baseR = short * (0.22 + 0.05 * low);
+      const grad = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, short * 0.55);
+      grad.addColorStop(0, a.palette[0] + "44");
+      grad.addColorStop(1, "#00000000");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, W, H);
+
+      a.palette.forEach((col, k) => {
+        g.strokeStyle = col;
+        g.lineWidth = Math.max(2, short / 240);
+        g.beginPath();
+        for (let i = 0; i <= 120; i++) {
+          const ang = (i / 120) * Math.PI * 2;
+          const r =
+            baseR * (0.94 + k * 0.06) +
+            Math.sin(ang * (5 + k * 4) + a.time * (1.2 + k * 0.5)) * short * 0.02 * (0.2 + (k === 0 ? low : k === 1 ? mid : high));
+          const x = W / 2 + Math.cos(ang) * r;
+          const y = H / 2 + Math.sin(ang) * r;
+          if (i === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        }
+        g.closePath();
+        g.stroke();
+      });
+      return;
+    }
+
+    if (style === "kure") {
+      const short = Math.min(W, H);
+      const punch = a.levels.punch ?? 0;
+      const r = short * (0.25 + 0.035 * low + 0.03 * punch);
+      const glow = g.createRadialGradient(W / 2, H / 2, r * 0.8, W / 2, H / 2, r * (1.7 + energy));
+      glow.addColorStop(0, a.palette[1] + "55");
+      glow.addColorStop(1, "#00000000");
+      g.fillStyle = glow;
+      g.fillRect(0, 0, W, H);
+      g.beginPath();
+      for (let i = 0; i <= 96; i++) {
+        const ang = (i / 96) * Math.PI * 2;
+        const rr =
+          r *
+          (1 +
+            Math.sin(ang * 3 + a.time * 0.9) * (0.04 + 0.1 * low) +
+            Math.sin(ang * 7 - a.time * 1.5) * (0.01 + 0.04 * mid));
+        const x = W / 2 + Math.cos(ang) * rr;
+        const y = H / 2 + Math.sin(ang) * rr;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      const body = g.createRadialGradient(W / 2 - r * 0.35, H / 2 - r * 0.4, r * 0.05, W / 2, H / 2, r * 1.1);
+      body.addColorStop(0, "#ffffffcc");
+      body.addColorStop(0.18, a.palette[2]);
+      body.addColorStop(0.7, a.palette[0]);
+      body.addColorStop(1, a.palette[1]);
+      g.fillStyle = body;
+      g.fill();
+      return;
+    }
+
+    if (style === "spektrum") {
+      for (let k = 0; k < 8; k++) {
+        const depth = k / 7;
+        const baseY = H * (0.3 + depth * 0.54);
+        const band = k >= 5 ? low : k >= 2 ? mid : high;
+        const amp = H * (0.018 + 0.07 * (0.35 * energy + 0.65 * band));
+        g.beginPath();
+        for (let x = 0; x <= W; x += 6) {
+          const u = x / W - 0.5;
+          const env = Math.exp(-u * u * 3);
+          const y = baseY - Math.sin(u * (5 + k) + a.time * (0.5 + depth * 0.4)) * amp * env;
+          if (x === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        }
+        g.strokeStyle = a.palette[k % 3];
+        g.lineWidth = Math.max(1.5, H / 450);
+        g.stroke();
+      }
+      return;
+    }
+
     a.palette.forEach((c, i) => {
       const t = a.time * (0.04 + i * 0.012) + i * 2;
       const x = W / 2 + Math.sin(t) * W * 0.35;
@@ -507,7 +592,6 @@ class CanvasCompositor implements Compositor {
       g.fillStyle = grad;
       g.fillRect(0, 0, W, H);
     });
-    const energy = (lv[0] + lv[1] + lv[2]) / 3;
     g.strokeStyle = "rgba(255,255,255,0.45)";
     g.lineWidth = Math.max(1, H / 600);
     g.beginPath();

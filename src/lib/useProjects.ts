@@ -75,7 +75,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings, crop: Cr
       const now = Date.now();
       p = {
         id: crypto.randomUUID(),
-        name: stripExt(job.imported ?? job.file?.name ?? LIVE_NAME),
+        name: stripExt((job.imported !== "tts" ? job.imported : undefined) ?? job.file?.name ?? LIVE_NAME),
         createdAt: now,
         updatedAt: now,
         live: job.live,

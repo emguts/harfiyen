@@ -113,6 +113,8 @@ export function ExportMenu({
   const out = effectiveOutput(output, source);
   const resolution = source && resolutionOf(out, source);
   const encoder = resolution?.encoders[out.codec];
+  // A video written larger than its own picture.
+  const upscaled = !!source?.video && !!resolution && resolution.height * resolution.width > source.width * source.height;
   const size = (o: VideoOutput) => (source ? `${megabytes(estimateSize(o, source))} MB` : "");
   const badCodec = undecodable(source);
   const canCreate = has && complete && canBurn && (!source || !!encoder) && !badCodec;
@@ -180,12 +182,12 @@ export function ExportMenu({
           </div>
         ) : (
           <div className="grid gap-3 px-2 pt-1 pb-2">
-            {/* Only when there is a choice: a small video has nothing below its own size. */}
-            {source && source.resolutions.length > 1 && (
+            {/* Only when there is a choice. */}
+            {source && resolution && source.resolutions.length > 1 && (
               <Field label="Çözünürlük">
                 <Select<OutputResolution>
                   label="Çözünürlük"
-                  value={out.resolution}
+                  value={resolution.value}
                   options={source.resolutions.map((r) => ({ value: r.value, label: RESOLUTION_NAMES[r.value] }))}
                   onChange={(value) => onOutput({ ...output, resolution: value })}
                   render={(o) => {
@@ -200,6 +202,7 @@ export function ExportMenu({
                     );
                   }}
                 />
+                {upscaled && <MenuNote>Görüntü büyütülür; altyazı bu boyutta çizildiği için keskin çıkar.</MenuNote>}
               </Field>
             )}
             <Field label="Video kodlaması">

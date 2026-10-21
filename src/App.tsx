@@ -41,7 +41,7 @@ import {
   IconUndo,
 } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
-import { Inspector } from "./components/Inspector";
+import { Inspector, type InspectorTab } from "./components/Inspector";
 import { ModelMenu } from "./components/ModelMenu";
 import { langProblem, VideoLang } from "./components/VideoLang";
 import { MoreMenu } from "./components/MoreMenu";
@@ -64,6 +64,7 @@ import { useBurner } from "./lib/useBurner";
 import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
 import { useLogo } from "./lib/logo";
+import { DEFAULT_KINETIC } from "./render/kinetic";
 import type { LogoLayer } from "./render/logoLayer";
 import { framing, type Crop } from "./lib/crop";
 import { wordsIn } from "./lib/trim";
@@ -86,10 +87,13 @@ import {
   MAX_ORIGINAL,
   sameVoice,
   storedDub,
+  textFromWords,
   useDubber,
   useDubPlayback,
+  wordsFromText,
   type Voice,
 } from "./lib/useDubber";
+import { dubMetrics } from "./tts/dub";
 import { useProjects } from "./lib/useProjects";
 import { canResume, modelIsCached, useTranscriber, type TimeRange } from "./lib/useTranscriber";
 import { useTranslator } from "./lib/useTranslator";
@@ -149,8 +153,12 @@ function loadSettings(): CaptionSettings {
 }
 
 // A new project starts without "Sesle vurgula" and with its captions shown; the rest of the look carries over.
-const forNewProject = (s: CaptionSettings) =>
-  s.voiceEmphasis || s.hidden ? { ...s, voiceEmphasis: false, hidden: false } : s;
+const forNewProject = (s: CaptionSettings): CaptionSettings => {
+  const preset = presetById(s.preset).id;
+  return s.voiceEmphasis || s.hidden || s.preset !== preset
+    ? { ...s, preset, voiceEmphasis: false, hidden: false }
+    : s;
+};
 
 function baseName(name: string) {
   const i = name.lastIndexOf(".");
@@ -174,6 +182,7 @@ export function App() {
     transcribe,
     load,
     attach,
+    setSpoken,
     clear,
     startLive,
     stopLive,
@@ -225,7 +234,6 @@ export function App() {
     () => setVideoOutput((o) => ({ ...o, resolution: reels ? "1080" : loadOutput().resolution })),
     [reels],
   );
-  // While picking, playback keeps to the range being picked.
   const player = usePlayer(job?.file ?? null, trimming ? trimDraft : trim);
   const wave = useWaveform(job?.live ? null : (job?.file ?? null));
   const { logo: logoImage } = useLogo();
@@ -243,6 +251,14 @@ export function App() {
   const following = useFollow(player, job);
   const dubber = useDubber();
   const translator = useTranslator();
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("captions");
+  const [customText, setCustomText] = useState("");
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const spokenJob = useRef<number | null>(null);
+  const autoPlay = useRef(false);
+  /** Standalone text-to-speech project: the synthesized WAV is already the job's own file. */
+  const isTts = job?.imported === "tts";
+  const textMode = !job || isTts;
   /** Show the English translation instead of the transcript, once there is one. */
   const [showEn, setShowEn] = useState(false);
   /** Play and export the dub instead of the original sound, once there is one. */
@@ -255,7 +271,9 @@ export function App() {
     return Number.isFinite(saved) ? Math.max(0, Math.min(MAX_ORIGINAL, saved)) : 0;
   });
   useEffect(() => localStorage.setItem("harfiyen.dubOriginal", String(dubOriginal)), [dubOriginal]);
-  useDubPlayback(player.el, dub?.url ?? null, !!dubbing, dubOriginal);
+  /** A text-to-speech job's own file is already the dub in its source language. */
+  const ownFileIsDub = isTts && dubbing?.voice.lang === (job?.options.lang ?? "tr");
+  useDubPlayback(player.el, dub?.url ?? null, !!dubbing && !ownFileIsDub, dubOriginal);
   const [voice, setVoice] = useState<Voice>(() => {
     try {
       return fitVoice({ ...DEFAULT_VOICE, ...JSON.parse(localStorage.getItem("harfiyen.voice") ?? "{}") });
@@ -301,13 +319,21 @@ export function App() {
   const resetBurn = burner.reset;
   // A dub belongs to its job; an export made with or without it is out of date once that changes.
   const resetDub = dubber.reset;
-  useEffect(() => resetDub(), [job?.id, resetDub]);
+  useEffect(() => {
+    if (job?.id !== spokenJob.current) resetDub();
+  }, [job?.id, resetDub]);
   /** The project a dub was started in, which it is saved with once done (the open one may have changed by then). */
   const dubProject = useRef<string | null>(null);
   useEffect(() => {
-    if (!dub || dub.restored || !dubProject.current) return;
-    void saveDub(dubProject.current, storedDub(dub)).catch(() => {}); // Over quota: the dub just is not kept.
-  }, [dub]);
+    const targetId = dubProject.current ?? (job?.id === spokenJob.current ? current?.id : null);
+    if (!dub || dub.restored || !targetId) return;
+    void saveDub(targetId, storedDub(dub)).catch(() => {}); // Over quota: the dub just is not kept.
+  }, [dub, current?.id, job?.id]);
+  useEffect(() => {
+    if (!autoPlay.current || !player.el || !player.url) return;
+    autoPlay.current = false;
+    void player.el.play().catch(() => {});
+  }, [player.el, player.url]);
   // A reopened project brings its dub back, with the voice it was made with.
   const latestJob = useRef(job);
   latestJob.current = job;
@@ -506,6 +532,7 @@ export function App() {
     resetBurn();
     setCrop(null);
     setTrim(null);
+    setCustomText("");
     clear();
   };
 
@@ -612,7 +639,10 @@ export function App() {
   const words = job?.words ?? [];
   const translation = job?.translation;
   /** The language spoken in the media, as the open transcript was made in. */
-  const sourceLang: SpeechLang = job?.options.lang ?? "tr";
+  const sourceLang: SpeechLang = job ? (job.options.lang ?? "tr") : voice.lang;
+  useEffect(() => {
+    if (isTts) setCustomText(textFromWords(words));
+  }, [isTts, words]);
   /** Showing the translation rather than the transcript. */
   const translated = showEn && !!translation;
   const lang = translated ? translation.lang : sourceLang;
@@ -634,7 +664,10 @@ export function App() {
   /** Where the dub must be over by: the trim's end, or the file's. */
   const dubEnd = trim?.end ?? fileDuration;
   const dubWordsKey = useMemo(() => dubKey(dubWords), [dubWords]);
-  const dubStale = !!dub && (dub.key !== dubWordsKey || !sameVoice(dub.voice, voice) || dub.end !== dubEnd);
+  const textEdited = isTts && voice.lang === sourceLang && customText.trim() !== textFromWords(words).trim();
+  const dubStale =
+    textEdited ||
+    (!!dub && (dub.key !== dubWordsKey || !sameVoice(dub.voice, voice) || (!textMode && dub.end !== dubEnd)));
   /**
    * With the dub on and captions in its language, the captions follow the dub: its words at the times it says
    * them. The transcript pane and edits keep the spoken times.
@@ -706,6 +739,62 @@ export function App() {
     });
   };
   const startDub = (read: Word[]) => {
+    if (textMode && (!isTts || voice.lang === sourceLang)) {
+      const trimmed = customText.trim();
+      if (!trimmed) return;
+      const source = isTts && trimmed === textFromWords(words).trim() ? words : wordsFromText(trimmed);
+      const langChoice: SpeechLang = isTts ? sourceLang : voice.lang;
+      dubProject.current = current?.id ?? null;
+      dubber.dub(source, 0, 0, voice, true, (r) => {
+        const { peaks, bands, loudness } = dubMetrics(r.clips, r.duration);
+        const file = new File([r.wav], "Metin seslendirme.wav", { type: "audio/wav" });
+        const opts = optionsFor(method, langChoice);
+        resetBurn();
+        autoPlay.current = true;
+        if (isTts && job) {
+          if (trimmed !== textFromWords(words).trim()) {
+            history.current.push({ jobId: job.id, en: false, words });
+            setCanUndo(true);
+          }
+          spokenJob.current = job.id;
+          setSpoken({
+            file,
+            options: opts,
+            duration: r.duration,
+            elapsed: r.elapsed,
+            words: r.timed,
+            peaks,
+            bands,
+            loudness,
+          });
+        } else {
+          setNotice(null);
+          setPendingHandle(null);
+          setSettings((s) => {
+            const clean = forNewProject(s);
+            return { ...clean, kinetic: { ...(clean.kinetic ?? DEFAULT_KINETIC), on: true } };
+          });
+          setCrop(null);
+          setTrim(null);
+          setVideoLang(langChoice);
+          const id = load({
+            file,
+            model,
+            imported: "tts",
+            options: opts,
+            duration: r.duration,
+            elapsed: r.elapsed,
+            words: r.timed,
+            peaks,
+            bands,
+            loudness,
+          });
+          spokenJob.current = id;
+          punctuated.current.add(id);
+        }
+      });
+      return;
+    }
     dubProject.current = current?.id ?? null;
     dubber.dub(read, fileDuration, dubEnd, voice, dubBySentence(voice.lang, sourceLang));
   };
@@ -851,6 +940,12 @@ export function App() {
     () => (sourceInfo && trim ? { ...sourceInfo, duration: trim.end - trim.start } : sourceInfo),
     [sourceInfo, trim],
   );
+  // The preview draws a video at the size it is written at.
+  const outputSize = useMemo(() => {
+    if (!sourceInfo?.video) return null;
+    const r = resolutionOf(effectiveOutput(videoOutput, sourceInfo), sourceInfo);
+    return { w: r.width, h: r.height };
+  }, [sourceInfo, videoOutput]);
   const changeOutput = (o: VideoOutput) => {
     setVideoOutput(o);
     // A size picked for Reels stays with Reels; other videos keep the saved one.
@@ -877,9 +972,9 @@ export function App() {
       trim,
     };
     // Translated or dub-timed words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
-    const loudness = translated || dubTimed ? EMPTY_BANDS : job.loudness;
+    const loudness = (translated || (dubTimed && !ownFileIsDub)) ? EMPTY_BANDS : job.loudness;
     // Only the trimmed part's words, so no caption line reaches outside it.
-    void burner.burn(job.file, wordsIn(dubTimed ?? shown, trim), settings, job.bands, loudness, lang, encode, dubbing && { clips: dubbing.clips, original: dubOriginal }, logo, `${exportName}${videoSuffix}`);
+    void burner.burn(job.file, wordsIn(dubTimed ?? shown, trim), settings, job.bands, loudness, lang, encode, dubbing && !ownFileIsDub ? { clips: dubbing.clips, original: dubOriginal } : null, logo, `${exportName}${videoSuffix}`);
   };
 
   const changeCrop = (c: Crop | null) => {
@@ -987,6 +1082,13 @@ export function App() {
       : null,
     gpuUnavailable: chosen.cpuOnly ? `${chosen.name} yalnızca işlemcide çalışır.` : null,
     locked: engineBusy,
+  };
+  const openTextDub = () => {
+    setInspectorTab("dub");
+    requestAnimationFrame(() => {
+      textRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      textRef.current?.focus();
+    });
   };
   const goLiveRef = useRef<() => Promise<void>>(async () => {});
   const goLive = async () => {
@@ -1270,8 +1372,9 @@ export function App() {
             onCrop={changeCrop}
             cropLocked={burner.state.status === "running"}
             logo={logo}
+            size={outputSize}
             bands={job?.bands ?? EMPTY_BANDS}
-            loudness={(!translated && !dubTimed && job?.loudness) || EMPTY_BANDS}
+            loudness={((!translated && (!dubTimed || ownFileIsDub)) && job?.loudness) || EMPTY_BANDS}
             lang={lang}
             liveLevels={liveLevels}
             notice={
@@ -1363,6 +1466,13 @@ export function App() {
                         <IconMic /> Mikrofonla başla
                       </Button>
                     )}
+                    <Button
+                      size="lg"
+                      className={DROP_BTN}
+                      onClick={openTextDub}
+                    >
+                      <IconSound /> Metin seslendir
+                    </Button>
                   </>
                 }
                 fine={
@@ -1435,7 +1545,14 @@ export function App() {
           voice={voice}
           onVoice={setVoice}
           preview={dubber.preview}
-          onListen={() => dubber.listen(dubWords, voice, dubBySentence(voice.lang, sourceLang))}
+          onListen={() =>
+            dubber.listen(
+              dubWords,
+              voice,
+              dubBySentence(voice.lang, sourceLang),
+              textMode && (!isTts || voice.lang === sourceLang) ? customText : undefined,
+            )
+          }
           translate={translator.state}
           translation={!!translation}
           translationLang={translation?.lang ?? null}
@@ -1450,6 +1567,13 @@ export function App() {
           onCancelTranslate={translator.cancel}
           canTranslateDub={editable && !!job?.file && words.length > 0}
           onTranslateDub={() => translate((t) => startDub(t.words))}
+          tab={inspectorTab}
+          onTab={setInspectorTab}
+          textMode={textMode}
+          customText={customText}
+          onCustomText={setCustomText}
+          textRef={textRef}
+          audioOnly={!player.isVideo}
         />
       </div>
 

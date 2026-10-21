@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type RefObject } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod, SpeechLang } from "../engine";
 import { LANG_NAMES } from "../lib/lang";
@@ -9,6 +9,7 @@ import { translateProgress, translationLang as targetOf, type TranslateState } f
 import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
+import { SceneStudio } from "./SceneStudio";
 import { VideoLang } from "./VideoLang";
 import { Progress } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
@@ -28,7 +29,7 @@ import {
 const TAB =
   "h-[26px] flex-1 rounded-[5px] border-0 bg-transparent text-[12px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-fg-strong aria-selected:shadow-[0_1px_3px_var(--shadow-pop),inset_0_1px_0_var(--tint)]";
 
-type Tab = "captions" | "transcribe" | "dub";
+export type InspectorTab = "captions" | "scene" | "transcribe" | "dub";
 
 // Each option shows its result rather than its rule.
 const NUMBER_MODES: { value: NumberMode; label: string; sample: string }[] = [
@@ -98,6 +99,13 @@ export function Inspector({
   onVideoLang,
   langIssue,
   captionLang,
+  tab: controlledTab,
+  onTab,
+  textMode,
+  customText,
+  onCustomText,
+  textRef,
+  audioOnly = false,
 }: {
   settings: CaptionSettings;
   onSettings: (s: CaptionSettings) => void;
@@ -158,8 +166,18 @@ export function Inspector({
   langIssue: string | null;
   /** The language of the captions shown. */
   captionLang: string;
+  tab?: InspectorTab;
+  onTab?: (t: InspectorTab) => void;
+  textMode?: boolean;
+  customText?: string;
+  onCustomText?: (text: string) => void;
+  textRef?: RefObject<HTMLTextAreaElement | null>;
+  audioOnly?: boolean;
 }) {
-  const [tab, setTab] = useState<Tab>("captions");
+  const [innerTab, setInnerTab] = useState<InspectorTab>("captions");
+  const rawTab = controlledTab ?? innerTab;
+  const tab = !audioOnly && rawTab === "scene" ? "captions" : rawTab;
+  const setTab = onTab ?? setInnerTab;
   const running = job?.status === "running";
   const translating = translateProgress(translate);
   const info = modelInfo(model);
@@ -208,6 +226,16 @@ export function Inspector({
         >
           Altyazı
         </button>
+        {audioOnly && (
+          <button
+            className={TAB}
+            role="tab"
+            aria-selected={tab === "scene"}
+            onClick={() => setTab("scene")}
+          >
+            Sahne
+          </button>
+        )}
         <button
           className={TAB}
           role="tab"
@@ -232,6 +260,14 @@ export function Inspector({
             onChange={onSettings}
             disabled={burning}
             lang={captionLang}
+            onScene={audioOnly ? () => setTab("scene") : undefined}
+          />
+        ) : tab === "scene" ? (
+          <SceneStudio
+            settings={settings}
+            onChange={onSettings}
+            onCaptions={() => setTab("captions")}
+            disabled={burning}
           />
         ) : tab === "dub" ? (
           <DubPanel
@@ -260,6 +296,10 @@ export function Inspector({
             canTranslateDub={canTranslateDub}
             onTranslateDub={onTranslateDub}
             onCancelTranslate={onCancelTranslate}
+            textMode={textMode}
+            customText={customText}
+            onCustomText={onCustomText}
+            textRef={textRef}
           />
         ) : (
           <div className={STUDIO}>

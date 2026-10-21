@@ -447,6 +447,23 @@ export function useTranscriber() {
     [update],
   );
 
+  /** Update a text-to-speech job in place after re-synthesising its words. */
+  const setSpoken = useCallback(
+    (
+      p: Pick<Job, "file" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands" | "loudness">,
+    ) => {
+      const j = jobRef.current;
+      if (!j || j.status === "running") return;
+      update(j.id, (x) => ({
+        ...x,
+        ...p,
+        decoded: p.duration ?? 0,
+        speed: p.duration && p.elapsed ? p.duration / p.elapsed : 0,
+      }));
+    },
+    [update],
+  );
+
   /** Real-time microphone meter (levels for the aura, peaks for the timeline). */
   const liveMeter = useRef<LiveMeter | null>(null);
   const liveLevels = useRef<AuraLevels | null>(null);
@@ -661,7 +678,7 @@ export function useTranscriber() {
     send({ type: "transcribe", jobId: j.id, file: j.file, options: j.options, startAt: at, endAt: range?.end });
   }, [prepare, send, update, setModel]);
 
-  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct };
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, setSpoken, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct };
 }
 
 export { MicError };

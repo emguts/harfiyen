@@ -26,7 +26,7 @@ export function Dropzone({
       />
       <h2 className="m-0 text-[22px] font-[650] tracking-[-0.025em] text-white max-[860px]:text-[20px]">{title}</h2>
       <p className="m-0 text-[13.5px] leading-[1.6] text-fg-2">{text}</p>
-      <div className="mt-2 flex items-center gap-3 max-[480px]:flex-col max-[480px]:gap-2 max-[480px]:self-stretch">
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-2.5 max-[480px]:flex-col max-[480px]:gap-2 max-[480px]:self-stretch">
         {actions}
       </div>
       <p className="mt-2.5 mb-0 text-[12px] leading-[1.55] text-fg-3">{fine}</p>
