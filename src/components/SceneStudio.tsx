@@ -1,4 +1,4 @@
-import type { CaptionSettings } from "../captions/style";
+import { shownPicture, type CaptionSettings } from "../captions/style";
 import { AURA_PALETTES, AURA_STYLES, paletteById, type AuraPaletteId, type AuraStyleId } from "../render/aura";
 import { DEFAULT_KINETIC, kineticPaletteById } from "../render/kinetic";
 import { STUDIO } from "./CaptionStudio";
@@ -6,49 +6,91 @@ import { KineticControls } from "./KineticStudio";
 import { OPT, OPT_TITLE, Select } from "./Select";
 import { Hint, LinkButton, RowGroup, RowLabel, Section } from "./ui";
 
-/** What is written over the picture of an audio project. */
+/** What is written over the picture. */
 export type TextMode = "captions" | "kinetic" | "none";
 
 /** The text mode as the settings keep it: kinetic.on and hidden. */
 const textModeOf = (s: CaptionSettings): TextMode =>
   s.kinetic?.on ? "kinetic" : s.hidden ? "none" : "captions";
 
-const TEXT_MODES: { value: TextMode; label: string; note: string }[] = [
-  { value: "captions", label: "Altyazı", note: "Arka planın üstünde altyazı; görünümü Altyazı sekmesinde." },
-  { value: "kinetic", label: "Kinetik", note: "Altyazı yerine bütün ekranı kullanan kinetik tipografi." },
-  { value: "none", label: "Yok", note: "Yalnız arka plan; SRT, VTT ve metin dışa aktarımları etkilenmez." },
+/** `video` is the note for a project with a picture. */
+const TEXT_MODES: { value: TextMode; label: string; note: string; video: string }[] = [
+  {
+    value: "captions",
+    label: "Altyazı",
+    note: "Arka planın üstünde altyazı; görünümü Altyazı sekmesinde.",
+    video: "Görüntünün üstünde altyazı; görünümü Altyazı sekmesinde.",
+  },
+  {
+    value: "kinetic",
+    label: "Kinetik",
+    note: "Altyazı yerine bütün ekranı kullanan kinetik tipografi.",
+    video: "Altyazı yerine bütün ekranı kullanan kinetik tipografi.",
+  },
+  {
+    value: "none",
+    label: "Yok",
+    note: "Yalnız arka plan; SRT, VTT ve metin dışa aktarımları etkilenmez.",
+    video: "Yazısız; varsa kadraj, logo ve seslendirme kalır. SRT, VTT ve metin dışa aktarımları etkilenmez.",
+  },
+];
+
+/** A video's own picture as the ground; `kinetic` is the note under the kinetic stage. */
+const PICTURES: { value: "video" | "blur"; label: string; note: string; kinetic: string }[] = [
+  {
+    value: "video",
+    label: "Görüntü",
+    note: "Videonun görüntüsü olduğu gibi.",
+    kinetic: "Videonun görüntüsü, üstünde paletin zemininden ince bir perde.",
+  },
+  {
+    value: "blur",
+    label: "Bulanık",
+    note: "Görüntü bulanık ve koyu; yazı her görüntüde okunur.",
+    kinetic: "Görüntü bulanık ve koyu; yazı her görüntüde okunur.",
+  },
 ];
 
 const CHOICE =
   "h-[26px] rounded-ui border border-line bg-raised text-[12px] text-fg-2 hover:not-disabled:text-fg aria-pressed:border-cini aria-pressed:text-fg-strong disabled:opacity-45";
 
 /**
- * The Sahne tab, for audio-only projects: how the picture is made. What is
- * written (captions, kinetic typography or nothing) and what is behind it
- * (one of the auras, or the kinetic palette's own plain ground).
+ * The Sahne tab: how the picture is made. What is written (captions, kinetic
+ * typography or nothing) and what is behind it: one of the auras for an audio
+ * project, the picture (as it is or blurred) for a video, or the kinetic
+ * palette's own plain ground.
  */
 export function SceneStudio({
   settings,
   onChange,
   onCaptions,
+  video = false,
   disabled,
 }: {
   settings: CaptionSettings;
   onChange: (s: CaptionSettings) => void;
   /** Opens the Altyazı tab. */
   onCaptions: () => void;
+  /** The project has a picture: the kinetic stage goes over it, not over an aura. */
+  video?: boolean;
   disabled?: boolean;
 }) {
   const kinetic = settings.kinetic ?? DEFAULT_KINETIC;
   const mode = textModeOf(settings);
-  const plain = mode === "kinetic" && kinetic.backdrop === "stage";
+  const modeInfo = TEXT_MODES.find((m) => m.value === mode)!;
+  // A video's own picture, when it is the ground; else the aura or the plain ground, as in an audio project.
+  const pic = shownPicture(settings, video);
+  const picInfo = PICTURES.find((p) => p.value === pic);
+  const plain = !pic && mode === "kinetic" && kinetic.backdrop === "stage";
   const auraStyle = settings.auraStyle ?? "aura";
 
   const setMode = (m: TextMode) =>
     onChange({ ...settings, hidden: m === "none", kinetic: { ...kinetic, on: m === "kinetic" } });
+  // An aura or the plain ground in a video: the file is used for its sound.
+  const leaveOut = video ? { picture: "hidden" as const } : {};
   const setAura = (style: AuraStyleId) =>
-    onChange({ ...settings, auraStyle: style, kinetic: { ...kinetic, backdrop: "aura" } });
-  const setPlain = () => onChange({ ...settings, kinetic: { ...kinetic, backdrop: "stage" } });
+    onChange({ ...settings, ...leaveOut, auraStyle: style, kinetic: { ...kinetic, backdrop: "aura" } });
+  const setPlain = () => onChange({ ...settings, ...leaveOut, kinetic: { ...kinetic, backdrop: "stage" } });
 
   return (
     <fieldset className={STUDIO} disabled={disabled}>
@@ -66,7 +108,7 @@ export function SceneStudio({
             </button>
           ))}
         </div>
-        <Hint>{TEXT_MODES.find((m) => m.value === mode)!.note}</Hint>
+        <Hint>{video ? modeInfo.video : modeInfo.note}</Hint>
         {mode === "captions" && (
           <LinkButton type="button" className="justify-self-start" onClick={onCaptions}>
             Altyazının görünümünü ayarla
@@ -83,13 +125,28 @@ export function SceneStudio({
       )}
 
       <Section title="Arka plan">
-        <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Arka plan">
+        {video && (
+          <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Videonun görüntüsü">
+            {PICTURES.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                className={CHOICE}
+                aria-pressed={pic === p.value}
+                onClick={() => onChange({ ...settings, picture: p.value })}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="grid grid-cols-3 gap-1.5" role="group" aria-label={video ? "Görüntü yerine" : "Arka plan"}>
           {AURA_STYLES.map((st) => (
             <button
               key={st.id}
               type="button"
               className={CHOICE}
-              aria-pressed={!plain && auraStyle === st.id}
+              aria-pressed={!pic && !plain && auraStyle === st.id}
               onClick={() => setAura(st.id)}
             >
               {st.label}
@@ -101,9 +158,12 @@ export function SceneStudio({
             </button>
           )}
         </div>
-        {plain ? (
+        {picInfo ? (
+          <Hint>{mode === "kinetic" ? picInfo.kinetic : picInfo.note}</Hint>
+        ) : plain ? (
           <Hint>
-            Kinetik paletin kendi zemini ({kineticPaletteById(kinetic.palette).label}); sesle hafifçe parlar.
+            {video && "Görüntü kullanılmaz, yalnız sesi. "}Kinetik paletin kendi zemini (
+            {kineticPaletteById(kinetic.palette).label}); sesle hafifçe parlar.
           </Hint>
         ) : (
           <>
@@ -132,7 +192,10 @@ export function SceneStudio({
                 }}
               />
             </RowGroup>
-            <Hint>{AURA_STYLES.find((st) => st.id === auraStyle)?.note}</Hint>
+            <Hint>
+              {video && "Görüntü kullanılmaz, yalnız sesi. "}
+              {AURA_STYLES.find((st) => st.id === auraStyle)?.note}
+            </Hint>
           </>
         )}
       </Section>

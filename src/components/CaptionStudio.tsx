@@ -97,8 +97,8 @@ export function CaptionStudio({
   disabled?: boolean;
   /** The captions' language; decides how they are uppercased. */
   lang?: string;
-  /** Audio-only projects: opens the Sahne tab, where captions are turned on or off. */
-  onScene?: () => void;
+  /** Opens the Sahne tab, where captions are turned on or off. */
+  onScene: () => void;
 }) {
   const userFonts = useUserFonts();
   const fontFile = useRef<HTMLInputElement>(null);
@@ -140,33 +140,18 @@ export function CaptionStudio({
 
   return (
     <fieldset className={STUDIO} disabled={disabled}>
-      {onScene ? (
-        // Audio-only: the Sahne tab decides what is written; here only a note when it is not captions.
-        (settings.kinetic?.on || settings.hidden) && (
-          <Section title="Altyazı">
-            <Hint>
-              {settings.kinetic?.on
-                ? "Kinetik tipografi açık: altyazının yerine o çiziliyor."
-                : "Bu projede yazı kapalı: yalnız arka plan çiziliyor."}{" "}
-              Aşağıdaki ayarlar altyazıya dönünce kullanılır.
-            </Hint>
-            <LinkButton type="button" className="justify-self-start" onClick={onScene}>
-              Sahne sekmesine git
-            </LinkButton>
-          </Section>
-        )
-      ) : (
+      {/* The Sahne tab decides what is written; here only a note when it is not captions. */}
+      {(settings.kinetic?.on || settings.hidden) && (
         <Section title="Altyazı">
-          <Row>
-            <RowLabel wide>Altyazıyı göster</RowLabel>
-            <Switch checked={!settings.hidden} onChange={(e) => onChange({ ...settings, hidden: !e.target.checked })} />
-          </Row>
-          {settings.hidden && (
-            <Hint>
-              Oynatıcıda ve dışa aktarılan videoda altyazı yok; varsa kadraj, logo ve seslendirme kalır. SRT, VTT ve metin
-              dışa aktarımları etkilenmez. Aşağıdaki ayarlar altyazı yeniden açılınca kullanılır.
-            </Hint>
-          )}
+          <Hint>
+            {settings.kinetic?.on
+              ? "Kinetik tipografi açık: altyazının yerine o çiziliyor."
+              : "Bu projede ekranda yazı yok; SRT, VTT ve metin dışa aktarımları etkilenmez."}{" "}
+            Aşağıdaki ayarlar altyazıya dönünce kullanılır.
+          </Hint>
+          <LinkButton type="button" className="justify-self-start" onClick={onScene}>
+            Sahne sekmesine git
+          </LinkButton>
         </Section>
       )}
       <Section title="Stil">

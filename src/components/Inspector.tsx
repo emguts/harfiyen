@@ -175,8 +175,7 @@ export function Inspector({
   audioOnly?: boolean;
 }) {
   const [innerTab, setInnerTab] = useState<InspectorTab>("captions");
-  const rawTab = controlledTab ?? innerTab;
-  const tab = !audioOnly && rawTab === "scene" ? "captions" : rawTab;
+  const tab = controlledTab ?? innerTab;
   const setTab = onTab ?? setInnerTab;
   const running = job?.status === "running";
   const translating = translateProgress(translate);
@@ -226,16 +225,14 @@ export function Inspector({
         >
           Altyazı
         </button>
-        {audioOnly && (
-          <button
-            className={TAB}
-            role="tab"
-            aria-selected={tab === "scene"}
-            onClick={() => setTab("scene")}
-          >
-            Sahne
-          </button>
-        )}
+        <button
+          className={TAB}
+          role="tab"
+          aria-selected={tab === "scene"}
+          onClick={() => setTab("scene")}
+        >
+          Sahne
+        </button>
         <button
           className={TAB}
           role="tab"
@@ -260,13 +257,14 @@ export function Inspector({
             onChange={onSettings}
             disabled={burning}
             lang={captionLang}
-            onScene={audioOnly ? () => setTab("scene") : undefined}
+            onScene={() => setTab("scene")}
           />
         ) : tab === "scene" ? (
           <SceneStudio
             settings={settings}
             onChange={onSettings}
             onCaptions={() => setTab("captions")}
+            video={!audioOnly}
             disabled={burning}
           />
         ) : tab === "dub" ? (

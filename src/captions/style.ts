@@ -3,6 +3,12 @@ import type { AuraPaletteId, AuraStyleId } from "../render/aura";
 import { DEFAULT_KINETIC, type KineticSettings } from "../render/kinetic";
 import type { FontId } from "./fonts";
 
+export type VideoPicture = "video" | "blur" | "hidden";
+
+/** The picture as drawn: a video's, as it is or blurred; null for an audio project or a video used for its sound. */
+export const shownPicture = (s: CaptionSettings, video: boolean): "video" | "blur" | null =>
+  !video || s.picture === "hidden" ? null : s.picture === "blur" ? "blur" : "video";
+
 export type PresetId =
   | "klasik"
   | "karaoke"
@@ -66,8 +72,14 @@ export interface CaptionSettings {
   logo?: LogoSettings;
   /** No captions in the player or the video (a dub-only video, say); kept with the project. */
   hidden?: boolean;
-  /** Independent full-screen kinetic typography stage for audio-only and TTS projects. */
+  /** Full-screen kinetic typography in place of the captions. */
   kinetic?: KineticSettings;
+  /**
+   * What a video project does with its picture: shows it, blurs it, or leaves it out, using the file
+   * for its sound only (then it is drawn as an audio project is: the aura, or the kinetic stage's ground).
+   * Missing: shown.
+   */
+  picture?: VideoPicture;
   /** Settings the user changed by hand: switching preset keeps them. Missing before there was this. */
   overrides?: StyleKey[];
 }
@@ -88,7 +100,7 @@ export interface Preset {
   pop: boolean;
   /** How each word comes in as it is spoken: fade and grow, or out of blur (rising, or shrinking into place). */
   wordIn?: "grow" | "focus" | "sharpen";
-  defaults: Omit<CaptionSettings, "preset" | "aura" | "auraStyle" | "voiceEmphasis" | "logo" | "hidden" | "kinetic" | "overrides">;
+  defaults: Omit<CaptionSettings, "preset" | "aura" | "auraStyle" | "voiceEmphasis" | "logo" | "hidden" | "kinetic" | "picture" | "overrides">;
 }
 
 export const PRESETS: Preset[] = [
@@ -319,6 +331,7 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
     logo: prev?.logo ?? DEFAULT_LOGO,
     hidden: prev?.hidden ?? false,
     kinetic: prev?.kinetic ?? DEFAULT_KINETIC,
+    picture: prev?.picture ?? "video",
     ...presetById(id).defaults,
     ...Object.fromEntries(overrides.map((k) => [k, prev![k]])),
     overrides,

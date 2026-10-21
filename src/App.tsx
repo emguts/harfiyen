@@ -152,11 +152,11 @@ function loadSettings(): CaptionSettings {
   }
 }
 
-// A new project starts without "Sesle vurgula" and with its captions shown; the rest of the look carries over.
+// A new project starts without "Sesle vurgula", with its captions shown (not the kinetic stage) and its picture; the rest of the look carries over.
 const forNewProject = (s: CaptionSettings): CaptionSettings => {
   const preset = presetById(s.preset).id;
-  return s.voiceEmphasis || s.hidden || s.preset !== preset
-    ? { ...s, preset, voiceEmphasis: false, hidden: false }
+  return s.voiceEmphasis || s.hidden || s.kinetic?.on || (s.picture ?? "video") !== "video" || s.preset !== preset
+    ? { ...s, preset, voiceEmphasis: false, hidden: false, picture: "video", ...(s.kinetic && { kinetic: { ...s.kinetic, on: false } }) }
     : s;
 };
 
@@ -1181,13 +1181,15 @@ export function App() {
             baseName={exportName}
             videoName={`${exportName}${videoSuffix}`}
             captions={!settings.hidden}
+            kinetic={!!settings.kinetic?.on}
             meta={{
               file: title,
               model: modelInfo(job.model).spec,
               ...(job.model === "seda" && { method: job.options.method }),
             }}
             complete={job.status === "done"}
-            isVideo={player.isVideo}
+            // A video used for its sound comes out as an audio file's does.
+            isVideo={player.isVideo && settings.picture !== "hidden"}
             canBurn={!!job.file}
             burn={burner.state}
             output={videoOutput}

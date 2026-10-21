@@ -31,6 +31,8 @@ export interface Compositor {
   setPlacement(placement: Placement | null): void;
   /** The logo drawn on every frame from now on; null for none. */
   setLogo(logo: LogoLayer | null): void;
+  /** Blur the whole video picture, under the logo and the caption (the kinetic stage's "blur" backdrop). */
+  setBlur(on: boolean): void;
   /** Draw a picture (black when null) and an optional caption. */
   render(picture: Picture, caption: CaptionImage | null): void;
   destroy(): void;
@@ -133,6 +135,7 @@ class GpuCompositor implements Compositor {
   /** The backdrop's placement: the cover part of the picture over the whole frame. */
   private coverBuffer: GPUBuffer;
   private backdrop: Placement["backdrop"] = null;
+  private blur = false;
   private overlay: { key: string; texture: GPUTexture; bind: GPUBindGroup } | null = null;
   private logo: { layer: LogoLayer; texture: GPUTexture; bind: GPUBindGroup } | null = null;
   private logoBuffer: GPUBuffer;
@@ -210,6 +213,10 @@ class GpuCompositor implements Compositor {
     this.device.queue.writeBuffer(this.placeBuffer, 0, rects(p?.src ?? whole, p?.dst ?? whole));
     this.device.queue.writeBuffer(this.coverBuffer, 0, rects(p?.cover ?? whole, whole));
     this.backdrop = p?.backdrop ?? null;
+  }
+
+  setBlur(on: boolean) {
+    this.blur = on;
   }
 
   setLogo(layer: LogoLayer | null) {
@@ -304,6 +311,11 @@ class GpuCompositor implements Compositor {
         }
         pass.setBindGroup(0, bind(this.placeBuffer));
         pass.draw(3);
+        if (this.blur) {
+          pass.end();
+          (this.glass ??= new GlassBlur(d, this.format)).backdrop(enc, view, this.canvas.width, this.canvas.height);
+          pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
+        }
       }
     }
     if (glass && caption?.panel) {
@@ -407,6 +419,7 @@ class CanvasCompositor implements Compositor {
   private g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
   private placement: Placement | null = null;
   private logo: LogoLayer | null = null;
+  private blur = false;
 
   constructor(readonly canvas: AnyCanvas) {
     this.g = canvas.getContext("2d") as CanvasRenderingContext2D;
@@ -423,6 +436,10 @@ class CanvasCompositor implements Compositor {
 
   setLogo(logo: LogoLayer | null) {
     this.logo = logo;
+  }
+
+  setBlur(on: boolean) {
+    this.blur = on;
   }
 
   /** The picture laid out on the canvas: its backdrop, then its placement. */
@@ -447,7 +464,15 @@ class CanvasCompositor implements Compositor {
     this.g.fillStyle = "#000";
     this.g.fillRect(0, 0, W, H);
     if (isAura(picture)) this.drawAura(picture);
-    else if (pictureReady(picture)) this.drawPicture(picture);
+    else if (pictureReady(picture)) {
+      this.drawPicture(picture);
+      // The frame drawn so far, blurred onto itself and darker, like the glass backdrop.
+      if (this.blur && "filter" in this.g) {
+        this.g.filter = `blur(${Math.round(Math.min(W, H) * 0.04)}px) brightness(0.7)`;
+        this.g.drawImage(this.canvas, 0, 0);
+        this.g.filter = "none";
+      }
+    }
     if (this.logo) {
       const l = this.logo;
       const r = logoRect(W, H, l.image, l.corner, l.size);

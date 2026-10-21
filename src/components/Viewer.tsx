@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadCaptionFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
-import type { CaptionSettings } from "../captions/style";
+import { shownPicture, type CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
 import { ASPECTS, cropFor, dragCrop, framing, wholeCrop, type Aspect, type Crop } from "../lib/crop";
 import { clock } from "../lib/format";
@@ -16,7 +16,7 @@ import {
   type AuraLevels,
 } from "../render/aura";
 import { createCompositor, type Compositor } from "../render/compositor";
-import { KineticRenderer } from "../render/kinetic";
+import { backdropFor, KineticRenderer } from "../render/kinetic";
 import type { LogoLayer } from "../render/logoLayer";
 import { CropOverlay } from "./CropOverlay";
 import { IconCollapse, IconCrop, IconExpand, IconPause, IconPlay } from "./icons";
@@ -124,7 +124,7 @@ export function Viewer({
     };
   }, [active, url]);
 
-  const activeFont = (!isVideo || live) && settings.kinetic?.on ? settings.kinetic.font : settings.font;
+  const activeFont = settings.kinetic?.on ? settings.kinetic.font : settings.font;
   useEffect(() => {
     let live = true;
     loadCaptionFont(activeFont, document.fonts).then(() => live && setFontTick((n) => n + 1));
@@ -145,7 +145,11 @@ export function Viewer({
     return () => v.removeEventListener("loadedmetadata", update);
   }, [el, isVideo]);
 
-  const hasPicture = isVideo && !live && picture !== AUDIO_FRAME;
+  // The video's picture as drawn: null when there is none, or it is left out (the file used for its sound).
+  const shownPic = shownPicture(settings, isVideo && !live);
+  const ownPicture = isVideo && !live && picture !== AUDIO_FRAME;
+  // A video used for its sound is framed as an audio stage is: its aura in a frame of the shape picked.
+  const hasPicture = ownPicture && !!shownPic;
   const canCrop = (hasPicture || !!url || live) && !!onCrop;
   const shown = hasPicture ? (draft ?? crop) : crop;
   // While a slice is being placed the whole picture shows, the slice marked over it; a fitted picture shows as it comes out.
@@ -161,7 +165,7 @@ export function Viewer({
   // (the size follows the crop once it is kept), nor while that size is still of the last frame's shape.
   const ownW = view ? view.size.width : picture.w;
   const ownH = view ? view.size.height : picture.h;
-  const sized = hasPicture && !draft && size && Math.abs(size.w / size.h - ownW / ownH) < 0.01 ? size : null;
+  const sized = ownPicture && !draft && size && Math.abs(size.w / size.h - ownW / ownH) < 0.01 ? size : null;
   const fw = sized ? sized.w : ownW;
   const fh = sized ? sized.h : ownH;
   const frame = useMemo(() => ({ w: fw, h: fh }), [fw, fh]);
@@ -210,7 +214,12 @@ export function Viewer({
     setPickingAspect(false);
   }, [url, cropLocked]);
 
-  const useKinetic = (!isVideo || live) && !!settings.kinetic?.on;
+  const useKinetic = !!settings.kinetic?.on;
+  // A video's kinetic stage goes over its picture (or its plain ground); an audio project's over the aura.
+  const kineticSettings = useMemo(
+    () => settings.kinetic && { ...settings.kinetic, backdrop: backdropFor(settings.kinetic, shownPic) },
+    [settings.kinetic, shownPic],
+  );
   const captions = useMemo(
     () =>
       // No caption while cropping: the frame is still being decided.
@@ -223,12 +232,14 @@ export function Viewer({
   );
   const kinetic = useMemo(
     () =>
-      words.length && !draft && useKinetic && settings.kinetic
-        ? new KineticRenderer(words, settings.kinetic, frame.w, frame.h, loudness, lang)
+      words.length && !draft && useKinetic && kineticSettings
+        ? new KineticRenderer(words, kineticSettings, frame.w, frame.h, loudness, lang)
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, settings.kinetic, frame, fontTick, loudness, lang, !draft, useKinetic],
+    [words, kineticSettings, frame, fontTick, loudness, lang, !draft, useKinetic],
   );
+  const blurred = shownPic === "blur";
+  useEffect(() => compositor?.setBlur(blurred), [compositor, blurred]);
 
   // The loop reads these through refs, so new words (every progress update)
   // never restart it; restarting would reset the aura's clock and stutter.
@@ -259,10 +270,10 @@ export function Viewer({
       const w = Math.max(2, Math.round(frame.w * fit));
       const h = Math.max(2, Math.round(frame.h * fit));
       const t = el && !live ? el.currentTime : liveRef.current;
-      // Audio-only: the aura. It follows the media clock (so the export
+      // No picture (or a video used for its sound): the aura. It follows the media clock (so the export
       // matches); while recording it drifts with the wall clock instead.
       let aura: AuraFrame | null = null;
-      if (!isVideo || live) {
+      if (!shownPic) {
         let levels = levelsAt(bandsRef.current, t);
         const raw = live ? liveLevels?.current : null;
         if (raw) {
@@ -290,10 +301,9 @@ export function Viewer({
         }
         aura = { kind: "aura", time, levels, palette: paletteRef.current, style: auraStyleRef.current, history };
       }
-      const cap =
-        kineticRef.current && aura
-          ? kineticRef.current.frame(t, aura.levels)
-          : captionsRef.current?.frame(t) ?? null;
+      const cap = kineticRef.current
+        ? kineticRef.current.frame(t, aura?.levels ?? levelsAt(bandsRef.current, t))
+        : (captionsRef.current?.frame(t) ?? null);
       const key = aura
         ? `${w}x${h}|${aura.time}|${aura.palette}|${aura.style}|${bandsRef.current.length}|${cap ? `${cap.key}|${cap.scale}` : ""}`
         : `${w}x${h}|${t}|${el?.readyState}|${cropKey}|${cap ? `${cap.key}|${cap.scale}` : ""}`;
@@ -311,7 +321,7 @@ export function Viewer({
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo]);
+  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo, blurred, shownPic]);
 
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === stage.current);

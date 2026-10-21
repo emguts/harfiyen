@@ -62,6 +62,7 @@ export function ExportMenu({
   baseName,
   videoName,
   captions,
+  kinetic,
   meta,
   complete,
   isVideo,
@@ -80,6 +81,8 @@ export function ExportMenu({
   videoName: string;
   /** Captions are drawn into the video (they can be hidden). */
   captions: boolean;
+  /** The kinetic stage is drawn in place of the captions. */
+  kinetic: boolean;
   meta: Record<string, unknown>;
   /** The transcript is final (subtitle files and video need it). */
   complete: boolean;
@@ -259,12 +262,16 @@ export function ExportMenu({
               ) : (
                 <MenuNote>
                   {isVideo
-                    ? captions
-                      ? "Altyazı görüntüye yazılır"
-                      : "Altyazısız; varsa kadraj ve logoyla"
-                    : captions
-                      ? "Ses, hareketli aura ve altyazı"
-                      : "Ses ve hareketli aura, altyazısız; varsa logoyla"}
+                    ? kinetic
+                      ? "Kinetik tipografi görüntüye yazılır"
+                      : captions
+                        ? "Altyazı görüntüye yazılır"
+                        : "Altyazısız; varsa kadraj ve logoyla"
+                    : kinetic
+                      ? "Ses ve kinetik tipografi"
+                      : captions
+                        ? "Ses, hareketli aura ve altyazı"
+                        : "Ses ve hareketli aura, altyazısız; varsa logoyla"}
                   , MP4
                   {source && `, yaklaşık ${size(out)}`}.
                 </MenuNote>

@@ -25,15 +25,32 @@ export type KineticStyleId =
   | "tunel";
 export type KineticPaletteId = "gece" | "neon" | "krem" | "mercan" | "firuze";
 
+/**
+ * What the kinetic stage is drawn over: "stage" the palette's own ground; "aura" the WebGPU aura;
+ * "video" the picture under a veil of the palette's ground; "blur" the picture blurred by the
+ * compositor, under a lighter veil. Settings keep "stage" or "aura"; the picture is the project's (`backdropFor`).
+ */
+export type KineticBackdrop = "stage" | "aura" | "video" | "blur";
+
 export interface KineticSettings {
-  /** When on (and the project has no video), replaces subtitles with the full-screen kinetic stage. */
+  /** When on, replaces subtitles with the full-screen kinetic stage. */
   on: boolean;
   style: KineticStyleId;
   palette: KineticPaletteId;
   font: FontId;
-  /** "stage" paints the palette's own full-screen background; "aura" draws over the WebGPU aura. */
-  backdrop: "stage" | "aura";
+  backdrop: KineticBackdrop;
 }
+
+/**
+ * What the stage goes over: the video's picture when it is shown (as it is, or blurred), else the
+ * chosen ground (the aura or the palette's own). `picture` is null without one, or with it left out.
+ */
+export function backdropFor(k: KineticSettings, picture: "video" | "blur" | null): KineticBackdrop {
+  return picture ?? (k.backdrop === "stage" ? "stage" : "aura");
+}
+
+/** How much of the palette's ground lies over the picture, so the words read on any footage. */
+const VEIL = { video: 0.42, blur: 0.22 } as const;
 
 export const DEFAULT_KINETIC: KineticSettings = {
   on: false,
@@ -397,6 +414,9 @@ export class KineticRenderer {
 
     if (k.backdrop === "stage") {
       this.drawStageBackground(ctx, pal, t, energy);
+    } else if (k.backdrop === "video" || k.backdrop === "blur") {
+      ctx.fillStyle = withAlpha(pal.bg, VEIL[k.backdrop]);
+      ctx.fillRect(0, 0, W, H);
     }
     if (k.style === "dugum") {
       this.draw3DScene(ctx, pal, t, energy, punch);

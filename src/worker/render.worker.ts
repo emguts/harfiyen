@@ -39,12 +39,12 @@ import {
 import { historyAt, levelsAt, paletteById } from "../render/aura";
 import { addUserFont, loadCaptionFont, type UserFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
-import type { CaptionSettings } from "../captions/style";
+import { shownPicture, type CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
 import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
 import type { Placement } from "../lib/crop";
 import { createCompositor } from "../render/compositor";
-import { KineticRenderer } from "../render/kinetic";
+import { backdropFor, KineticRenderer } from "../render/kinetic";
 import type { LogoLayer } from "../render/logoLayer";
 import { DUB_RATE, dubAt, type DubMix } from "../tts/dub";
 import { clearRenders, openSink, type Sink } from "./sink";
@@ -147,6 +147,25 @@ function mixDub(sample: AudioSample, dub: DubMix, t0: number): AudioSample {
   });
 }
 
+/**
+ * What is written over the picture: the kinetic stage when it is on (its font loaded), else the captions.
+ * `picture` is the video's picture as drawn, null for the aura.
+ */
+async function textLayer(
+  words: Word[],
+  settings: CaptionSettings,
+  width: number,
+  height: number,
+  loudness: Float32Array,
+  lang: string,
+  picture: "video" | "blur" | null,
+) {
+  const k = settings.kinetic?.on ? { ...settings.kinetic, backdrop: backdropFor(settings.kinetic, picture) } : null;
+  if (!k) return { captions: new CaptionRenderer(words, settings, width, height, loudness, lang), kinetic: null };
+  await loadCaptionFont(k.font, self.fonts);
+  return { captions: null, kinetic: new KineticRenderer(words, k, width, height, loudness, lang) };
+}
+
 async function burn(
   jobId: number,
   file: File,
@@ -166,7 +185,8 @@ async function burn(
   await loadCaptionFont(settings.font, self.fonts);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
-  if (!track) return burnAudio(jobId, input, words, settings, bands, loudness, lang, dub, logo, encode, sink, handle, started);
+  // A video used for its sound is drawn as an audio file is.
+  if (!track || settings.picture === "hidden") return burnAudio(jobId, input, words, settings, bands, loudness, lang, dub, logo, encode, sink, handle, started);
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -183,7 +203,9 @@ async function burn(
   const compositor = await createCompositor(canvas);
   compositor.setPlacement(fit);
   compositor.setLogo(logo);
-  const captions = new CaptionRenderer(words, settings, width, height, loudness, lang);
+  const picture = shownPicture(settings, true);
+  const { captions, kinetic } = await textLayer(words, settings, width, height, loudness, lang, picture);
+  compositor.setBlur(picture === "blur");
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
   // Mono stays mono; anything wider is mixed down to stereo, so the dub is not spread over surround channels.
@@ -211,7 +233,8 @@ async function burn(
       process: (sample) => {
         const frame = sample.toVideoFrame();
         try {
-          compositor.render(frame, captions.frame(sample.timestamp + t0));
+          const at = sample.timestamp + t0;
+          compositor.render(frame, kinetic ? kinetic.frame(at, levelsAt(bands, at)) : captions!.frame(at));
         } finally {
           frame.close();
         }
@@ -284,13 +307,7 @@ async function burnAudio(
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas);
   compositor.setLogo(logo);
-  const useKinetic = !!settings.kinetic?.on;
-  if (useKinetic && settings.kinetic) await loadCaptionFont(settings.kinetic.font, self.fonts);
-  const captions = useKinetic ? null : new CaptionRenderer(words, settings, width, height, loudness, lang);
-  const kinetic =
-    useKinetic && settings.kinetic
-      ? new KineticRenderer(words, settings.kinetic, width, height, loudness, lang)
-      : null;
+  const { captions, kinetic } = await textLayer(words, settings, width, height, loudness, lang, null);
   const palette = paletteById(settings.aura).colors;
   // The part written: t0..t1 of the file, written from 0:00.
   const t0 = encode.trim?.start ?? 0;
