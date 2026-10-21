@@ -183,6 +183,13 @@ canlı çalışır.
   takılmaz: her 30 saniyelik parçayı işler, hiçbir kelimeyi atmaz. VAD konuşma için eğitildiğinden müziğin altındaki
   vokali çoğu zaman sessizlik sanıyor. Yalnızca Whisper'da etkilidir; yalnız çalgı olan yerlerde Whisper birkaç
   uydurma ya da tekrarlanan satır yazabilir.
+- **Vokali ayır:** Müzik modu açıkken yanında görünür, varsayılan olarak açıktır. Whisper şarkıyı duymadan önce
+  [Mel-Band RoFormer](https://huggingface.co/audiojs/mel-roformer) şarkıdaki sesi çalgılardan ayırır (MUSDB18'de
+  vokalde 12,1 dB SDR, açık modellerin en iyilerinden); Whisper yalnızca şarkıcıyı duyar. Gürültülü miksteki sözler
+  daha az kaçar, satırlar duraklamalarda daha doğal bölünür, çalgı yerlerinde uydurma azalır. **Sesle ince ayar** da
+  ayrılmış sesi kullanır. Ekran kartı gerekir; ilk kullanımda yaklaşık 464 MB indirilir. Döküm daha uzun sürer
+  (RTX 4070 SUPER'da 1 dakikalık şarkı ayırmasız 5, ayırarak 20 saniye). Ayrılmış ses yalnızca dökümde kullanılır;
+  oynatıcı, dışa aktarılan video ve dalga formu orijinal sesi kullanır.
 - **Şarkı sözleri:** Müzik modu açıkken **Yazıya döküm** sekmesinde görünür. Sözler, her dize ayrı satırda olacak
   şekilde yapıştırılır; `[Nakarat]` ya da `(x2)` gibi tek başına duran başlıklar atlanır. Her dize ayrı bir altyazı
   satırı olur; altyazı stilleri, SRT ve VTT bu satırlara uyar. ⌘Z / Ctrl+Z geri alır.
@@ -234,14 +241,14 @@ tarayıcı (masaüstü Chrome veya Edge önerilir).
 ```bash
 npm install
 python3 -m pip install -r scripts/requirements.txt
-npm run models     # konuşma tanıma, noktalama ve çeviri modellerini indirir ve tarayıcı için dönüştürür (bir kez, Whisper dahil ~3 GB)
+npm run models     # konuşma tanıma, noktalama ve çeviri modellerini indirir ve tarayıcı için dönüştürür (bir kez, Whisper ve vokal ayırma dahil ~3,5 GB)
 npm run dev        # http://localhost:5173
 ```
 
 İlk açılışta tarayıcı yaklaşık 190 MB indirir (Seda ve ONNX Runtime) ve saklar; sonraki açılışlar
 önbellekten, internetsiz çalışır. Whisper Turbo seçilirse ilk dosyada ayrıca yaklaşık 1,5 GB (Hafif: 600 MB), Duyu
 seçilirse yaklaşık 85 MB indirilir. Noktalama ilk kullanıldığında ayrıca yaklaşık 30 MB, İngilizce çeviri yaklaşık 360 MB,
-İngilizce seslendirme (Supertonic 3) yaklaşık 203 MB indirilir ve önbelleğe alınır. Modeller **Ayarlar → Modeller**'den önceden indirilebilir ya da silinebilir. Ses ve metin
+İngilizce seslendirme (Supertonic 3) yaklaşık 203 MB, müzik modunda vokal ayırma yaklaşık 464 MB indirilir ve önbelleğe alınır. Modeller **Ayarlar → Modeller**'den önceden indirilebilir ya da silinebilir. Ses ve metin
 işlenmek için sunucuya gönderilmez.
 
 ### Telefondan veya ağdaki başka bir cihazdan açmak
@@ -390,6 +397,7 @@ npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (pu
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
 npm run test:lyrics                 # şarkı sözlerini dökümle hizalamayı dener
 npm run test:timing                 # elle zaman düzenlemeyi dener
+npm run test:vocals -- sarki.wav     # vokal ayırmayı dener (44,1 kHz WAV; --ref ile başka bir ayrımla karşılaştırır)
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
 npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
 npm run build      # üretim derlemesi
@@ -479,6 +487,11 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
 - Dördüncü seslendirme modeli (İngilizce ve Türkçe) [Supertone/supertonic-3](https://huggingface.co/Supertone/supertonic-3):
   BigScience OpenRAIL-M. Ağırlıklar `scripts/prepare_models.py` ile float16 saklanacak şekilde küçültülür (hesap
   float32 kalır); çalıştırma adımları modelin web örneğinden uyarlandı.
+- Vokal ayırma modeli Mel-Band RoFormer: ağırlıklar Kimberley Jensen, MIT; mimari Wang, Lu, Won, Chen ve Song
+  (ByteDance); ONNX sürümü ve fp16 ağırlıklar [audiojs/mel-roformer](https://huggingface.co/audiojs/mel-roformer).
+  STFT, parçalama ve geçişler [@audio/neural-separate](https://www.npmjs.com/package/@audio/neural-separate) (MIT)
+  ve [Music-Source-Separation-Training](https://github.com/ZFTurbo/Music-Source-Separation-Training) (MIT)
+  üzerinden uyarlandı.
 - Dil modeli dosyaları (`rnnlm`, `2gram`): CC BY-SA 4.0 (Türkçe Vikipedi üzerinde eğitildi).
 - Noktalama ölçüm metinleri (`tests/data/`): Türkçe Vikipedi, CC BY-SA 4.0; kaynak makaleler dosyalarda.
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.

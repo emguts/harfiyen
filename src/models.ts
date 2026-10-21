@@ -136,7 +136,7 @@ export const modelFileUrl = (m: ModelInfo, file: string) => `${MODELS_BASE}/${m.
 
 // ---- every downloadable model ----
 
-export type PackKind = "asr" | "punct" | "mt" | "tts";
+export type PackKind = "asr" | "vocals" | "punct" | "mt" | "tts";
 
 /**
  * A set of files downloaded together: a speech model above, or one of the
@@ -166,6 +166,19 @@ export const PUNCT_PACK: ModelPack = {
   files: ["formatter.int8.onnx", "vocab.json"],
   gpuOnly: false,
   needsF16: false,
+};
+
+/** Music mode: the singer apart from the band, before Whisper hears the song. */
+export const VOCALS_PACK: ModelPack = {
+  id: "vocals",
+  kind: "vocals",
+  name: "Vokal ayırma",
+  note: "Mel-Band RoFormer (Kimberley Jensen, MIT); müzik modunda Whisper'dan önce şarkıdaki sesi çalgılardan ayırır.",
+  dir: "mel-roformer",
+  manifest: "model.json",
+  files: ["mel-roformer.fp16.onnx"],
+  gpuOnly: true,
+  needsF16: true,
 };
 
 /** Translation directions: from the transcript's language to the other. */
@@ -265,6 +278,7 @@ export const PACKS: ModelPack[] = [
       needsF16: m.needsF16,
     }),
   ),
+  VOCALS_PACK,
   PUNCT_PACK,
   MT_PACKS["tr-en"],
   MT_PACKS["en-tr"],

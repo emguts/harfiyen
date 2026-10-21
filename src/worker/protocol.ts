@@ -28,7 +28,7 @@ export type ToWorker =
   /** Punctuate and true-case plain words (one entry per transcript word). */
   | { type: "punctuate"; id: number; words: string[] }
   /** Whisper only: times for known words in parts of a file (song lyrics). */
-  | { type: "align"; id: number; file: File; lang: SpeechLang; spans: AlignSpan[] };
+  | { type: "align"; id: number; file: File; lang: SpeechLang; spans: AlignSpan[]; vocals?: boolean };
 
 /** Words sung somewhere in start..end (at most 30 s) of a file. */
 export interface AlignSpan {
@@ -49,6 +49,9 @@ export type FromWorker =
       gpu: string | null;
       fallbackReason: string | null;
     }
+  /** The vocal separation model, loaded on the first music-mode job that asks for it. */
+  | { type: "vocals-progress"; loaded: number; total: number; fromCache: boolean }
+  | { type: "vocals-ready" }
   | { type: "meta"; jobId: number; duration: number }
   | {
       type: "progress";

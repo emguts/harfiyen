@@ -23,7 +23,7 @@ import { Button, Hint } from "./ui";
 // Settings → Modeller: what is downloaded, download or remove a model, free space.
 
 const GROUPS: { title: string; kinds: PackKind[] }[] = [
-  { title: "Yazıya dökme", kinds: ["asr"] },
+  { title: "Yazıya dökme", kinds: ["asr", "vocals"] },
   { title: "Noktalama ve çeviri", kinds: ["punct", "mt"] },
   { title: "Seslendirme", kinds: ["tts"] },
 ];

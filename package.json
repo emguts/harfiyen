@@ -24,6 +24,7 @@
     "test:numbers": "tsx tests/numbers.node.ts",
     "test:lyrics": "tsx tests/lyrics.node.ts",
     "test:timing": "tsx tests/timing.node.ts",
+    "test:vocals": "tsx tests/vocals.node.ts",
     "eval:numbers": "tsx tests/numbers-eval.node.ts",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "dist:win:azure": "npm run build && electron-builder --win nsis --x64 --publish never --config electron-builder.azure.yml",

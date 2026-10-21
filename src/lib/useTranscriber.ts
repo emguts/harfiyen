@@ -25,6 +25,11 @@ export interface TimeRange {
   end: number;
 }
 
+/** The vocal separation model of music mode, loaded on the first job that uses it. */
+export type VocalsState =
+  | { phase: "idle" | "ready" }
+  | { phase: "download"; loaded: number; total: number; fromCache: boolean };
+
 export type PunctState =
   | { phase: "idle" }
   | { phase: "download" | "run"; done: number; total: number }
@@ -120,6 +125,7 @@ export function useTranscriber() {
   const [job, setJob] = useState<Job | null>(null);
   const jobRef = useRef<Job | null>(null);
   const [punct, setPunct] = useState<PunctState>({ phase: "idle" });
+  const [vocals, setVocals] = useState<VocalsState>({ phase: "idle" });
   const punctWaiters = useRef(new Map<number, { resolve: (w: string[]) => void; reject: (e: Error) => void }>());
   const nextPunctId = useRef(1);
   type Aligned = ({ start: number; end: number }[] | null)[];
@@ -223,6 +229,12 @@ export function useTranscriber() {
         }
         case "cancelled":
           update(m.jobId, (j) => ({ ...j, status: "cancelled", tentative: [] }));
+          break;
+        case "vocals-progress":
+          setVocals({ phase: "download", loaded: m.loaded, total: m.total, fromCache: m.fromCache });
+          break;
+        case "vocals-ready":
+          setVocals({ phase: "ready" });
           break;
         case "punct-progress":
           setPunct({ phase: m.phase, done: m.done, total: m.total });
@@ -567,12 +579,12 @@ export function useTranscriber() {
 
   /** Whisper times known words in spans of a file (song lyrics); one result per span. */
   const alignAudio = useCallback(
-    (file: File, lang: SpeechLang, spans: AlignSpan[]) =>
+    (file: File, lang: SpeechLang, spans: AlignSpan[], vocals = false) =>
       new Promise<Aligned>((resolve, reject) => {
         const id = nextAlignId.current++;
         alignWaiters.current.set(id, { resolve, reject });
         setAligning({ done: 0, total: spans.length });
-        send({ type: "align", id, file, lang, spans });
+        send({ type: "align", id, file, lang, spans, vocals });
       }),
     [send],
   );
@@ -692,7 +704,7 @@ export function useTranscriber() {
     send({ type: "transcribe", jobId: j.id, file: j.file, options: j.options, startAt: at, endAt: range?.end });
   }, [prepare, send, update, setModel]);
 
-  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct, alignAudio, aligning };
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct, alignAudio, aligning, vocals };
 }
 
 export { MicError };

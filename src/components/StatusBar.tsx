@@ -1,6 +1,6 @@
 import { clock, duration as fmtDuration, megabytes, remaining } from "../lib/format";
 import type { BurnState } from "../lib/useBurner";
-import { isContinued, type EngineState, type Job, type PunctState } from "../lib/useTranscriber";
+import { isContinued, type EngineState, type Job, type PunctState, type VocalsState } from "../lib/useTranscriber";
 import { Meter, RecDot } from "./Indicators";
 
 const ITEM =
@@ -80,6 +80,7 @@ function JobItem({ job, engine, liveWaiting }: { job: Job | null; engine: Engine
         <span className={ITEM} role="status">
           Yazıya dökülüyor %{pct}
           <Meter value={pct / 100} />
+          {job.options.vocals && <span className={DIM}>vokal ayrılarak</span>}
           {job.speed > 0.5 && <span className={DIM}>{job.speed.toFixed(1)}× hız</span>}
         </span>
       );
@@ -128,6 +129,18 @@ function PunctItem({ punct }: { punct: PunctState }) {
   );
 }
 
+function VocalsItem({ vocals }: { vocals: VocalsState }) {
+  if (vocals.phase !== "download") return null;
+  return (
+    <span className={ITEM} role="status">
+      {vocals.fromCache
+        ? "Vokal ayırma modeli önbellekten açılıyor"
+        : `Vokal ayırma modeli indiriliyor ${megabytes(vocals.loaded)} / ${megabytes(vocals.total)} MB`}
+      <Meter value={vocals.total ? vocals.loaded / vocals.total : 0} />
+    </span>
+  );
+}
+
 function BurnItem({ burn }: { burn: BurnState }) {
   if (burn.status !== "running") return null;
   return (
@@ -148,6 +161,7 @@ export function StatusBar({
   burn,
   notice,
   punct,
+  vocals,
   liveWaiting,
   onStop,
   onDiscard,
@@ -158,6 +172,7 @@ export function StatusBar({
   liveWaiting: boolean;
   burn: BurnState;
   punct: PunctState;
+  vocals: VocalsState;
   /** One-off problem to show, e.g. microphone permission denied. */
   notice: string | null;
   /** Stop the transcription and keep what is written. */
@@ -194,6 +209,7 @@ export function StatusBar({
           Devam et
         </button>
       )}
+      <VocalsItem vocals={vocals} />
       <PunctItem punct={punct} />
       <BurnItem burn={burn} />
       <span className="flex-1" />

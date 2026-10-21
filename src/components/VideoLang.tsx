@@ -12,6 +12,8 @@ export function VideoLang({
   onChange,
   music,
   onMusic,
+  vocals,
+  onVocals,
   disabled,
 }: {
   value: SpeechLang;
@@ -19,6 +21,9 @@ export function VideoLang({
   /** Songs: Whisper keeps sung words the speech VAD would drop. */
   music?: boolean;
   onMusic?: (on: boolean) => void;
+  /** Music mode: separate the vocals from the band before Whisper hears them. */
+  vocals?: boolean;
+  onVocals?: (on: boolean) => void;
   disabled?: boolean;
 }) {
   return (
@@ -42,6 +47,15 @@ export function VideoLang({
         <label className="flex items-center gap-1.5" title="Whisper'da ses etkinliği algılayıcı kapanır; şarkı sözleri atılmaz">
           <input type="checkbox" checked={!!music} disabled={disabled} onChange={(e) => onMusic(e.target.checked)} />
           Müzik modu
+        </label>
+      )}
+      {music && onVocals && (
+        <label
+          className="flex items-center gap-1.5"
+          title="Whisper'dan önce şarkıdaki ses çalgılardan ayrılır (Mel-Band RoFormer, ilk kullanımda ~460 MB); sözler daha az kaçar, çalgı yerlerinde uydurma azalır. Ekran kartı gerekir, döküm daha uzun sürer."
+        >
+          <input type="checkbox" checked={!!vocals} disabled={disabled} onChange={(e) => onVocals(e.target.checked)} />
+          Vokali ayır
         </label>
       )}
     </span>

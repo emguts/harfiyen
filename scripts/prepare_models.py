@@ -37,7 +37,8 @@ Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the three t
 dubbing: EMA Lightning to public/models/ema-lightning/, Antalia Mini to public/models/antalia-mini/, Ahenk Cep
 to public/models/ahenk-cep/ and Supertonic 3 (English and Turkish) to public/models/supertonic-3/,
 and the translation models, Turkish -> English to public/models/opus-mt-tc-big-tr-en/ and English -> Turkish
-to public/models/opus-mt-tc-big-en-tr/.
+to public/models/opus-mt-tc-big-en-tr/, and Mel-Band RoFormer, the vocal separation of music mode, to
+public/models/mel-roformer/.
 
 Usage:  python scripts/prepare_models.py [--src DIR]
 """
@@ -630,6 +631,43 @@ EMA_OUT = ROOT / "public" / "models" / "ema-lightning"
 EMA_FILES = ["text.onnx", "sound.onnx", "decoder.onnx", "normalizer.wasm"]
 
 
+VOCALS_URL = "https://huggingface.co/audiojs/mel-roformer/resolve/c1aba02c00a0bee852d6754fe6ede8164f90a4b3"
+VOCALS_OUT = ROOT / "public" / "models" / "mel-roformer"
+# Kimberley Jensen's Mel-Band RoFormer vocals model (MIT weights) as audiojs exported it, fp16 weights with float32
+# compute, pinned. The STFT around it runs in src/separate/vocals.ts; model.json carries its parameters.
+VOCALS_FILE = "mel-roformer.fp16.onnx"
+VOCALS_SHA256 = "adcbbb826f12453fbb86652b503242d565a9c81cdef1bca2fe0e54752eba91ef"
+
+
+def prepare_vocals() -> None:
+    """Mel-Band RoFormer, music mode's vocal separation."""
+    VOCALS_OUT.mkdir(parents=True, exist_ok=True)
+    p = VOCALS_OUT / VOCALS_FILE
+    if not p.exists():
+        print("download", f"{VOCALS_URL}/{VOCALS_FILE}")
+        urllib.request.urlretrieve(f"{VOCALS_URL}/{VOCALS_FILE}", str(p) + ".part")
+        os.replace(str(p) + ".part", p)
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    if h.hexdigest() != VOCALS_SHA256:
+        raise SystemExit(f"{p}: SHA-256 {h.hexdigest()} is not the pinned file's; delete it and run again")
+    vocals = {
+        "name": "mel-roformer",
+        # Music-Source-Separation-Training's inference config for Kim's model: 8 s segments every 4 s.
+        "sampleRate": 44100,
+        "nFft": 2048,
+        "hop": 441,
+        "segment": 352800,
+        "step": 0.5,
+        "fade": 0.1,
+        "files": {VOCALS_FILE: p.stat().st_size},
+    }
+    (VOCALS_OUT / "model.json").write_text(json.dumps(vocals, indent=2) + "\n")
+    print(f"vocals: {p.stat().st_size / 1e6:.0f} MB")
+
+
 def prepare_ema() -> None:
     """EMA Lightning, the Turkish text-to-speech model for dubbing."""
     EMA_OUT.mkdir(parents=True, exist_ok=True)
@@ -849,6 +887,7 @@ def main() -> None:
     ap.add_argument("--duyu-only", action="store_true", help="only (re)build Duyu-small")
     ap.add_argument("--supertonic-only", action="store_true", help="only (re)build Supertonic 3")
     ap.add_argument("--formatter-only", action="store_true", help="only (re)build seda-v0.2's formatter")
+    ap.add_argument("--vocals-only", action="store_true", help="only download the vocal separation model")
     args = ap.parse_args()
     duyu_cache = args.src.parent / "duyu-small"
     supertonic_cache = args.src.parent / "supertonic-3"
@@ -866,6 +905,9 @@ def main() -> None:
         return
     if args.ahenk_only:
         prepare_ahenk()
+        return
+    if args.vocals_only:
+        prepare_vocals()
         return
     if args.duyu_only:
         prepare_duyu(duyu_cache)
@@ -899,6 +941,7 @@ def main() -> None:
     prepare_ahenk()
     prepare_supertonic(supertonic_cache)
     prepare_mts(args.src.parent)
+    prepare_vocals()
 
 
 if __name__ == "__main__":

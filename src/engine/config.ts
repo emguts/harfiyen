@@ -51,6 +51,8 @@ export interface DecodeOptions {
    * mistakes sung vocals over instruments for silence.
    */
   music?: boolean;
+  /** Music mode on Whisper: separate the vocals from the band first (src/separate/vocals.ts). */
+  vocals?: boolean;
   method: DecodingMethod;
   /** Beam size for modified beam search. */
   maxActivePaths: number;

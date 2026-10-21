@@ -12,13 +12,14 @@ import {
   type ModelConfig,
 } from "../engine";
 import type { SpeechEngine, SpeechStream } from "../engine/stream";
-import { modelFileUrl, modelInfo, packFileUrl, PUNCT_PACK, type ModelId, type ModelInfo } from "../models";
+import { modelFileUrl, modelInfo, packFileUrl, PUNCT_PACK, VOCALS_PACK, type ModelId, type ModelInfo } from "../models";
 import { Formatter, type FormatterConfig } from "../punct/formatter";
 import type { WordPieceVocab } from "../punct/wordpiece";
 import { fetchAll } from "./modelStore";
 import { BandTracker } from "../render/aura";
 import { WhisperEngine, type WhisperConfig } from "../whisper";
 import { DuyuEngine, type DuyuConfig } from "../duyu";
+import { VocalModel, type VocalSeparator, type VocalsConfig } from "../separate/vocals";
 import { PEAK_STEP, type AlignSpan, type ErrorCode, type FromWorker, type ProviderChoice, type ToWorker } from "./protocol";
 import type { SpeechLang } from "../engine/config";
 
@@ -230,6 +231,39 @@ async function punctuate(id: number, words: string[]) {
   }
 }
 
+let vocalsPromise: Promise<VocalModel> | null = null;
+
+/** The vocal separation model (≈460 MB, cached like the rest), loaded on the first job that asks for it. */
+function getVocals(): Promise<VocalModel> {
+  vocalsPromise ??= (async () => {
+    // Shares the runtime the recognizer set up; only Whisper on the GPU hears songs.
+    const engine = await getEngine();
+    if (!(engine instanceof WhisperEngine) || engine.provider !== "webgpu") {
+      throw new JobError("model", "Vokal ayırma yalnızca Whisper ile, ekran kartında çalışır.");
+    }
+    const res = await fetch(packFileUrl(VOCALS_PACK, VOCALS_PACK.manifest), { cache: "no-cache" });
+    if (!res.ok) throw new JobError("model", "Vokal ayırma modeli bulunamadı. `npm run models -- --vocals-only` çalıştırılmalı.");
+    const cfg: VocalsConfig = await res.json();
+    const [bytes] = await fetchAll(
+      VOCALS_PACK.files.map((f) => ({ url: packFileUrl(VOCALS_PACK, f), size: cfg.files[f] })),
+      (loaded, total, fromCache) => post({ type: "vocals-progress", loaded, total, fromCache }),
+    );
+    try {
+      const model = await VocalModel.create(ort, bytes, cfg, "webgpu");
+      post({ type: "vocals-ready" });
+      return model;
+    } catch (e) {
+      console.warn("vocal separation session failed", e);
+      throw new JobError("model", "Vokal ayırma modeli ekran kartında açılamadı.");
+    }
+  })().catch((e) => {
+    // The job or alignment that asked reports it.
+    vocalsPromise = null;
+    throw e;
+  });
+  return vocalsPromise;
+}
+
 /** Feeds 16 kHz audio through the recognizer and reports progress. */
 class Job {
   private rec: SpeechStream;
@@ -242,6 +276,12 @@ class Job {
   private started = performance.now();
 
   private onGpu: boolean;
+  /** Music mode with vocal separation: the band is taken out before the recognizer hears it. */
+  private vocals: VocalSeparator | null;
+  /** To the separator's rate, per channel; null when the file already has it. */
+  private toSep: Resampler[] | null = null;
+  /** The mix at 16 kHz, for the waveform: the separated vocals would draw only the singer. */
+  private mix: Resampler | null = null;
 
   /**
    * offset: seconds of the file before this job's audio (a continued job); times are reported from the file's start.
@@ -253,23 +293,50 @@ class Job {
     options: DecodeOptions,
     readonly offset = 0,
     live = false,
+    vocals: VocalSeparator | null = null,
   ) {
+    this.vocals = vocals;
     this.onGpu = engine.provider === "webgpu";
     this.rec = engine.createRecognizer(options, live);
     this.rec.onFeature = (f) => this.bands.push(f);
   }
 
   setSampleRate(rate: number) {
-    this.resampler = new Resampler(rate, 16000);
+    if (!this.vocals) {
+      this.resampler = new Resampler(rate, 16000);
+      return;
+    }
+    const sepRate = this.vocals.config.sampleRate;
+    this.resampler = new Resampler(sepRate, 16000);
+    this.toSep = rate === sepRate ? null : [new Resampler(rate, sepRate), new Resampler(rate, sepRate)];
+    this.mix = new Resampler(rate, 16000);
+  }
+
+  /** Decoded channels at the file's rate. */
+  async pushChannels(channels: Float32Array[]) {
+    if (!this.vocals) return this.push(downmix(channels));
+    this.trackPeaks(this.mix!.process(downmix(channels)));
+    const stereo = channels.length > 1 ? channels.slice(0, 2) : [channels[0], channels[0]];
+    const atRate = this.toSep ? stereo.map((c, i) => this.toSep![i].process(c)) : stereo;
+    await this.push(await this.vocals.push(atRate), false, false);
+  }
+
+  /** The separator's last segments, once the input has ended. */
+  async endVocals() {
+    if (!this.vocals) return;
+    if (this.toSep) await this.push(await this.vocals.push(this.toSep.map((r) => r.process(new Float32Array(0), true))), false, false);
+    this.trackPeaks(this.mix!.process(new Float32Array(0), true));
+    await this.push(await this.vocals.finish(), false, false);
+    console.debug(`[harfiyen] vocals separated in ${this.vocals.elapsed.toFixed(1)} s`);
   }
 
   get isCancelled() {
     return cancelled.has(this.id);
   }
 
-  async push(samples: Float32Array, last = false) {
+  async push(samples: Float32Array, last = false, peaks = !this.vocals) {
     const pcm = this.resampler!.process(samples, last);
-    this.trackPeaks(pcm);
+    if (peaks) this.trackPeaks(pcm);
     this.rec.acceptWaveform(pcm);
     if (last) this.rec.inputFinished();
     while (this.rec.isReady()) {
@@ -386,15 +453,30 @@ async function transcribeFile(job: Job, file: File, endAt?: number) {
       channels.push(skip || stop < frames ? buf.subarray(skip, stop) : buf);
     }
     sample.close();
-    if (skip < stop) await job.push(downmix(channels));
+    if (skip < stop) await job.pushChannels(channels);
   }
   input.dispose();
 }
 
-/** Mono 16 kHz audio of from..to seconds of a track. */
-async function readPcm(sink: AudioSampleSink, rate: number, from: number, to: number): Promise<Float32Array> {
-  const resampler = new Resampler(rate, 16000);
+/** Mono 16 kHz audio of from..to seconds of a track; with a separator, its vocals. */
+async function readPcm(
+  sink: AudioSampleSink,
+  rate: number,
+  from: number,
+  to: number,
+  vocals: VocalSeparator | null = null,
+): Promise<Float32Array> {
+  const sepRate = vocals?.config.sampleRate ?? 16000;
+  const toSep = vocals && rate !== sepRate ? [new Resampler(rate, sepRate), new Resampler(rate, sepRate)] : null;
+  const resampler = new Resampler(vocals ? sepRate : rate, 16000);
   const parts: Float32Array[] = [];
+  const add = async (channels: Float32Array[], last = false) => {
+    if (!vocals) return void parts.push(resampler.process(downmix(channels), last));
+    const stereo = channels.length > 1 ? channels.slice(0, 2) : [channels[0], channels[0]];
+    let out = await vocals.push(toSep ? stereo.map((c, i) => toSep[i].process(c, last)) : stereo);
+    if (last) out = concatPcm(out, await vocals.finish());
+    parts.push(resampler.process(out, last));
+  };
   for await (const sample of sink.samples(from, to)) {
     const frames = sample.numberOfFrames;
     const skip = Math.max(0, Math.min(frames, Math.round((from - sample.timestamp) * sample.sampleRate)));
@@ -406,9 +488,9 @@ async function readPcm(sink: AudioSampleSink, rate: number, from: number, to: nu
       channels.push(buf.subarray(skip, stop));
     }
     sample.close();
-    if (skip < stop) parts.push(resampler.process(downmix(channels)));
+    if (skip < stop) await add(channels);
   }
-  parts.push(resampler.process(new Float32Array(0), true));
+  await add([new Float32Array(0)], true);
   const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const p of parts) {
@@ -418,8 +500,15 @@ async function readPcm(sink: AudioSampleSink, rate: number, from: number, to: nu
   return out;
 }
 
-/** Song lyrics: Whisper times known words span by span. */
-async function alignAudio(id: number, file: File, lang: SpeechLang, spans: AlignSpan[]) {
+function concatPcm(a: Float32Array, b: Float32Array) {
+  const out = new Float32Array(a.length + b.length);
+  out.set(a);
+  out.set(b, a.length);
+  return out;
+}
+
+/** Song lyrics: Whisper times known words span by span; `vocals`: in the separated vocals. */
+async function alignAudio(id: number, file: File, lang: SpeechLang, spans: AlignSpan[], vocals = false) {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   try {
     const engine = await getEngine();
@@ -432,7 +521,8 @@ async function alignAudio(id: number, file: File, lang: SpeechLang, spans: Align
     const out: ({ start: number; end: number }[] | null)[] = [];
     post({ type: "align-progress", id, done: 0, total: spans.length });
     for (const [n, s] of spans.entries()) {
-      const pcm = await readPcm(sink, track.sampleRate, s.start, s.end);
+      const sep = vocals ? (await getVocals()).separator() : null;
+      const pcm = await readPcm(sink, track.sampleRate, s.start, s.end, sep);
       out.push(await engine.alignText(pcm, s.start, s.words, lang));
       post({ type: "align-progress", id, done: n + 1, total: spans.length });
     }
@@ -450,7 +540,7 @@ async function transcribePcm(job: Job, pcm: Float32Array, sampleRate: number, en
   const step = sampleRate * 2;
   const end = endAt === undefined ? pcm.length : Math.min(pcm.length, Math.round(endAt * sampleRate));
   for (let i = Math.round(job.offset * sampleRate); i < end && !job.isCancelled; i += step) {
-    await job.push(pcm.subarray(i, Math.min(end, i + step)));
+    await job.pushChannels([pcm.subarray(i, Math.min(end, i + step))]);
   }
 }
 
@@ -517,8 +607,10 @@ async function runJob(jobId: number, options: DecodeOptions, feed: (job: Job) =>
   let job: Job | null = null;
   try {
     const engine = await getEngine();
-    job = new Job(jobId, engine, options, startAt, live);
+    const vocals = options.music && options.vocals && !live ? (await getVocals()).separator() : null;
+    job = new Job(jobId, engine, options, startAt, live, vocals);
     await feed(job);
+    if (!job.isCancelled) await job.endVocals();
     if (job.isCancelled) {
       post({ type: "cancelled", jobId });
       return;
@@ -580,7 +672,7 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
       queue = queue.then(() => punctuate(m.id, m.words));
       break;
     case "align":
-      queue = queue.then(() => alignAudio(m.id, m.file, m.lang, m.spans));
+      queue = queue.then(() => alignAudio(m.id, m.file, m.lang, m.spans, m.vocals));
       break;
   }
 };

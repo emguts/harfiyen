@@ -100,6 +100,8 @@ export function Inspector({
   onVideoLang,
   music,
   onMusic,
+  vocals,
+  onVocals,
   lyrics,
   onShiftAll,
   langIssue,
@@ -162,6 +164,8 @@ export function Inspector({
   onVideoLang: (l: SpeechLang) => void;
   music: boolean;
   onMusic: (on: boolean) => void;
+  vocals: boolean;
+  onVocals: (on: boolean) => void;
   /** Song lyrics over the transcript, shown in music mode. */
   lyrics: ComponentProps<typeof LyricsSection>;
   /** Moves every caption by `seconds`; null when there is nothing to move. */
@@ -276,7 +280,15 @@ export function Inspector({
         ) : (
           <div className={STUDIO}>
             <Section title="Dil">
-              <VideoLang value={videoLang} onChange={onVideoLang} music={music} onMusic={onMusic} disabled={running} />
+              <VideoLang
+                value={videoLang}
+                onChange={onVideoLang}
+                music={music}
+                onMusic={onMusic}
+                vocals={vocals}
+                onVocals={onVocals}
+                disabled={running}
+              />
               {langIssue ? (
                 <Hint>{langIssue}</Hint>
               ) : (

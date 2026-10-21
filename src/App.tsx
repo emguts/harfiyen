@@ -132,10 +132,11 @@ const PICKER_TYPES = [
   },
 ];
 
-const optionsFor = (method: DecodingMethod, lang: SpeechLang = "tr", music = false): DecodeOptions => ({
+const optionsFor = (method: DecodingMethod, lang: SpeechLang = "tr", music = false, vocals = false): DecodeOptions => ({
   method,
   lang,
   music,
+  vocals: music && vocals,
   maxActivePaths: 4,
   lmScale: 0.6,
   lodrScale: -0.5,
@@ -191,6 +192,7 @@ export function App() {
     punct,
     alignAudio,
     aligning,
+    vocals: vocalsState,
   } = useTranscriber();
   const [autoPunct, setAutoPunct] = useState(
     () => localStorage.getItem("harfiyen.punct") !== "off",
@@ -215,6 +217,9 @@ export function App() {
   /** Songs: Whisper without the speech VAD. */
   const [music, setMusic] = useState(() => localStorage.getItem("harfiyen.music") === "1");
   useEffect(() => localStorage.setItem("harfiyen.music", music ? "1" : "0"), [music]);
+  /** Music mode on Whisper: the band taken out first (src/separate/vocals.ts). On unless turned off. */
+  const [vocals, setVocals] = useState(() => localStorage.getItem("harfiyen.vocals") !== "0");
+  useEffect(() => localStorage.setItem("harfiyen.vocals", vocals ? "1" : "0"), [vocals]);
   const [settings, setSettings] = useState<CaptionSettings>(loadSettings);
   /** The part of the video shown and exported; belongs to the project, unlike the style. */
   const [crop, setCrop] = useState<Crop | null>(null);
@@ -420,7 +425,7 @@ export function App() {
         file: media?.file ?? null,
         model: job?.model ?? model,
         imported: f.name,
-        options: optionsFor(method, videoLang, music),
+        options: optionsFor(method, videoLang, music, vocals),
         duration: media?.duration ?? null,
         elapsed: null,
         words: subs,
@@ -464,7 +469,7 @@ export function App() {
       setCrop(null);
       setTrim(null);
       // Not transcribed yet: first the frame and the part to use, then "Yazıya dök".
-      open(f, optionsFor(method, videoLang, music));
+      open(f, optionsFor(method, videoLang, music, vocals));
     },
     [
       open,
@@ -556,7 +561,7 @@ export function App() {
     }
     punctuated.current.delete(job.id);
     resetBurn();
-    transcribe(optionsFor(method, videoLang, music), trim ?? undefined);
+    transcribe(optionsFor(method, videoLang, music, vocals), trim ?? undefined);
   };
 
   // Deleting the open project moves on to the next most recent one.
@@ -802,6 +807,7 @@ export function App() {
             job.file,
             job.options.lang ?? "tr",
             spans.map((s) => ({ start: s.start, end: s.end, words: timing.words.slice(s.first, s.last + 1).map((w) => w.text) })),
+            !!job.options.vocals,
           );
           next = applySpans(timing, spans, found);
         }
@@ -1305,7 +1311,7 @@ export function App() {
                       : `Dosyanın tamamı${player.duration ? `, ${fmtDuration(player.duration)}` : ""}`}
                   </p>
                 )}
-                {job.file && <VideoLang value={videoLang} onChange={chooseVideoLang} music={music} onMusic={setMusic} />}
+                {job.file && <VideoLang value={videoLang} onChange={chooseVideoLang} music={music} onMusic={setMusic} vocals={vocals} onVocals={setVocals} />}
                 {job.file && langIssue && <p className="m-0 text-[12px] leading-normal text-mercan-text">{langIssue}</p>}
                 <Button
                   variant="primary"
@@ -1531,6 +1537,8 @@ export function App() {
           onVideoLang={chooseVideoLang}
           music={music}
           onMusic={setMusic}
+          vocals={vocals}
+          onVocals={setVocals}
           lyrics={lyricsProps}
           onShiftAll={editable ? onShiftAll : null}
           langIssue={langIssue}
@@ -1633,6 +1641,7 @@ export function App() {
         burn={burner.state}
         notice={notice}
         punct={punct}
+        vocals={vocalsState}
         liveWaiting={liveWaiting}
         onStop={cancel}
         onDiscard={discardJob}
