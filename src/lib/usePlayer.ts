@@ -17,6 +17,20 @@ export interface Player {
   /** How often the user played, paused or sought; changes mean they took over. */
   touches: RefObject<number>;
   setMuted: (m: boolean) => void;
+  /** The listener's level, 0 to 1. useDubPlayback applies it to the element. */
+  volume: number;
+  setVolume: (v: number) => void;
+}
+
+const VOLUME_KEY = "harfiyen.volume";
+
+function savedVolume() {
+  try {
+    const v = Number(localStorage.getItem(VOLUME_KEY));
+    return localStorage.getItem(VOLUME_KEY) !== null && v >= 0 && v <= 1 ? v : 1;
+  } catch {
+    return 1;
+  }
 }
 
 /** Might have a picture. Containers like WebM/MP4 can also be audio-only;
@@ -36,6 +50,7 @@ export function usePlayer(file: File | null, range: { start: number; end: number
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [muted, setMutedState] = useState(false);
+  const [volume, setVolumeState] = useState(savedVolume);
   /** null until metadata says whether the file has a picture. */
   const [hasPicture, setHasPicture] = useState<boolean | null>(null);
   /** Where a scrub wants to be once the running seek lands. */
@@ -149,6 +164,21 @@ export function usePlayer(file: File | null, range: { start: number; end: number
 
   const setMuted = useCallback((m: boolean) => el && (el.muted = m), [el]);
 
+  const setVolume = useCallback(
+    (v: number) => {
+      const to = Math.max(0, Math.min(1, v));
+      setVolumeState(to);
+      // Moving the level up means the listener wants to hear it.
+      if (el && to > 0) el.muted = false;
+      try {
+        localStorage.setItem(VOLUME_KEY, String(to));
+      } catch {
+        /* private mode: the level just is not remembered */
+      }
+    },
+    [el],
+  );
+
   return {
     ref: setEl,
     el,
@@ -164,5 +194,7 @@ export function usePlayer(file: File | null, range: { start: number; end: number
     preview,
     touches,
     setMuted,
+    volume,
+    setVolume,
   };
 }

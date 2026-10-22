@@ -17,6 +17,7 @@ import {
   PaneHead,
   PaneMeta,
   PaneTitle,
+  Range,
   TbLabel,
   toolbarButton,
 } from "./components/ui";
@@ -255,7 +256,7 @@ export function App() {
     return Number.isFinite(saved) ? Math.max(0, Math.min(MAX_ORIGINAL, saved)) : 0;
   });
   useEffect(() => localStorage.setItem("harfiyen.dubOriginal", String(dubOriginal)), [dubOriginal]);
-  useDubPlayback(player.el, dub?.url ?? null, !!dubbing, dubOriginal);
+  useDubPlayback(player.el, dub?.url ?? null, !!dubbing, dubOriginal, player.volume);
   const [voice, setVoice] = useState<Voice>(() => {
     try {
       return fitVoice({ ...DEFAULT_VOICE, ...JSON.parse(localStorage.getItem("harfiyen.voice") ?? "{}") });
@@ -1478,12 +1479,29 @@ export function App() {
         </span>
         <button
           className={TP_BTN}
-          onClick={() => player.setMuted(!player.muted)}
+          onClick={() => {
+            if (player.muted || player.volume === 0) {
+              player.setMuted(false);
+              if (player.volume === 0) player.setVolume(1);
+            } else player.setMuted(true);
+          }}
           disabled={!job || job.recording}
-          aria-label={player.muted ? "Sesi aç" : "Sesi kapat"}
+          aria-label={player.muted || player.volume === 0 ? "Sesi aç" : "Sesi kapat"}
         >
-          {player.muted ? <IconMuted /> : <IconSound />}
+          {player.muted || player.volume === 0 ? <IconMuted /> : <IconSound />}
         </button>
+        <span className="-ml-1 mr-1 flex w-20 flex-none items-center max-[860px]:hidden">
+          <Range
+            min={0}
+            max={1}
+            step={0.01}
+            value={player.muted ? 0 : player.volume}
+            disabled={!job || job.recording}
+            aria-label="Ses düzeyi"
+            title={`Ses: %${Math.round((player.muted ? 0 : player.volume) * 100)}`}
+            onChange={(e) => player.setVolume(Number(e.target.value))}
+          />
+        </span>
         {job ? (
           <Timeline
             peaks={wave ?? job.peaks}
