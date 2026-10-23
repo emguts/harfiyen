@@ -19,6 +19,8 @@ ses düzeyi kaydırıcısını [vuxenn1](https://github.com/vuxenn1) ekledi. İk
   kullanılabilir. Kareyi kaplar, taşan kısmı kesilir; **Net** ya da **Bulanık** seçilir. Kinetik tipografi üstünde
   ince bir perdeyle durur. Fotoğraf logo gibi bu tarayıcıda saklanır, sonraki projelerde de hazırdır; videolarda
   seçilince videonun yalnızca sesi kullanılır.
+- **Stil kartlarında kendi zeminin:** Altyazı ve kinetik stil kartları arkada projenin kendi zeminini gösterir:
+  videonun karesi, fotoğraf ya da seçili aura. Yazının o zeminde nasıl okunduğu stil seçerken görülür.
 - **Metin seslendir:** Boş ekrandaki **Metin seslendir** ile dosya olmadan yazdığın ya da yapıştırdığın metin yapay
   sesle okunur; kelimeler zamanlarıyla altyazıya ve oynatıcıya yerleşir, aura ya da kinetik tipografiyle videoya
   dönüşür.
