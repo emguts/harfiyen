@@ -131,6 +131,27 @@ canlı çalışır.
 - Logo: kendi logon (PNG, SVG, WebP, JPEG) seçtiğin köşede, istediğin boyut ve saydamlıkta durur. Bu
   tarayıcıda saklanır, sonraki projelerde de hazırdır; her projede gizlenebilir.
 
+### Sahne ve kinetik tipografi
+
+- **Sahne** sekmesinde ekrandaki yazı seçilir: **Altyazı**, **Kinetik** ya da **Yok**. Arkasında ne olacağı da
+  buradan seçilir: videolarda görüntünün kendisi ya da bulanık hâli, ses dosyalarında bir aura ya da düz zemin.
+  Videonun görüntüsü yerine aura da konabilir; o zaman dosyanın yalnızca sesi kullanılır.
+- **Kinetik tipografi** altyazı yerine bütün ekranı kullanır. Sekiz stil var:
+  - **3D Düğüm:** satır, kendi etrafında dönen bir 3D düğümün üzerinde akar.
+  - **Pano:** havalimanı kalkış panosu gibi her satır tık tık dönerek yerine oturur.
+  - **Fizik (Matter.js):** söylenen her kelime sahneye düşer, çarpar, devrilir ve üst üste yığılır.
+  - **2D Kamera:** her cümle iki yana yaslı bir blok olur, cümle bitince kamera dönerek sıradakine geçer.
+  - **Poster:** arkada dev hayalet tipografi, ortada farklı ölçeklerde dizilen poster bloğu.
+  - **Darbe:** sesin enerjisiyle büyüyen tam ekran kelimeler.
+  - **Maske:** harfler görünmez bir çizginin arkasından yükselir, söylenen kelimenin altı dolar.
+  - **Tünel:** kelimeler uzaktan gelir, söylenirken durur, sonra kameranın içinden geçip gider.
+- Beş renk paleti (Gece & Altın, Siyah & Neon, Krem & Mürekkep, Mercan & Beyaz, Çini & Firuze) ve bütün yazı
+  tipleri (yüklediklerin de) seçilebilir. Oynatıcıda ve altyazılı MP4'te aynı görünür.
+- **Auralar:** **Aura** (yumuşak gradyan ve dalga çizgileri), **Halo** (sesin frekanslarıyla bükülen halkalar),
+  **Ufuk** (sesin son saniyeleri üzerinde uçulan retro dalga arazisi), **Küre** (sesle şekil değiştiren yanardöner
+  3D damla) ve **Sırtlar** (üst üste dizilmiş ışık çizgileri). Beş renk paleti var: Çini, Gün batımı, Orman,
+  Lavanta, Gece.
+
 ### Görüntü ve dışa aktarma
 
 - WebGPU oynatıcı: önizlemede gördüğün, dışa aktarılan videonun birebir aynısıdır.
@@ -153,10 +174,13 @@ canlı çalışır.
   değişmez; kapatınca video eski hâline döner.
 - Altyazılı MP4: kareler ekran kartında birleştirilir, video H.264 ya da HEVC olarak kodlanır, ses kopyalanır.
   Tarayıcı destekliyorsa ekran kartı, desteklemiyorsa işlemci kullanılır; menü hangisinin kullanılacağını gösterir.
-- Dışa aktarırken çözünürlük (kaynakla aynı ya da daha küçük: 1080p, 720p) ve kalite seçilir; tahmini dosya
-  boyutu seçim yapılırken görünür.
-- Ses dosyaları ve kayıtlar için **aura**: sesle hareket eden yumuşak bir gradyan ve sakin bir ses
-  görselleştirmesi. Bunlar da altyazılı MP4 olarak 720p, 1080p ya da 4K dışa aktarılabilir.
+- Dışa aktarırken çözünürlük (kaynakla aynı, daha küçük ya da 1080p'ye kadar daha büyük) ve kalite seçilir;
+  tahmini dosya boyutu seçim yapılırken görünür. 1080p'den küçük videolar varsayılan olarak 1080p yazılır:
+  görüntü büyütülür, altyazı bu boyutta çizildiği için keskin çıkar.
+- Ses dosyaları ve kayıtlar aura ya da kinetik tipografiyle (bkz. Sahne ve kinetik tipografi) altyazılı MP4
+  olarak 720p, 1080p ya da 4K dışa aktarılabilir.
+- Ses düzeyi: oynatma çubuğundaki ses düğmesinin üstüne gelince kaydırıcı açılır. Seslendirmeyi ve orijinal sesi
+  birlikte kısar, düzey tarayıcıda hatırlanır; dışa aktarılan videoyu etkilemez.
 - SRT, WebVTT, düz metin, kelime zamanlı JSON ve panoya kopyalama.
 
 ### Seslendirme
@@ -171,6 +195,9 @@ canlı çalışır.
   çevirir, sonra okur; ilerleme tek çubukta görünür. Her cümle Türkçesinin başladığı anda başlar; sığmayan cümle önündeki sessizliğe biraz erken başlar,
   gerekirse en fazla 1,15 kat hızlı okunur (Supertonic daha hızlıda cümle sonunu yutuyor). On ses arasından
   seçilir (Alex, James, Robert, Sam, Daniel, Sarah, Lily, Jessica, Olivia, Emily).
+- **Metin seslendir:** boş ekrandaki **Metin seslendir** ile dosya olmadan, yazılan ya da yapıştırılan metin
+  yapay sesle okunur. Kelimeler zamanlarıyla altyazıya ve oynatıcıya yerleşir; aura ya da kinetik tipografiyle
+  videoya dönüşür.
 - Modellerin cümle başına ve sonuna koyduğu sessizlik kırpılır; böylece cümleler birbirini itmez, seslendirme
   videonun gerisinde kalmaz.
 - Videonun (ya da seçili bölümün) sonuna taşan son cümleler önlerindeki duraklamalara doğru geriye kayar, gerekirse
@@ -299,6 +326,13 @@ güvenilir yap (iOS: Ayarlar → Genel → Hakkında → Sertifika Güven Ayarla
 | Kadraj                     | Oynatıcının üstünde kırpma düğmesi ya da **C**; **Enter** uygular, **Esc** vazgeçer        |
 | Bölüm seçmek (kesme)       | Zaman çizelgesinin sonunda **Kes**, uçları sürükle, **Tamam**; oynatırken **I** / **O**    |
 | Satırı düzenlemek          | Satıra çift tıkla, **Enter** kaydeder, **Esc** vazgeçer                                    |
+| Zamanı düzenlemek          | Satırın üstüne gel, saat simgesi; bütün altyazıyı kaydırmak için **[** / **]**             |
+| Metni sese hizalamak       | Transkriptin başlığındaki hizalama düğmesi, metni yapıştır                                 |
+| Sessizlikleri kesmek       | Sağ panelde **Metin → Sessizlikleri at**                                                   |
+| Konuşmacıları ayırmak      | Sağ panelde **Metin → Konuşmacıları ayır**                                                 |
+| Kinetik tipografi, aura    | Sağ panelde **Sahne**                                                                      |
+| Metni seslendirmek         | Boş ekranda **Metin seslendir**                                                            |
+| Ses düzeyi                 | Alt çubuktaki ses düğmesinin üstüne gel                                                    |
 | Geri al                    | **⌘Z** / **Ctrl+Z**                                                                        |
 | Otomatik noktalama         | Sağ panelde **Noktalama ve büyük harf → Otomatik ekle** (varsayılan açık; tercih saklanır) |
 | Noktalamayı elle uygulamak | Döküm bitince aynı bölümde **Şimdi uygula**                                                |
@@ -394,7 +428,7 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   **.harfiyen** proje dosyasına girmez; yalnızca bu tarayıcıda projeyle birlikte saklanır.
 - İngilizce seslendirme Türkçeden uzun olabilir; sıkışık konuşmalarda cümleler Türkçesinden birkaç yüz
   milisaniye geç başlayabilir. Seslendirmeyi takip eden altyazıda kelime zamanları harf sayısından tahmin edilir.
-- Çeviri yalnızca İngilizceye. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
+- Çeviri yalnızca Türkçe ile İngilizce arasında. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
   çalışmaz. Yemek adları, özel adlar ve argo yanlış çevrilebilir.
 - Ses dosyalarından üretilen MP4'te ses AAC ile kodlanır; tarayıcı AAC kodlayamıyorsa Opus kullanılır.
   Opus'lu MP4'ü QuickTime ve iPhone Fotoğraflar açmayabilir (Chrome, VLC ve sosyal platformlar açar).
@@ -464,5 +498,9 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
 - Noktalama ölçüm metinleri (`tests/data/`): Türkçe Vikipedi, CC BY-SA 4.0; kaynak makaleler dosyalarda.
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.
 - [ONNX Runtime Web](https://onnxruntime.ai) (MIT), [mediabunny](https://mediabunny.dev) (MPL-2.0),
-  [React](https://react.dev) (MIT), [Tailwind CSS](https://tailwindcss.com) (MIT).
+  [React](https://react.dev) (MIT), [Tailwind CSS](https://tailwindcss.com) (MIT),
+  [Matter.js](https://brm.io/matter-js/) (MIT, kinetik tipografinin Fizik stili).
+- Zaman düzenleme, metni sese hizalama ve elle tempo tutma [emguts](https://github.com/emguts)'un
+  [emguts/harfiyen](https://github.com/emguts/harfiyen) fork'undan uyarlandı; ses düzeyi kaydırıcısını
+  [vuxenn1](https://github.com/vuxenn1) ekledi. Teşekkürler.
 - Yazı tipleri: SIL Open Font License 1.1.

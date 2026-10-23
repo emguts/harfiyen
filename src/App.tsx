@@ -17,7 +17,6 @@ import {
   PaneHead,
   PaneMeta,
   PaneTitle,
-  Range,
   TbLabel,
   toolbarButton,
 } from "./components/ui";
@@ -425,6 +424,7 @@ export function App() {
     dub?.url ?? null,
     !!dubbing && !ownFileIsDub,
     dubOriginal,
+    player.volume,
   );
   const [voice, setVoice] = useState<Voice>(() => {
     try {
@@ -2209,33 +2209,40 @@ export function App() {
           </strong>{" "}
           / {clock(player.duration || job?.duration || 0)}
         </span>
-        <button
-          className={TP_BTN}
-          onClick={() => {
-            if (player.muted || player.volume === 0) {
-              player.setMuted(false);
-              if (player.volume === 0) player.setVolume(1);
-            } else player.setMuted(true);
-          }}
-          disabled={!job || job.recording}
-          aria-label={
-            player.muted || player.volume === 0 ? "Sesi aç" : "Sesi kapat"
-          }
-        >
-          {player.muted || player.volume === 0 ? <IconMuted /> : <IconSound />}
-        </button>
-        <span className="-ml-1 mr-1 flex w-20 flex-none items-center max-[860px]:hidden">
-          <Range
-            min={0}
-            max={1}
-            step={0.01}
-            value={player.muted ? 0 : player.volume}
+        <div className="group/vol relative flex flex-none items-center">
+          <button
+            className={TP_BTN}
+            onClick={() => {
+              if (player.muted || player.volume === 0) {
+                player.setMuted(false);
+                if (player.volume === 0) player.setVolume(1);
+              } else player.setMuted(true);
+            }}
             disabled={!job || job.recording}
-            aria-label="Ses düzeyi"
-            title={`Ses: %${Math.round((player.muted ? 0 : player.volume) * 100)}`}
-            onChange={(e) => player.setVolume(Number(e.target.value))}
-          />
-        </span>
+            aria-label={
+              player.muted || player.volume === 0 ? "Sesi aç" : "Sesi kapat"
+            }
+          >
+            {player.muted || player.volume === 0 ? <IconMuted /> : <IconSound />}
+          </button>
+          {job && !job.recording && (
+            <div className="pointer-events-none invisible absolute bottom-full left-1/2 z-20 -translate-x-1/2 translate-y-1 pb-1.5 opacity-0 transition-all duration-150 ease-out group-focus-within/vol:pointer-events-auto group-focus-within/vol:visible group-focus-within/vol:translate-y-0 group-focus-within/vol:opacity-100 group-hover/vol:pointer-events-auto group-hover/vol:visible group-hover/vol:translate-y-0 group-hover/vol:opacity-100">
+              <div className="flex h-28 w-8 items-center justify-center rounded-[10px] border border-popover-line bg-popover shadow-[0_12px_28px_var(--shadow-pop),0_0_0_1px_var(--tint)] backdrop-blur-[16px]">
+                <input
+                  type="range"
+                  className="slider m-0 h-[18px] w-20 flex-none -rotate-90"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={player.muted ? 0 : player.volume}
+                  aria-label="Ses düzeyi"
+                  title={`Ses: %${Math.round((player.muted ? 0 : player.volume) * 100)}`}
+                  onChange={(e) => player.setVolume(Number(e.target.value))}
+                />
+              </div>
+            </div>
+          )}
+        </div>
         {job ? (
           <Timeline
             peaks={wave ?? job.peaks}
