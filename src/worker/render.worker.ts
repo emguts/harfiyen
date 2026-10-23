@@ -44,7 +44,7 @@ import {
 import { historyAt, levelsAt, paletteById, usesHistory } from "../render/aura";
 import { addUserFont, loadCaptionFont, type UserFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
-import { shownPicture, type CaptionSettings } from "../captions/style";
+import { shownPhoto, shownPicture, type CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
 import { isKept, keptLength, keptParts, toFile, toOutput, type Kept } from "../lib/cuts";
 import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
@@ -76,6 +76,8 @@ export type ToRender =
       dub: DubMix | null;
       /** The user's logo, a copy of the player's (transferred). */
       logo: LogoLayer | null;
+      /** The user's photo, a copy of the player's (transferred); null when this project does not use it. */
+      photo: ImageBitmap | null;
       encode: Encode;
       /** The file the user picked to save into; null renders to the private disk (or memory). */
       handle: FileSystemFileHandle | null;
@@ -209,7 +211,7 @@ function cutAudio(sample: AudioSample, t0: number, kept: Kept[], span: { start: 
 
 /**
  * What is written over the picture: the kinetic stage when it is on (its font loaded), else the captions.
- * `picture` is the video's picture as drawn, null for the aura.
+ * `picture` is the video's picture or the photo as drawn, null for the aura.
  */
 async function textLayer(
   words: Word[],
@@ -238,6 +240,7 @@ async function burn(
   speakers: string[] | null,
   dub: DubMix | null,
   logo: LogoLayer | null,
+  photo: ImageBitmap | null,
   encode: Encode,
   sink: Sink,
   handle: FileSystemFileHandle | null,
@@ -248,7 +251,7 @@ async function burn(
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
   // A video used for its sound is drawn as an audio file is.
-  if (!track || settings.picture === "hidden") return burnAudio(jobId, input, words, settings, bands, loudness, lang, speakers, dub, logo, encode, sink, handle, started);
+  if (!track || settings.picture === "hidden") return burnAudio(jobId, input, words, settings, bands, loudness, lang, speakers, dub, logo, photo, encode, sink, handle, started);
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -363,6 +366,7 @@ async function burnAudio(
   speakers: string[] | null,
   dub: DubMix | null,
   logo: LogoLayer | null,
+  photo: ImageBitmap | null,
   encode: Encode,
   sink: Sink,
   handle: FileSystemFileHandle | null,
@@ -382,7 +386,10 @@ async function burnAudio(
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas);
   compositor.setLogo(logo);
-  const { captions, kinetic } = await textLayer(words, settings, width, height, loudness, lang, speakers, null);
+  // The photo in place of the aura, when it is picked.
+  const ground = shownPhoto(settings, !!photo);
+  compositor.setBlur(ground === "blur");
+  const { captions, kinetic } = await textLayer(words, settings, width, height, loudness, lang, speakers, ground);
   const palette = paletteById(settings.aura).colors;
   // The part written: t0..t1 of the file, written from 0:00, less the cuts.
   const t0 = encode.trim?.start ?? 0;
@@ -416,14 +423,16 @@ async function burnAudio(
       const at = toFile(time, kept);
       const levels = levelsAt(bands, at);
       compositor.render(
-        {
-          kind: "aura",
-          time: at,
-          levels,
-          palette,
-          style: settings.auraStyle ?? "aura",
-          history: usesHistory(settings.auraStyle) ? historyAt((s) => levelsAt(bands, s), at) : undefined,
-        },
+        ground && photo
+          ? { kind: "photo", image: photo }
+          : {
+              kind: "aura",
+              time: at,
+              levels,
+              palette,
+              style: settings.auraStyle ?? "aura",
+              history: usesHistory(settings.auraStyle) ? historyAt((s) => levelsAt(bands, s), at) : undefined,
+            },
         kinetic ? kinetic.frame(at, levels) : (captions?.frame(at) ?? null),
       );
       await video.add(time, 1 / fps);
@@ -486,9 +495,25 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
     if (cancelled.has(m.jobId)) sink.cancel();
     if (m.userFont) addUserFont(m.userFont);
     try {
-      await burn(m.jobId, m.file, m.words, m.settings, m.bands, m.loudness, m.lang, m.speakers, m.dub, m.logo, m.encode, sink, m.handle);
+      await burn(
+        m.jobId,
+        m.file,
+        m.words,
+        m.settings,
+        m.bands,
+        m.loudness,
+        m.lang,
+        m.speakers,
+        m.dub,
+        m.logo,
+        m.photo,
+        m.encode,
+        sink,
+        m.handle,
+      );
     } finally {
       m.logo?.image.close();
+      m.photo?.close();
     }
   };
   run()

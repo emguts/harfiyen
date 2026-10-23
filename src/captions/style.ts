@@ -9,6 +9,13 @@ export type VideoPicture = "video" | "blur" | "hidden";
 export const shownPicture = (s: CaptionSettings, video: boolean): "video" | "blur" | null =>
   !video || s.picture === "hidden" ? null : s.picture === "blur" ? "blur" : "video";
 
+/**
+ * The user's photo where there is no picture, as it is ("video", as a picture is) or blurred, when
+ * it is picked and in this browser (`have`); null for the aura or the kinetic stage's own ground.
+ */
+export const shownPhoto = (s: CaptionSettings, have: boolean): "video" | "blur" | null =>
+  have && s.photo && !(s.kinetic?.on && s.kinetic.backdrop === "stage") ? (s.photoBlur ? "blur" : "video") : null;
+
 export type PresetId =
   | "klasik"
   | "karaoke"
@@ -82,6 +89,10 @@ export interface CaptionSettings {
    * Missing: shown.
    */
   picture?: VideoPicture;
+  /** The user's photo (lib/photo.ts) in place of the aura; without one in this browser, the aura. */
+  photo?: boolean;
+  /** The photo blurred and darker, so any text reads on it. */
+  photoBlur?: boolean;
   /** Settings the user changed by hand: switching preset keeps them. Missing before there was this. */
   overrides?: StyleKey[];
 }
@@ -104,7 +115,18 @@ export interface Preset {
   wordIn?: "grow" | "focus" | "sharpen";
   defaults: Omit<
     CaptionSettings,
-    "preset" | "aura" | "auraStyle" | "voiceEmphasis" | "speakerNames" | "logo" | "hidden" | "kinetic" | "picture" | "overrides"
+    | "preset"
+    | "aura"
+    | "auraStyle"
+    | "voiceEmphasis"
+    | "speakerNames"
+    | "logo"
+    | "hidden"
+    | "kinetic"
+    | "picture"
+    | "photo"
+    | "photoBlur"
+    | "overrides"
   >;
 }
 
@@ -338,6 +360,8 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
     hidden: prev?.hidden ?? false,
     kinetic: prev?.kinetic ?? DEFAULT_KINETIC,
     picture: prev?.picture ?? "video",
+    photo: prev?.photo ?? false,
+    photoBlur: prev?.photoBlur ?? false,
     ...presetById(id).defaults,
     ...Object.fromEntries(overrides.map((k) => [k, prev![k]])),
     overrides,

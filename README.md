@@ -151,6 +151,10 @@ canlı çalışır.
   **Ufuk** (sesin son saniyeleri üzerinde uçulan retro dalga arazisi), **Küre** (sesle şekil değiştiren yanardöner
   3D damla) ve **Sırtlar** (üst üste dizilmiş ışık çizgileri). Beş renk paleti var: Çini, Gün batımı, Orman,
   Lavanta, Gece.
+- **Fotoğraf:** arka plan olarak kendi fotoğrafın (JPEG, PNG, WebP; örneğin podcast kapağı) kareyi kaplar, taşan kısmı
+  kesilir. **Net** ya da **Bulanık** seçilir; bulanıkta yazı her fotoğrafta okunur. Kinetik tipografi üstünde ince bir
+  perdeyle durur. Fotoğraf bu tarayıcıda saklanır, sonraki projelerde de hazırdır; videolarda seçilince videonun
+  yalnızca sesi kullanılır.
 
 ### Görüntü ve dışa aktarma
 

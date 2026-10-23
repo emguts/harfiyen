@@ -1,7 +1,7 @@
 // Projects live in IndexedDB: the transcript, style and waveform in one
 // store, the media in another, so the project list never loads a video.
 // Fonts the user adds sit in a third store, shared by every project; the
-// user's logo in a fourth, also shared. A project's dub has a fifth, so
+// user's logo and background photo in a fourth, also shared. A project's dub has a fifth, so
 // neither the list nor the project itself loads its audio.
 //
 // Media is kept one of two ways: a file handle (Chromium; no copy, the file
@@ -75,7 +75,7 @@ const DB_NAME = "harfiyen";
 const PROJECTS = "projects";
 const MEDIA = "media";
 const FONTS = "fonts";
-/** Single files kept by name (the logo). */
+/** Single files kept by name (the logo, the background photo). */
 const ASSETS = "assets";
 const DUBS = "dubs";
 
@@ -186,20 +186,23 @@ export const saveFont = (f: UserFont) => tx([FONTS], "readwrite", (t) => t.objec
 
 export const deleteFont = (id: string) => tx([FONTS], "readwrite", (t) => t.objectStore(FONTS).delete(id));
 
-/** The user's logo: the file as added, by name. */
-export interface StoredLogo {
+/** One of the user's images (the logo, the background photo): the file as added, by name. */
+export interface StoredImage {
   name: string;
   blob: Blob;
 }
 
-export async function getLogo(): Promise<StoredLogo | undefined> {
+export type AssetKey = "logo" | "photo";
+
+export async function getAsset(key: AssetKey): Promise<StoredImage | undefined> {
   const t = (await open()).transaction(ASSETS);
-  return done(t.objectStore(ASSETS).get("logo") as IDBRequest<StoredLogo | undefined>);
+  return done(t.objectStore(ASSETS).get(key) as IDBRequest<StoredImage | undefined>);
 }
 
-export const saveLogo = (l: StoredLogo) => tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).put(l, "logo"));
+export const saveAsset = (key: AssetKey, l: StoredImage) =>
+  tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).put(l, key));
 
-export const deleteLogo = () => tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).delete("logo"));
+export const deleteAsset = (key: AssetKey) => tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).delete(key));
 
 /** Room for a copy of `bytes`, leaving some headroom. */
 export async function canCopy(bytes: number): Promise<boolean> {

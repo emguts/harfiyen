@@ -1,4 +1,6 @@
+import { useRef, useState } from "react";
 import { shownPicture, type CaptionSettings } from "../captions/style";
+import { removePhoto, setPhotoFile, usePhoto } from "../lib/photo";
 import { AURA_PALETTES, AURA_STYLES, paletteById, type AuraPaletteId, type AuraStyleId } from "../render/aura";
 import { DEFAULT_KINETIC, kineticPaletteById } from "../render/kinetic";
 import { STUDIO } from "./CaptionStudio";
@@ -51,14 +53,30 @@ const PICTURES: { value: "video" | "blur"; label: string; note: string; kinetic:
   },
 ];
 
+/** The photo as it is or blurred (a picture's "video" and "blur"). */
+const PHOTO_LOOKS: { blur: boolean; label: string; note: string; kinetic: string }[] = [
+  {
+    blur: false,
+    label: "Net",
+    note: "Fotoğraf kareyi kaplar, taşan kısmı kesilir.",
+    kinetic: "Fotoğraf kareyi kaplar, üstünde paletin zemininden ince bir perde.",
+  },
+  {
+    blur: true,
+    label: "Bulanık",
+    note: "Fotoğraf bulanık ve koyu; yazı her fotoğrafta okunur.",
+    kinetic: "Fotoğraf bulanık ve koyu; yazı her fotoğrafta okunur.",
+  },
+];
+
 const CHOICE =
   "h-[26px] rounded-ui border border-line bg-raised text-[12px] text-fg-2 hover:not-disabled:text-fg aria-pressed:border-cini aria-pressed:text-fg-strong disabled:opacity-45";
 
 /**
  * The Sahne tab: how the picture is made. What is written (captions, kinetic
- * typography or nothing) and what is behind it: one of the auras for an audio
- * project, the picture (as it is or blurred) for a video, or the kinetic
- * palette's own plain ground.
+ * typography or nothing) and what is behind it: one of the auras or the user's
+ * photo for an audio project, the picture (as it is or blurred) for a video,
+ * or the kinetic palette's own plain ground.
  */
 export function SceneStudio({
   settings,
@@ -82,15 +100,37 @@ export function SceneStudio({
   const pic = shownPicture(settings, video);
   const picInfo = PICTURES.find((p) => p.value === pic);
   const plain = !pic && mode === "kinetic" && kinetic.backdrop === "stage";
+  const usesPhoto = !pic && !plain && !!settings.photo;
   const auraStyle = settings.auraStyle ?? "aura";
+  const { photo } = usePhoto();
+  const photoFile = useRef<HTMLInputElement>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   const setMode = (m: TextMode) =>
     onChange({ ...settings, hidden: m === "none", kinetic: { ...kinetic, on: m === "kinetic" } });
   // An aura or the plain ground in a video: the file is used for its sound.
   const leaveOut = video ? { picture: "hidden" as const } : {};
   const setAura = (style: AuraStyleId) =>
-    onChange({ ...settings, ...leaveOut, auraStyle: style, kinetic: { ...kinetic, backdrop: "aura" } });
-  const setPlain = () => onChange({ ...settings, ...leaveOut, kinetic: { ...kinetic, backdrop: "stage" } });
+    onChange({ ...settings, ...leaveOut, auraStyle: style, photo: false, kinetic: { ...kinetic, backdrop: "aura" } });
+  const setPlain = () =>
+    onChange({ ...settings, ...leaveOut, photo: false, kinetic: { ...kinetic, backdrop: "stage" } });
+  // The photo stands where the aura does, so the kinetic stage goes over it as over the aura.
+  const setPhoto = () => {
+    onChange({ ...settings, ...leaveOut, photo: true, kinetic: { ...kinetic, backdrop: "aura" } });
+    if (!photo) photoFile.current?.click();
+  };
+  const addPhoto = async (f: File) => {
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      await setPhotoFile(f);
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
 
   return (
     <fieldset className={STUDIO} disabled={disabled}>
@@ -146,20 +186,92 @@ export function SceneStudio({
               key={st.id}
               type="button"
               className={CHOICE}
-              aria-pressed={!pic && !plain && auraStyle === st.id}
+              aria-pressed={!pic && !plain && !usesPhoto && auraStyle === st.id}
               onClick={() => setAura(st.id)}
             >
               {st.label}
             </button>
           ))}
+          <button type="button" className={CHOICE} aria-pressed={usesPhoto} onClick={setPhoto}>
+            Fotoğraf
+          </button>
           {mode === "kinetic" && (
             <button type="button" className={CHOICE} aria-pressed={plain} onClick={setPlain}>
               Düz
             </button>
           )}
         </div>
+        <input
+          ref={photoFile}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/svg+xml"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = ""; // The same file can be picked again.
+            if (f) void addPhoto(f);
+          }}
+        />
         {picInfo ? (
           <Hint>{mode === "kinetic" ? picInfo.kinetic : picInfo.note}</Hint>
+        ) : usesPhoto ? (
+          <>
+            {photo ? (
+              <>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <img
+                    src={photo.url}
+                    alt=""
+                    className="h-9 w-12 flex-none rounded-ui-sm border border-line object-cover"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg-2">{photo.name}</span>
+                  <LinkButton type="button" disabled={photoBusy} onClick={() => photoFile.current?.click()}>
+                    Değiştir
+                  </LinkButton>
+                  <LinkButton
+                    type="button"
+                    onClick={() => void removePhoto().then(() => onChange({ ...settings, photo: false }))}
+                  >
+                    Kaldır
+                  </LinkButton>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Fotoğrafın görünümü">
+                  {PHOTO_LOOKS.map((l) => (
+                    <button
+                      key={l.label}
+                      type="button"
+                      className={CHOICE}
+                      aria-pressed={!!settings.photoBlur === l.blur}
+                      onClick={() => onChange({ ...settings, photoBlur: l.blur })}
+                    >
+                      {l.label}
+                    </button>
+                  ))}
+                </div>
+                <Hint>
+                  {video && "Görüntü kullanılmaz, yalnız sesi. "}
+                  {(() => {
+                    const look = PHOTO_LOOKS.find((l) => l.blur === !!settings.photoBlur)!;
+                    return mode === "kinetic" ? look.kinetic : look.note;
+                  })()}{" "}
+                  Bu tarayıcıda saklanır, sonraki projelerde de hazırdır.
+                </Hint>
+              </>
+            ) : (
+              <>
+                <div>
+                  <LinkButton type="button" disabled={photoBusy} onClick={() => photoFile.current?.click()}>
+                    {photoBusy ? "Fotoğraf açılıyor…" : "Bilgisayarından fotoğraf ekle"}
+                  </LinkButton>
+                </div>
+                <Hint>
+                  JPEG, PNG ya da WebP; bir podcast kapağı ya da konuşanın fotoğrafı. Kareyi kaplar; eklenene kadar
+                  aura görünür.
+                </Hint>
+              </>
+            )}
+            {photoError && <p className="m-0 text-[12px] leading-normal text-mercan">{photoError}</p>}
+          </>
         ) : plain ? (
           <Hint>
             {video && "Görüntü kullanılmaz, yalnız sesi. "}Kinetik paletin kendi zemini (

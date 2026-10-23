@@ -16,10 +16,17 @@ import { logoRect, type LogoLayer } from "./logoLayer";
 // where on the frame: a slice that fills it, or the whole picture fitted in
 // over black or over a blurred copy of itself. The user's logo goes in its
 // corner under the caption, uploaded once like it. With a glass caption the frame is blurred under the caption
-// (glass.ts) before the text goes on. A 2D-canvas path covers browsers
-// without WebGPU.
+// (glass.ts) before the text goes on. In place of a picture there can be the
+// aura (aura.ts) or the user's photo, which covers the frame. A 2D-canvas
+// path covers browsers without WebGPU.
 
-export type Picture = VideoFrame | HTMLVideoElement | AuraFrame | null;
+/** The user's photo (lib/photo.ts) over the whole frame, cut to its shape. */
+export interface PhotoFrame {
+  kind: "photo";
+  image: ImageBitmap;
+}
+
+export type Picture = VideoFrame | HTMLVideoElement | AuraFrame | PhotoFrame | null;
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 
 export interface Compositor {
@@ -31,7 +38,7 @@ export interface Compositor {
   setPlacement(placement: Placement | null): void;
   /** The logo drawn on every frame from now on; null for none. */
   setLogo(logo: LogoLayer | null): void;
-  /** Blur the whole video picture, under the logo and the caption (the kinetic stage's "blur" backdrop). */
+  /** Blur the whole video picture or photo, under the logo and the caption (the kinetic stage's "blur" backdrop). */
   setBlur(on: boolean): void;
   /** Draw a picture (black when null) and an optional caption. */
   render(picture: Picture, caption: CaptionImage | null): void;
@@ -115,10 +122,25 @@ export const hasGpu = (): Promise<boolean> => getDevice().then(
 );
 
 const isAura = (p: Picture): p is AuraFrame => !!p && "kind" in p && p.kind === "aura";
+const isPhoto = (p: Picture): p is PhotoFrame => !!p && "kind" in p && p.kind === "photo";
 
 /** Video elements can only be sampled once they have a current frame (and a picture at all). */
 const pictureReady = (p: Picture): p is VideoFrame | HTMLVideoElement =>
-  !!p && !isAura(p) && (!("readyState" in p) || (p.readyState >= 2 && p.videoWidth > 0));
+  !!p && !isAura(p) && !isPhoto(p) && (!("readyState" in p) || (p.readyState >= 2 && p.videoWidth > 0));
+
+/** An image drawn over the whole of a W×H frame, its overflow cut off evenly on both sides. */
+function drawCover(
+  g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  image: ImageBitmap,
+  W: number,
+  H: number,
+) {
+  const s = Math.max(W / image.width, H / image.height);
+  const w = image.width * s;
+  const h = image.height * s;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(image, (W - w) / 2, (H - h) / 2, w, h);
+}
 
 class GpuCompositor implements Compositor {
   readonly kind = "webgpu" as const;
@@ -139,6 +161,12 @@ class GpuCompositor implements Compositor {
   private overlay: { key: string; texture: GPUTexture; bind: GPUBindGroup } | null = null;
   private logo: { layer: LogoLayer; texture: GPUTexture; bind: GPUBindGroup } | null = null;
   private logoBuffer: GPUBuffer;
+  /**
+   * The photo as it covers this canvas, drawn at its size on a 2D canvas (which scales it down
+   * smoothly, the GPU sampler would not) and uploaded once for each image and size.
+   */
+  private photo: { image: ImageBitmap; w: number; h: number; texture: GPUTexture; bind: GPUBindGroup } | null = null;
+  private photoBuffer: GPUBuffer;
   private auraPipeline: GPURenderPipeline;
   private auraBuffer: GPUBuffer;
   private auraBind: GPUBindGroup;
@@ -185,6 +213,9 @@ class GpuCompositor implements Compositor {
     this.rectBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(this.rectBuffer, 16, new Float32Array([1, 0, 0, 0]));
     this.logoBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    // The photo's quad: the whole frame, solid.
+    this.photoBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(this.photoBuffer, 0, new Float32Array([-1, -1, 1, 1, 1, 0, 0, 0]));
     this.placeBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.coverBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.setPlacement(null);
@@ -250,6 +281,32 @@ class GpuCompositor implements Compositor {
     } else this.logo.layer = layer;
   }
 
+  /** The photo's bind group, covering this canvas. */
+  private photoBind(image: ImageBitmap): GPUBindGroup {
+    const { width: W, height: H } = this.canvas;
+    const p = this.photo;
+    if (p && p.image === image && p.w === W && p.h === H) return p.bind;
+    p?.texture.destroy();
+    const sized = new OffscreenCanvas(W, H);
+    drawCover(sized.getContext("2d")!, image, W, H);
+    const texture = this.device.createTexture({
+      size: [W, H],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.device.queue.copyExternalImageToTexture({ source: sized }, { texture, premultipliedAlpha: true }, [W, H]);
+    const bind = this.device.createBindGroup({
+      layout: this.overlayPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.sampler },
+        { binding: 2, resource: { buffer: this.photoBuffer } },
+        { binding: 3, resource: texture.createView() },
+      ],
+    });
+    this.photo = { image, w: W, h: H, texture, bind };
+    return bind;
+  }
+
   /** The logo's quad on this canvas: clip-space rect and opacity. */
   private logoQuad(layer: LogoLayer) {
     const { width: W, height: H } = this.canvas;
@@ -275,11 +332,18 @@ class GpuCompositor implements Compositor {
     let pass = enc.beginRenderPass({
       colorAttachments: [{ view, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] }],
     });
+    /** A picture or photo is down, which the blur goes over. */
+    let drawn = false;
     if (isAura(picture)) {
       d.queue.writeBuffer(this.auraBuffer, 0, auraUniforms(picture, this.canvas.width, this.canvas.height));
       pass.setPipeline(this.auraPipeline);
       pass.setBindGroup(0, this.auraBind);
       pass.draw(3);
+    } else if (isPhoto(picture)) {
+      pass.setPipeline(this.overlayPipeline);
+      pass.setBindGroup(0, this.photoBind(picture.image));
+      pass.draw(6);
+      drawn = true;
     } else if (pictureReady(picture)) {
       // A media element can lose its frame (seeking, source change); draw
       // black for that frame instead of throwing out of the render loop.
@@ -311,12 +375,13 @@ class GpuCompositor implements Compositor {
         }
         pass.setBindGroup(0, bind(this.placeBuffer));
         pass.draw(3);
-        if (this.blur) {
-          pass.end();
-          (this.glass ??= new GlassBlur(d, this.format)).backdrop(enc, view, this.canvas.width, this.canvas.height);
-          pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
-        }
+        drawn = true;
       }
+    }
+    if (drawn && this.blur) {
+      pass.end();
+      (this.glass ??= new GlassBlur(d, this.format)).backdrop(enc, view, this.canvas.width, this.canvas.height);
+      pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
     }
     if (glass && caption?.panel) {
       // The picture is done: blur it, lay the panel on, then go on drawing the text.
@@ -407,6 +472,8 @@ class GpuCompositor implements Compositor {
     this.rectBuffer.destroy();
     this.logoBuffer.destroy();
     this.logo?.texture.destroy();
+    this.photo?.texture.destroy();
+    this.photoBuffer.destroy();
     this.placeBuffer.destroy();
     this.coverBuffer.destroy();
     this.auraBuffer.destroy();
@@ -444,6 +511,12 @@ class CanvasCompositor implements Compositor {
     this.blur = on;
   }
 
+  /** The photo over the whole canvas, or the picture as placed. */
+  private drawGround(picture: PhotoFrame | VideoFrame | HTMLVideoElement) {
+    if (isPhoto(picture)) drawCover(this.g, picture.image, this.canvas.width, this.canvas.height);
+    else this.drawPicture(picture);
+  }
+
   /** The picture laid out on the canvas: its backdrop, then its placement. */
   private drawPicture(picture: VideoFrame | HTMLVideoElement) {
     const g = this.g;
@@ -466,8 +539,8 @@ class CanvasCompositor implements Compositor {
     this.g.fillStyle = "#000";
     this.g.fillRect(0, 0, W, H);
     if (isAura(picture)) this.drawAura(picture);
-    else if (pictureReady(picture)) {
-      this.drawPicture(picture);
+    else if (isPhoto(picture) || pictureReady(picture)) {
+      this.drawGround(picture);
       // The frame drawn so far, blurred onto itself and darker, like the glass backdrop.
       if (this.blur && "filter" in this.g) {
         this.g.filter = `blur(${Math.round(Math.min(W, H) * 0.04)}px) brightness(0.7)`;
@@ -507,10 +580,11 @@ class CanvasCompositor implements Compositor {
     g.beginPath();
     g.roundRect(x, y, w, h, Math.min(radius, w / 2, h / 2));
     g.clip();
-    const blurs = "filter" in g && pictureReady(picture);
+    const ground = isPhoto(picture) || pictureReady(picture) ? picture : null;
+    const blurs = "filter" in g && !!ground;
     if (blurs) {
       g.filter = `blur(${Math.round(Math.min(W, H) * 0.03)}px)`;
-      this.drawPicture(picture);
+      this.drawGround(ground);
       g.filter = "none";
     }
     // Without the blur the panel is a plain dark box; a bit darker so text still reads.

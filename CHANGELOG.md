@@ -15,6 +15,10 @@ ses düzeyi kaydırıcısını [vuxenn1](https://github.com/vuxenn1) ekledi. İk
   videonun görüntüsü yerine aura konup yalnızca sesi de kullanılabilir. Oynatıcıda ve altyazılı MP4'te aynı görünür.
 - **Yeni auralar:** Aura'nın yanına Halo, Ufuk, Küre ve Sırtlar geldi; beş renk paleti var (Çini, Gün batımı, Orman,
   Lavanta, Gece). Kadraj ses dosyalarında da çalışır.
+- **Fotoğraf zemin:** **Sahne → Arka plan**'da auraların yanında kendi fotoğrafın da (JPEG, PNG, WebP; örneğin podcast kapağı)
+  kullanılabilir. Kareyi kaplar, taşan kısmı kesilir; **Net** ya da **Bulanık** seçilir. Kinetik tipografi üstünde
+  ince bir perdeyle durur. Fotoğraf logo gibi bu tarayıcıda saklanır, sonraki projelerde de hazırdır; videolarda
+  seçilince videonun yalnızca sesi kullanılır.
 - **Metin seslendir:** Boş ekrandaki **Metin seslendir** ile dosya olmadan yazdığın ya da yapıştırdığın metin yapay
   sesle okunur; kelimeler zamanlarıyla altyazıya ve oynatıcıya yerleşir, aura ya da kinetik tipografiyle videoya
   dönüşür.

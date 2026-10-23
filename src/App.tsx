@@ -3,6 +3,7 @@ import {
   DEFAULT_LOGO,
   DEFAULT_SETTINGS,
   presetById,
+  shownPhoto,
   type CaptionSettings,
 } from "./captions/style";
 import { ExportMenu } from "./components/ExportMenu";
@@ -86,6 +87,7 @@ import { useBurner } from "./lib/useBurner";
 import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
 import { useLogo } from "./lib/logo";
+import { usePhoto } from "./lib/photo";
 import { DEFAULT_KINETIC } from "./render/kinetic";
 import type { LogoLayer } from "./render/logoLayer";
 import { framing, type Crop } from "./lib/crop";
@@ -348,6 +350,10 @@ export function App() {
         : null,
     [logoImage, logoSettings],
   );
+  const { photo: photoImage } = usePhoto();
+  useEffect(() => burner.reset(), [photoImage, burner.reset]);
+  /** The photo, when there is one and this project uses it in place of the aura. */
+  const photo = settings.photo ? (photoImage?.bitmap ?? null) : null;
   const dubber = useDubber();
   const translator = useTranslator();
   const speakerTool = useSpeakers();
@@ -1474,6 +1480,7 @@ export function App() {
         ? { clips: dubbing.clips, original: dubOriginal }
         : null,
       logo,
+      photo,
       `${exportName}${videoSuffix}`,
     );
   };
@@ -1719,6 +1726,7 @@ export function App() {
             videoName={`${exportName}${videoSuffix}`}
             captions={!settings.hidden}
             kinetic={!!settings.kinetic?.on}
+            photo={!!photo && !!shownPhoto(settings, true)}
             meta={{
               file: title,
               model: modelInfo(job.model).spec,
@@ -1959,6 +1967,7 @@ export function App() {
             onCrop={changeCrop}
             cropLocked={burner.state.status === "running"}
             logo={logo}
+            photo={photo}
             size={outputSize}
             bands={job?.bands ?? EMPTY_BANDS}
             loudness={

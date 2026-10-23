@@ -119,6 +119,8 @@ export function useBurner() {
       encode: Encode,
       dub: DubMix | null,
       logo: LogoLayer | null,
+      /** The user's photo, when this project uses it in place of the aura. */
+      photo: ImageBitmap | null,
       name: string,
     ) => {
       // The dialog must open straight from the click, before anything else waits.
@@ -128,8 +130,9 @@ export function useBurner() {
       startedAt.current = performance.now();
       setState({ status: "running", progress: 0, fps: 0, remaining: null });
       const userFont = userFontById(settings.font);
-      // The worker gets its own copy of the logo: the player keeps drawing the original.
+      // The worker gets its own copies of the logo and photo: the player keeps drawing the originals.
       const ownLogo = logo && { ...logo, image: await createImageBitmap(logo.image) };
+      const ownPhoto = photo && (await createImageBitmap(photo));
       const msg: ToRender = {
         type: "burn",
         jobId: id,
@@ -143,10 +146,11 @@ export function useBurner() {
         speakers,
         dub,
         logo: ownLogo,
+        photo: ownPhoto,
         encode,
         handle,
       };
-      ensureWorker().postMessage(msg, ownLogo ? [ownLogo.image] : []);
+      ensureWorker().postMessage(msg, [...(ownLogo ? [ownLogo.image] : []), ...(ownPhoto ? [ownPhoto] : [])]);
     },
     [ensureWorker],
   );

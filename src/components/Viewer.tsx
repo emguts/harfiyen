@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { loadCaptionFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
-import { shownPicture, type CaptionSettings } from "../captions/style";
+import { shownPhoto, shownPicture, type CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
 import { ASPECTS, cropFor, dragCrop, framing, wholeCrop, type Aspect, type Crop } from "../lib/crop";
 import { clock } from "../lib/format";
@@ -16,7 +16,7 @@ import {
   type AuraFrame,
   type AuraLevels,
 } from "../render/aura";
-import { createCompositor, type Compositor } from "../render/compositor";
+import { createCompositor, type Compositor, type PhotoFrame } from "../render/compositor";
 import { backdropFor, KineticRenderer } from "../render/kinetic";
 import type { LogoLayer } from "../render/logoLayer";
 import { CropOverlay } from "./CropOverlay";
@@ -53,6 +53,7 @@ export function Viewer({
   onCrop,
   cropLocked = false,
   logo = null,
+  photo = null,
   size = null,
 }: {
   /** Raw microphone levels while recording (updated in place). */
@@ -84,6 +85,8 @@ export function Viewer({
   cropLocked?: boolean;
   /** The user's logo in its corner; null for none. */
   logo?: LogoLayer | null;
+  /** The user's photo, drawn in place of the aura when the settings pick it; null when there is none. */
+  photo?: ImageBitmap | null;
   /** The size the video is written at, when known; the preview draws at it. */
   size?: { w: number; h: number } | null;
 }) {
@@ -151,6 +154,9 @@ export function Viewer({
 
   // The video's picture as drawn: null when there is none, or it is left out (the file used for its sound).
   const shownPic = shownPicture(settings, isVideo && !live);
+  // Without one, the user's photo may stand in for the aura; the ground is whichever of the two is drawn.
+  const photoPic = shownPic ? null : shownPhoto(settings, !!photo);
+  const ground = shownPic ?? photoPic;
   const ownPicture = isVideo && !live && picture !== AUDIO_FRAME;
   // A video used for its sound is framed as an audio stage is: its aura in a frame of the shape picked.
   const hasPicture = ownPicture && !!shownPic;
@@ -218,10 +224,10 @@ export function Viewer({
     setPickingAspect(false);
   }, [url, cropLocked]);
 
-  // A video's kinetic stage goes over its picture (or its plain ground); an audio project's over the aura.
+  // A video's kinetic stage goes over its picture (or its plain ground); an audio project's over the aura or the photo.
   const kineticSettings = useMemo(
-    () => settings.kinetic && { ...settings.kinetic, backdrop: backdropFor(settings.kinetic, shownPic) },
-    [settings.kinetic, shownPic],
+    () => settings.kinetic && { ...settings.kinetic, backdrop: backdropFor(settings.kinetic, ground) },
+    [settings.kinetic, ground],
   );
   // The stage (and the captions it replaces) follows in a deferred render: building it can take a
   // moment (Fizik works out its whole fall), so the switch shows at once, with "Hazırlanıyor…".
@@ -251,7 +257,7 @@ export function Viewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [words, stageSettings, frame, fontTick, loudness, lang, speakers, !draft, useKinetic],
   );
-  const blurred = shownPic === "blur";
+  const blurred = ground === "blur";
   useEffect(() => compositor?.setBlur(blurred), [compositor, blurred]);
 
   // The loop reads these through refs, so new words (every progress update)
@@ -277,16 +283,17 @@ export function Viewer({
     /** A video frame has been drawn: from then on a seek keeps it up until the new one is decoded. */
     let drawn = false;
     const cropKey = `${placement ? JSON.stringify(placement) : ""}|${shownLogo ? `${shownLogo.corner}${shownLogo.size}${shownLogo.opacity}` : ""}`;
+    const photoFrame: PhotoFrame | null = photoPic && photo ? { kind: "photo", image: photo } : null;
     const loop = () => {
       const dpr = window.devicePixelRatio || 1;
       const fit = Math.min(1, (st.clientWidth * dpr) / frame.w, (st.clientHeight * dpr) / frame.h);
       const w = Math.max(2, Math.round(frame.w * fit));
       const h = Math.max(2, Math.round(frame.h * fit));
       const t = el && !live ? el.currentTime : liveRef.current;
-      // No picture (or a video used for its sound): the aura. It follows the media clock (so the export
-      // matches); while recording it drifts with the wall clock instead.
+      // No picture (or a video used for its sound) and no photo: the aura. It follows the media clock (so
+      // the export matches); while recording it drifts with the wall clock instead.
       let aura: AuraFrame | null = null;
-      if (!shownPic) {
+      if (!ground) {
         let levels = levelsAt(bandsRef.current, t);
         const raw = live ? liveLevels?.current : null;
         if (raw) {
@@ -320,21 +327,21 @@ export function Viewer({
       const key = aura
         ? `${w}x${h}|${aura.time}|${aura.palette}|${aura.style}|${bandsRef.current.length}|${cap ? `${cap.key}|${cap.scale}` : ""}`
         : `${w}x${h}|${t}|${el?.readyState}|${cropKey}|${cap ? `${cap.key}|${cap.scale}` : ""}`;
-      const video = !aura && isVideo && el ? (el as HTMLVideoElement) : null;
+      const video = !aura && !photoFrame && isVideo && el ? (el as HTMLVideoElement) : null;
       // While scrubbing, the element has no frame (readyState < 2) until the
       // seek lands; drawing then would flash black, so the last frame stays.
       const waiting = !!video && drawn && video.readyState < 2;
       if (key !== last && !waiting) {
         last = key;
         compositor.resize(w, h);
-        compositor.render(aura ?? video, cap);
+        compositor.render(aura ?? photoFrame ?? video, cap);
         if (video && video.readyState >= 2) drawn = true;
       }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo, blurred, shownPic]);
+  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo, blurred, ground, photoPic, photo]);
 
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === stage.current);
