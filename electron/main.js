@@ -5,15 +5,15 @@
 //
 // The built app is served from https://app.harfiyen.localhost, answered here and
 // never sent to the network. A real https origin, not a custom scheme, because
-// the Cache API that keeps downloaded models (src/worker/modelStore.ts) only
-// accepts http(s) URLs. The origin is fixed, so projects and models stored by
-// the page survive restarts.
+// some web storage APIs (the Cache API among them) only accept http(s) URLs. The
+// origin is fixed, so projects stored by the page survive restarts. Models are
+// kept by this process, in a folder the dev server's page shares (models.js).
 
 import { existsSync, statSync } from "node:fs";
 import { extname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { BrowserWindow, app, dialog, net, protocol, shell } from "electron";
-import { fetchModel, isModelPath } from "./models.js";
+import { isModelPath, serveModel } from "./models.js";
 import { setupUpdater } from "./updater.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -54,9 +54,9 @@ function fileFor(pathname) {
 
 async function serve(req) {
   const { pathname } = new URL(req.url);
-  // Installed builds carry no models (see models.js); a dist/models copy still wins.
+  // Installed builds carry no models: they live in the shared store (see models.js). A dist/models copy still wins.
   if (isModelPath(pathname) && !existsSync(join(dist, decodeURIComponent(pathname)))) {
-    return fetchModel(req, pathname, isolation);
+    return serveModel(req, pathname, isolation, join(dist, "models"));
   }
   const file = fileFor(pathname);
   if (!file) return new Response("Not found", { status: 404, headers: isolation });
@@ -75,7 +75,18 @@ async function start() {
     const server = await createServer({ root, configFile: join(root, "vite.config.ts") });
     await server.listen();
     app.on("will-quit", () => void server.close());
-    return server.resolvedUrls.local[0];
+    const url = server.resolvedUrls.local[0];
+    // Models the dev server does not have in public/ come from the same store the built app uses.
+    const { protocol: scheme, host } = new URL(url);
+    const pub = join(root, "public");
+    protocol.handle(scheme.slice(0, -1), (req) => {
+      const { host: h, pathname } = new URL(req.url);
+      if (h === host && isModelPath(pathname) && !existsSync(join(pub, decodeURIComponent(pathname)))) {
+        return serveModel(req, pathname, isolation, join(pub, "models"));
+      }
+      return net.fetch(req, { bypassCustomProtocolHandlers: true });
+    });
+    return url;
   }
   if (!existsSync(join(dist, "index.html"))) {
     dialog.showErrorBox("Harfiyen", `Derlenmiş uygulama bulunamadı:\n${dist}${sep}index.html\n\nÖnce 'npm run build' çalıştır.`);

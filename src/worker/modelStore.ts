@@ -10,8 +10,18 @@
 // as soon as it arrives, so a download cut short resumes at its first missing
 // part with a Range request. Smaller files, and those stored whole before
 // parts existed, are one entry (`?size=N`).
+//
+// The desktop app keeps no Cache API copy: its main process stores the files on
+// disk, shared by the dev server and the built app (electron/models.js), and
+// answers /models/... from there. Here they are then fetched every time, which
+// reads them from disk; /models/.store lists them and DELETE removes one.
 
 const CACHE_NAME = "seda-models-v1";
+
+/** Running in the desktop app (also in its workers). */
+export const desktop = typeof navigator !== "undefined" && /\bElectron\//.test(navigator.userAgent);
+
+const STORE_LIST = "/models/.store";
 
 /** Files larger than this are stored in parts of this size. */
 const PART = 32 * 1024 * 1024;
@@ -27,6 +37,7 @@ export interface FileRequest {
 export type Progress = (loaded: number, total: number, fromCache: boolean) => void;
 
 async function openCache(): Promise<Cache | null> {
+  if (desktop) return null;
   try {
     return typeof caches === "undefined" ? null : await caches.open(CACHE_NAME);
   } catch {
@@ -80,8 +91,23 @@ async function dropAll(cache: Cache, f: FileRequest) {
   for (const e of await entriesOf(cache, f)) await cache.delete(e.key);
 }
 
+/** The desktop app's stored files, as cache entries. */
+async function listDisk(): Promise<CachedFile[]> {
+  const res = await fetch(STORE_LIST, { cache: "no-store" });
+  if (!res.ok) return [];
+  const files: { path: string; size: number }[] = await res.json();
+  return files.map(({ path, size }) => {
+    const url = new URL(path, location.href).href;
+    return { url, size, part: null, bytes: size, key: url };
+  });
+}
+
 /** True if every file is in the cache, in any version (works on the page too). */
 export async function allCached(urls: string[]): Promise<boolean> {
+  if (desktop) {
+    const have = new Set((await listDisk()).map((e) => e.url));
+    return urls.every((u) => have.has(new URL(u, location.href).href));
+  }
   const cache = await openCache();
   if (!cache) return false;
   for (const url of urls) if (!complete(await entriesOf(cache, { url, size: 0 }))) return false;
@@ -271,6 +297,8 @@ export async function fetchAll(files: FileRequest[], onProgress: Progress): Prom
   async function download(f: FileRequest, key: string, reload: boolean): Promise<Uint8Array> {
     const res = await fetch(f.url, reload ? { cache: "reload" } : undefined);
     if (!res.ok) throw new Error(`${f.url}: HTTP ${res.status}`);
+    // In the desktop app only a file its store has to download is a download; the rest is read from disk.
+    if (!desktop || res.headers.get("X-Model-Store") === "miss") allCached = false;
     // The cache gets its own copy of the stream instead of the finished buffer.
     let body = res;
     let stored: Promise<void> = Promise.resolve();
@@ -291,7 +319,7 @@ export async function fetchAll(files: FileRequest[], onProgress: Progress): Prom
     const b = await readWithProgress(body, f.size, (n) => {
       got += n;
       loaded += n;
-      onProgress(Math.min(loaded, total), total, false);
+      onProgress(Math.min(loaded, total), total, allCached);
     });
     // Some servers report a different size (compression); settle the count.
     loaded += f.size - got;
@@ -321,7 +349,6 @@ export async function fetchAll(files: FileRequest[], onProgress: Progress): Prom
         }, { countStored: true, out });
         return out;
       }
-      allCached = false;
       let b = await download(f, key, false);
       let why = bytesProblem(f, b);
       if (why) {
@@ -345,14 +372,78 @@ export async function fetchAll(files: FileRequest[], onProgress: Progress): Prom
 // ---- managed from the page (settings) ----
 
 export async function listCached(): Promise<CachedFile[]> {
+  if (desktop) return listDisk();
   const cache = await openCache();
   if (!cache) return [];
   return (await cache.keys()).map((req) => parseKey(req.url));
 }
 
 export async function removeCached(keys: string[]): Promise<void> {
+  if (desktop) {
+    for (const k of keys) await fetch(k, { method: "DELETE" });
+    return;
+  }
   const cache = await openCache();
   if (cache) for (const k of keys) await cache.delete(k);
+}
+
+/** storeFile in the desktop app: reading the file through makes its store keep it. */
+async function storeOnDisk(f: FileRequest, onBytes: (n: number) => void, signal?: AbortSignal) {
+  for (const retry of [false, true]) {
+    const res = await fetch(f.url, { signal, cache: "no-store" });
+    if (!res.ok || !res.body) throw new Error(`${fileName(f)}: HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    let size = 0;
+    let first: number | undefined;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      first ??= value[0];
+      size += value.length;
+      onBytes(value.length);
+    }
+    const why = problem(f, size, first);
+    if (!why) return;
+    await fetch(f.url, { method: "DELETE" });
+    onBytes(-size);
+    if (retry) throw new Error(`${fileName(f)} indirilemedi: ${why}.`);
+  }
+}
+
+/**
+ * The desktop app once kept models in the Cache API, a copy per origin. Its
+ * complete files are handed to the disk store piece by piece, then the cache
+ * is deleted. Runs once per origin, on the page.
+ */
+export async function moveCacheToDisk(): Promise<void> {
+  if (!desktop || typeof caches === "undefined" || !(await caches.has(CACHE_NAME))) return;
+  const cache = await caches.open(CACHE_NAME);
+  const byFile = new Map<string, CachedFile[]>();
+  for (const req of await cache.keys()) {
+    const e = parseKey(req.url);
+    if (new URL(e.url).pathname.startsWith("/models/")) byFile.set(e.url, [...(byFile.get(e.url) ?? []), e]);
+  }
+  const onDisk = new Set((await listDisk()).map((e) => e.url));
+  for (const [url, entries] of byFile) {
+    if (onDisk.has(url) || !complete(entries)) continue;
+    const whole = entries.find((e) => e.part === null);
+    const sizes = [...new Set(entries.map((e) => e.size))];
+    const size = whole?.size ?? sizes.find((s) => complete(entries.filter((e) => e.size === s)))!;
+    const pieces = whole ? [whole] : entries.filter((e) => e.size === size).sort((a, b) => a.part! - b.part!);
+    try {
+      for (const e of pieces) {
+        const hit = await cache.match(e.key);
+        if (!hit) throw new Error("eksik");
+        const body = await hit.arrayBuffer();
+        const offset = e.part === null ? 0 : e.part * PART;
+        const res = await fetch(`${url}?offset=${offset}&total=${size}`, { method: "PUT", body });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      }
+    } catch {
+      // Left to be downloaded again.
+    }
+  }
+  await caches.delete(CACHE_NAME);
 }
 
 /**
@@ -362,6 +453,7 @@ export async function removeCached(keys: string[]): Promise<void> {
  * cache. `onBytes` counts new bytes only, and may go negative on a retry.
  */
 export async function storeFile(f: FileRequest, onBytes: (n: number) => void, signal?: AbortSignal): Promise<void> {
+  if (desktop) return storeOnDisk(f, onBytes, signal);
   const cache = await openCache();
   if (!cache) throw new Error("Bu tarayıcı dosya saklamaya izin vermiyor.");
   if (isParted(f)) {
