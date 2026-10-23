@@ -1,4 +1,4 @@
-// Hand-edited word times (src/lib/timing.ts), without a model.
+// Hand-edited word times (src/lib/timing.ts), without a model. Adapted from emguts/harfiyen.
 //
 //   npx tsx tests/timing.node.ts
 //
@@ -36,7 +36,19 @@ const times = (ws: Word[]) => ws.map((w) => `${w.start}-${w.end}`).join(" ");
 }
 {
   const out = retime(words, 3, 1, 2.8, 3.5);
-  check("tek kelime", out[3].start === 2.8 && out[3].end === 3.5 && out[2].end === 2.5);
+  check("tek kelime", out[3].start === 2.8 && out[3].end === 3.5, times(out));
+  check("bitişik önceki kelime sınırı izler", out[2].start === 2 && out[2].end === 2.8, times(out));
+}
+{
+  // Most transcribed words touch: a start must still move earlier, taking the boundary along.
+  const out = retime(words, 3, 1, 2.3, 3);
+  check("bitişik kelimede başlangıç geri alınır", out[3].start === 2.3 && out[2].end === 2.3, times(out));
+  const tight = retime(words, 3, 1, 1, 3);
+  check("önceki kelime en kısa süresinde durur", tight[2].start === 2 && tight[2].end === 2.05 && tight[3].start === 2.05, times(tight));
+  const later = retime(words, 2, 1, 2, 2.7);
+  check("bitişik sonraki kelime sınırı izler", later[2].end === 2.7 && later[3].start === 2.7 && later[3].end === 3, times(later));
+  const gap = retime(words, 2, 1, 1.5, 2.5);
+  check("aradaki boşluk korunur, önceki satır değişmez", gap[2].start === 1.5 && gap[1] === words[1], times(gap));
 }
 {
   const out = shiftSpan(words, 2, 2, 0.4);

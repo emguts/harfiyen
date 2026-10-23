@@ -1,25 +1,37 @@
-// Pasted song lyrics, timed from a transcription of the song. Whisper mishears
-// sung words, but where it hears them is mostly right: the lyrics are matched
-// to the transcribed words (global alignment, words compared by spelling), a
-// lyric word takes the time of the word it matched, and the words in between
-// share the time around them. Each lyric line becomes a caption line.
+// A pasted text timed from a transcription of the same audio: song lyrics, a
+// speech's script, a poem read aloud. The transcript mishears words, but where
+// it hears them is mostly right: the text's words are matched to the
+// transcribed ones (global alignment, words compared by spelling), a matched
+// word takes the time of the word it matched, and the words in between share
+// the time around them. With `lines`, each line of the text becomes a caption
+// line.
+//
+// Adapted from emguts/harfiyen (sarki-ozellikleri branch, src/lib/lyrics.ts).
 
 import type { Word } from "../engine";
 
-/** Cost of a lyric word with no transcribed word, and of a transcribed word with no lyric word. */
-const GAP_LYRIC = 0.5;
+/** Cost of a text word with no transcribed word, and of a transcribed word with no text word. */
+const GAP_TEXT = 0.5;
 const GAP_HEARD = 0.5;
 /** Spellings less alike than this are different words. */
 const MIN_SIM = 0.5;
 /** Seconds an unmatched word gets: a base plus a little per letter. */
 const WORD_BASE = 0.22;
 const WORD_PER_CHAR = 0.05;
+/** No one says or sings words faster than this, seconds per word. */
+const MIN_WORD = 0.15;
+/**
+ * Long texts are matched this many words at a time, each block against the
+ * transcript from where the one before it ended: a one-hour talk would
+ * otherwise compare every word with every word.
+ */
+const BLOCK = 400;
 
 /**
- * Lines of pasted lyrics, as words. Blank lines, section tags such as
- * "[Chorus]" or "(x2)" on a line of their own, and music notes are skipped.
+ * Lines of the text, as words. Blank lines, section tags such as "[Nakarat]"
+ * or "(x2)" on a line of their own, and music notes are skipped.
  */
-export function lyricLines(text: string): string[][] {
+export function textLines(text: string): string[][] {
   return text
     .replace(/\r\n?/g, "\n")
     .split("\n")
@@ -27,6 +39,13 @@ export function lyricLines(text: string): string[][] {
     .filter((l) => l && !/^[[(].*[\])]$/.test(l))
     .map((l) => l.split(/\s+/).filter((w) => w && !/^[-–—♪♫]+$/.test(w)))
     .filter((ws) => ws.length > 0);
+}
+
+/** Short lines (lyrics, a poem) are caption lines; paragraphs are not. */
+export function looksLined(text: string): boolean {
+  const lines = textLines(text);
+  if (lines.length < 2) return false;
+  return lines.reduce((n, l) => n + l.length, 0) / lines.length <= 12;
 }
 
 /** Letters and digits only, lower case, without accents; Turkish dotless i is i. */
@@ -58,29 +77,38 @@ export function similarity(a: string, b: string) {
 }
 
 /**
- * For each lyric word, the index of the transcribed word it matched, or -1.
- * Transcribed words before the first and after the last lyric word are free
- * to skip (talk, an intro, Whisper repeating itself at the end).
+ * For each text word, the index of the transcribed word it matched, or -1.
+ * Words are normalized. Transcribed words before the first and after the
+ * last text word are free to skip (talk, an intro, Whisper repeating itself
+ * at the end).
  */
-export function matchWords(lyrics: string[], heard: string[]): number[] {
-  const N = lyrics.length;
-  const M = heard.length;
+function matchNormalized(a: string[], b: string[]): number[] {
+  const N = a.length;
+  const M = b.length;
   const W = M + 1;
+  // Speech says the same words again and again: each pair is compared once.
+  const seen = new Map<string, number>();
+  const sim = (x: string, y: string) => {
+    // Lengths this far apart cannot reach MIN_SIM.
+    if (Math.min(x.length, y.length) < MIN_SIM * Math.max(x.length, y.length)) return 0;
+    const key = `${x}\0${y}`;
+    let v = seen.get(key);
+    if (v === undefined) seen.set(key, (v = similarity(x, y)));
+    return v;
+  };
   const score = new Float32Array((N + 1) * W);
-  // 0: match, 1: lyric word unmatched (up), 2: transcribed word skipped (left).
+  // 0: match, 1: text word unmatched (up), 2: transcribed word skipped (left).
   const move = new Uint8Array((N + 1) * W);
-  const a = lyrics.map(normalize);
-  const b = heard.map(normalize);
   for (let j = 1; j <= M; j++) move[j] = 2; // Free leading skips: score stays 0.
   for (let i = 1; i <= N; i++) {
-    score[i * W] = -GAP_LYRIC * i;
+    score[i * W] = -GAP_TEXT * i;
     move[i * W] = 1;
     for (let j = 1; j <= M; j++) {
-      // Words spelled too differently never match: a part sung in another
-      // language must not claim lyric lines just because skipping costs more.
-      const sim = similarity(a[i - 1], b[j - 1]);
-      const diag = sim >= MIN_SIM ? score[(i - 1) * W + j - 1] + 2 * sim - 1 : -Infinity;
-      const up = score[(i - 1) * W + j] - GAP_LYRIC;
+      // Words spelled too differently never match: a part in another language
+      // must not claim lines just because skipping costs more.
+      const s = sim(a[i - 1], b[j - 1]);
+      const diag = s >= MIN_SIM ? score[(i - 1) * W + j - 1] + 2 * s - 1 : -Infinity;
+      const up = score[(i - 1) * W + j] - GAP_TEXT;
       const left = score[i * W + j - 1] - GAP_HEARD;
       let best = diag;
       let m = 0;
@@ -104,22 +132,43 @@ export function matchWords(lyrics: string[], heard: string[]): number[] {
   return out;
 }
 
+/**
+ * For each text word, the index of the transcribed word it matched, or -1.
+ * The first block is looked for in the whole transcript (the text may start
+ * after a long intro); each later one from where the one before it ended.
+ */
+export function matchWords(text: string[], heard: string[]): number[] {
+  const a = text.map(normalize);
+  const b = heard.map(normalize);
+  const out: number[] = [];
+  let from = 0;
+  for (let k = 0; k < a.length; k += BLOCK) {
+    const part = a.slice(k, k + BLOCK);
+    const to = k === 0 ? b.length : Math.min(b.length, from + 2 * part.length + 200);
+    const m = matchNormalized(part, b.slice(from, to));
+    let last = -1;
+    for (const j of m) {
+      out.push(j < 0 ? -1 : j + from);
+      if (j >= 0) last = j + from;
+    }
+    if (last >= 0) from = last + 1;
+  }
+  return out;
+}
+
 const length = (w: string) => WORD_BASE + WORD_PER_CHAR * normalize(w).length;
 
-/** No one sings faster than this, seconds per word. */
-const MIN_WORD = 0.15;
-
 /**
- * Drops matches that would squeeze the lyric words between them into too
- * little time: short common words ("we", "the") match anywhere, and a few
+ * Drops matches that would squeeze the text words between them into too
+ * little time: short common words ("ve", "bir") match anywhere, and a few
  * heard in an intro can pull lines from all over the song into one second.
  * Keeps the chain of matches with the most weight (longer, closer spellings
  * weigh more) in which the words between every two matches fit. In place.
  */
-export function keepPlausible(match: number[], lyrics: string[], heard: Word[]) {
+export function keepPlausible(match: number[], text: string[], heard: Word[]) {
   const at = match.flatMap((j, i) => (j >= 0 ? [i] : []));
   const weight = at.map((i) => {
-    const a = normalize(lyrics[i]);
+    const a = normalize(text[i]);
     return similarity(a, normalize(heard[match[i]].text)) * Math.min(a.length, 8);
   });
   const fits = (p: number, q: number) =>
@@ -143,34 +192,45 @@ export function keepPlausible(match: number[], lyrics: string[], heard: Word[]) 
   for (const i of at) if (!keep.has(i)) match[i] = -1;
 }
 
-/** Timed lyric words, and which of them got their time from evidence (a matched word, a tap). */
-export interface LyricTiming {
-  words: Word[];
-  anchored: boolean[];
-}
-
 interface Parsed {
   words: string[];
-  lineOf: number[];
+  /** Per word, the line (or, without lines, the sentence) it belongs to. */
+  groupOf: number[];
+  /** Words that start a caption line. */
   firsts: Set<number>;
-  lines: string[][];
 }
 
-function parse(text: string): Parsed {
-  const lines = lyricLines(text);
-  const words = lines.flat();
-  if (!words.length) throw new Error("Yapıştırılan metinde söz bulunamadı.");
+/**
+ * The units a text is timed by hand in: its lines with `lines`, else its
+ * sentences (a paragraph's lines mean nothing). One tap starts each.
+ */
+export function textUnits(text: string, lines: boolean): string[][] {
+  const p = parse(text, lines);
+  const units: string[][] = [];
+  p.words.forEach((w, i) => (units[p.groupOf[i]] ??= []).push(w));
+  return units;
+}
+
+function parse(text: string, lines: boolean): Parsed {
+  const ls = textLines(text);
+  const words = ls.flat();
+  if (!words.length) throw new Error("Yapıştırılan metinde kelime bulunamadı.");
   const firsts = new Set<number>();
-  lines.reduce((at, l) => (firsts.add(at), at + l.length), 0);
-  return { words, lineOf: lines.flatMap((l, n) => l.map(() => n)), firsts, lines };
+  if (lines) ls.reduce((at, l) => (firsts.add(at), at + l.length), 0);
+  // Without lines, unheard words keep to their sentence instead.
+  let group = 0;
+  const groupOf = lines
+    ? ls.flatMap((l, n) => l.map(() => n))
+    : words.map((_, i) => (i > 0 && /[.?!…]["'”’)]*$/.test(words[i - 1]) ? ++group : group));
+  return { words, groupOf, firsts };
 }
 
 /**
  * Times for the words that have none (NaN), from the ones around them. Nothing
- * says where unheard words were sung, and a gap may hold a part not in the
- * lyrics (another language, an instrumental), so they are not spread over it:
+ * says where unheard words were said, and a gap may hold a part not in the
+ * text (another language, an instrumental), so they are not spread over it:
  * the words of the next timed word's line go just before it, the rest follow
- * the previous timed word at singing pace or, at the start, `startAt`.
+ * the previous timed word at speaking pace or, at the start, `startAt`.
  */
 function fill(out: Word[], p: Parsed, startAt: number) {
   const need = (ns: number[]) => ns.reduce((s, n) => s + length(p.words[n]), 0);
@@ -186,7 +246,7 @@ function fill(out: Word[], p: Parsed, startAt: number) {
     const next = k < out.length ? out[k] : null;
     const run = Array.from({ length: k - i }, (_, n) => i + n);
     const total = need(run);
-    const before = next ? run.filter((n) => p.lineOf[n] === p.lineOf[k]) : [];
+    const before = next ? run.filter((n) => p.groupOf[n] === p.groupOf[k]) : [];
     const after = run.filter((n) => !before.includes(n));
     const from = prev ? prev.end : Math.max(0, Math.min(startAt, (next?.start ?? 0) - total));
     const to = next ? next.start : from + total;
@@ -213,17 +273,30 @@ function fill(out: Word[], p: Parsed, startAt: number) {
   }
 }
 
-/** Lyric words with the times of the transcribed words they match (NaN for the rest). */
+/** Timed text words, and which of them got their time from a matched word. */
+export interface TextTiming {
+  words: Word[];
+  anchored: boolean[];
+}
+
+/**
+ * The text as timed words: matched words take their transcribed word's time,
+ * the others are laid out next to the matched words around them (with their
+ * own line's matched word where there is one) and squeezed in when the gap is
+ * short. With `lines`, the first word of each line starts a caption line.
+ */
+/** The text's words, untimed (NaN), the first of each line marked when `lines`. */
+const blank = (p: Parsed): Word[] =>
+  p.words.map((t, i) => (p.firsts.has(i) ? { text: t, start: NaN, end: NaN, cue: true } : { text: t, start: NaN, end: NaN }));
+
+/** Text words `idx` take the times of the transcribed words they match. */
 function timesFromHeard(p: Parsed, idx: number[], heard: Word[], out: Word[], anchored: boolean[]) {
+  const text = idx.map((i) => p.words[i]);
   const match = matchWords(
-    idx.map((i) => p.words[i]),
+    text,
     heard.map((w) => w.text),
   );
-  keepPlausible(
-    match,
-    idx.map((i) => p.words[i]),
-    heard,
-  );
+  keepPlausible(match, text, heard);
   match.forEach((j, n) => {
     if (j < 0) return;
     Object.assign(out[idx[n]], { start: heard[j].start, end: heard[j].end });
@@ -231,21 +304,8 @@ function timesFromHeard(p: Parsed, idx: number[], heard: Word[], out: Word[], an
   });
 }
 
-const blank = (p: Parsed): Word[] =>
-  p.words.map((text, i) => {
-    const w: Word = { text, start: NaN, end: NaN };
-    if (p.firsts.has(i)) w.cue = true;
-    return w;
-  });
-
-/**
- * The lyrics as timed words: matched words take their transcribed word's
- * time, the others are laid out next to the matched words around them (with
- * their own line's matched word where there is one) and squeezed in when the
- * gap is short. The first word of each line starts a caption line.
- */
-export function roughAlign(heard: Word[], text: string): LyricTiming {
-  const p = parse(text);
+export function alignText(heard: Word[], text: string, { lines }: { lines: boolean }): TextTiming {
+  const p = parse(text, lines);
   const out = blank(p);
   const anchored = p.words.map(() => false);
   timesFromHeard(
@@ -255,28 +315,28 @@ export function roughAlign(heard: Word[], text: string): LyricTiming {
     out,
     anchored,
   );
-  if (!anchored.some(Boolean)) throw new Error("Sözler dökümle eşleşmedi; doğru şarkı ve dil mi?");
+  if (!anchored.some(Boolean)) throw new Error("Metin dökümle eşleşmedi; doğru dosya ve dil mi?");
   fill(out, p, heard[0]?.start ?? 0);
   return { words: out, anchored };
 }
 
-export const alignLyrics = (heard: Word[], text: string) => roughAlign(heard, text).words;
-
 /**
- * Lyrics timed by hand: `taps[n]` is when line n starts (the user pressed a
- * key as it began). Within a line, words take the times of the transcribed
- * words heard between its tap and the next; lines after the last tap follow
- * it at singing pace.
+ * The text timed by hand: `taps[n]` is when unit n (a line, or without
+ * lines a sentence; see textUnits) starts, as the user pressed a key when it
+ * began. Within a unit, words take the times of the transcribed words heard
+ * between its tap and the next; units after the last tap follow it at
+ * speaking pace. From emguts/harfiyen.
  */
-export function tapAlign(heard: Word[], text: string, taps: number[]): LyricTiming {
-  const p = parse(text);
-  if (!taps.length) throw new Error("Hiç dize işaretlenmedi.");
+export function tapAlign(heard: Word[], text: string, taps: number[], { lines }: { lines: boolean }): TextTiming {
+  const p = parse(text, lines);
+  if (!taps.length) throw new Error("Hiç işaret konmadı.");
   const out = blank(p);
   const anchored = p.words.map(() => false);
-  const firstOf = [...p.firsts].sort((a, b) => a - b);
-  taps.slice(0, p.lines.length).forEach((t, n) => {
+  const members: number[][] = [];
+  p.groupOf.forEach((g, i) => (members[g] ??= []).push(i));
+  taps.slice(0, members.length).forEach((t, n) => {
     const end = taps[n + 1] ?? Infinity;
-    const idx = p.words.flatMap((_, i) => (p.lineOf[i] === n ? [i] : []));
+    const idx = members[n];
     timesFromHeard(
       p,
       idx,
@@ -284,15 +344,17 @@ export function tapAlign(heard: Word[], text: string, taps: number[]): LyricTimi
       out,
       anchored,
     );
-    // The tap is when the line starts, whatever was heard.
-    const f = out[firstOf[n]];
+    // The tap is when the unit starts, whatever was heard.
+    const f = out[idx[0]];
     const fEnd = isNaN(f.end) ? t + length(f.text) : Math.min(Math.max(f.end, t + 0.1), end);
     Object.assign(f, { start: t, end: fEnd });
-    anchored[firstOf[n]] = true;
-    // Heard words before the tap, or past the next one, do not belong to this line.
-    for (const i of idx) if (i !== firstOf[n] && anchored[i] && (out[i].start < t || out[i].end > end)) {
-      Object.assign(out[i], { start: NaN, end: NaN });
-      anchored[i] = false;
+    anchored[idx[0]] = true;
+    // Heard words before the tap, or past the next one, do not belong to this unit.
+    for (const i of idx.slice(1)) {
+      if (anchored[i] && (out[i].start < t || out[i].end > end)) {
+        Object.assign(out[i], { start: NaN, end: NaN });
+        anchored[i] = false;
+      }
     }
   });
   fill(out, p, taps[0]);
@@ -305,15 +367,21 @@ const SPAN_MAX = 29;
 const SPAN_PAD = 1;
 
 /**
- * Stretches of audio to time the lyrics in, a few lines each. A line with a
- * timed word is looked for around its words; a line without one anywhere
- * between the timed words around it (at most SPAN_MAX from the earlier).
- * `first`..`last`: the lyric words of the span.
+ * Stretches of audio to time the text in ("Sesle ince ayar"), a few lines
+ * each. A line with a matched word is looked for around its words; a line
+ * without one anywhere between the matched words around it (at most SPAN_MAX
+ * from the earlier). Without caption lines, sentences stand in for lines.
+ * `first`..`last`: the text words of the span.
  */
-export function planSpans(t: LyricTiming, duration: number): { start: number; end: number; first: number; last: number }[] {
+export function planSpans(t: TextTiming, duration: number): { start: number; end: number; first: number; last: number }[] {
   const { words, anchored } = t;
   const lines: { first: number; last: number }[] = [];
-  words.forEach((w, i) => (w.cue || !lines.length ? lines.push({ first: i, last: i }) : (lines[lines.length - 1].last = i)));
+  const lined = words.some((x) => x.cue);
+  words.forEach((w, i) => {
+    const starts = w.cue || !lines.length || (!lined && /[.?!…]["'”’)]*$/.test(words[i - 1].text));
+    if (starts) lines.push({ first: i, last: i });
+    else lines[lines.length - 1].last = i;
+  });
   const prevTimed = (i: number) => {
     for (let k = i - 1; k >= 0; k--) if (anchored[k]) return words[k].end;
     return 0;
@@ -353,12 +421,12 @@ export function planSpans(t: LyricTiming, duration: number): { start: number; en
 const TRUST = 2;
 
 /**
- * The lyrics with the times Whisper found in the audio, span by span. A span
- * whose new times stray from the evidence it had (matched words, taps) keeps
- * the old ones; so does a span Whisper could not align.
+ * The text with the times Whisper found in the audio, span by span. A span
+ * whose new times stray from the evidence it had (matched words) keeps the
+ * old ones; so does a span Whisper could not align.
  */
 export function applySpans(
-  t: LyricTiming,
+  t: TextTiming,
   spans: { first: number; last: number }[],
   found: ({ start: number; end: number }[] | null)[],
 ): Word[] {

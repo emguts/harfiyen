@@ -36,8 +36,9 @@ Duyu-small to public/models/duyu-small/:
 Whisper large-v3 turbo to public/models/whisper-large-v3-turbo/, and the three text-to-speech models for
 dubbing: EMA Lightning to public/models/ema-lightning/, Antalia Mini to public/models/antalia-mini/, Ahenk Cep
 to public/models/ahenk-cep/ and Supertonic 3 (English and Turkish) to public/models/supertonic-3/,
-and the translation models, Turkish -> English to public/models/opus-mt-tc-big-tr-en/ and English -> Turkish
-to public/models/opus-mt-tc-big-en-tr/, and Mel-Band RoFormer, the vocal separation of music mode, to
+the translation models, Turkish -> English to public/models/opus-mt-tc-big-tr-en/ and English -> Turkish
+to public/models/opus-mt-tc-big-en-tr/, the speaker model that tells voices apart to
+public/models/3dspeaker-campplus/, and Mel-Band RoFormer, the vocal separation of music mode, to
 public/models/mel-roformer/.
 
 Usage:  python scripts/prepare_models.py [--src DIR]
@@ -716,6 +717,27 @@ def prepare_mini() -> None:
     (MINI_OUT / "model.json").write_text(json.dumps(mini, ensure_ascii=False, indent=2))
     print(f"antalia mini: {sum(mini['files'].values()) / 1e6:.0f} MB")
 
+SPEAKERS_URL = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models"
+SPEAKERS_OUT = ROOT / "public" / "models" / "3dspeaker-campplus"
+# 3D-Speaker's CAM++ (modelscope iic/speech_campplus_sv_zh_en_16k-common_advanced, Apache-2.0), as sherpa-onnx
+# exported it: a 192-dim voice print from 80-dim fbank. Chinese and English training data, but voices are
+# told apart the same in any language. Release files are not changed once published.
+SPEAKERS_SRC = "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
+
+
+def prepare_speakers() -> None:
+    """The voice print model that tells the speakers of a recording apart."""
+    SPEAKERS_OUT.mkdir(parents=True, exist_ok=True)
+    p = SPEAKERS_OUT / "campplus.onnx"
+    if not p.exists():
+        print("download", f"{SPEAKERS_URL}/{SPEAKERS_SRC}")
+        urllib.request.urlretrieve(f"{SPEAKERS_URL}/{SPEAKERS_SRC}", str(p) + ".part")
+        os.replace(str(p) + ".part", p)
+    m = {"name": "3dspeaker-campplus", **meta(p), "files": {"campplus.onnx": p.stat().st_size}}
+    (SPEAKERS_OUT / "model.json").write_text(json.dumps(m, ensure_ascii=False, indent=2))
+    print(f"speakers: {p.stat().st_size / 1e6:.0f} MB")
+
+
 AHENK_URL = (
     "https://huggingface.co/ozgurguler/ahenk-cep-tr/resolve/345c4cbb934815fa96ffd0d5061fd913237544bc/onnx"
 )
@@ -888,6 +910,7 @@ def main() -> None:
     ap.add_argument("--supertonic-only", action="store_true", help="only (re)build Supertonic 3")
     ap.add_argument("--formatter-only", action="store_true", help="only (re)build seda-v0.2's formatter")
     ap.add_argument("--vocals-only", action="store_true", help="only download the vocal separation model")
+    ap.add_argument("--speakers-only", action="store_true", help="only download the speaker model")
     args = ap.parse_args()
     duyu_cache = args.src.parent / "duyu-small"
     supertonic_cache = args.src.parent / "supertonic-3"
@@ -914,6 +937,9 @@ def main() -> None:
         return
     if args.supertonic_only:
         prepare_supertonic(supertonic_cache)
+        return
+    if args.speakers_only:
+        prepare_speakers()
         return
     if args.formatter_only:
         args.src.mkdir(parents=True, exist_ok=True)
@@ -942,6 +968,7 @@ def main() -> None:
     prepare_supertonic(supertonic_cache)
     prepare_mts(args.src.parent)
     prepare_vocals()
+    prepare_speakers()
 
 
 if __name__ == "__main__":

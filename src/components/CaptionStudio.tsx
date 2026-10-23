@@ -9,8 +9,8 @@ import {
   type CaptionSettings,
 } from "../captions/style";
 import { addFontFile, removeFont, useUserFonts } from "../captions/userFonts";
+import type { GroundPreview } from "../lib/groundPreview";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
-import { AURA_PALETTES, paletteById, type AuraPaletteId } from "../render/aura";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import { LogoSection } from "./LogoSection";
 import { StylePicker } from "./StylePicker";
@@ -88,15 +88,24 @@ const BACKGROUNDS = [
 
 export function CaptionStudio({
   settings,
+  ground,
   onChange,
   disabled,
   lang = TRANSCRIPT_LANG,
+  onScene,
+  speakerCount = 0,
 }: {
   settings: CaptionSettings;
+  /** The project's ground, behind the style cards. */
+  ground?: GroundPreview;
   onChange: (s: CaptionSettings) => void;
   disabled?: boolean;
   /** The captions' language; decides how they are uppercased. */
   lang?: string;
+  /** Opens the Sahne tab, where captions are turned on or off. */
+  onScene: () => void;
+  /** How many speakers the open transcript tells apart; their names can be shown from two. */
+  speakerCount?: number;
 }) {
   const userFonts = useUserFonts();
   const fontFile = useRef<HTMLInputElement>(null);
@@ -138,20 +147,35 @@ export function CaptionStudio({
 
   return (
     <fieldset className={STUDIO} disabled={disabled}>
-      <Section title="Altyazı">
-        <Row>
-          <RowLabel wide>Altyazıyı göster</RowLabel>
-          <Switch checked={!settings.hidden} onChange={(e) => onChange({ ...settings, hidden: !e.target.checked })} />
-        </Row>
-        {settings.hidden && (
+      {/* The Sahne tab decides what is written; here only a note when it is not captions. */}
+      {(settings.kinetic?.on || settings.hidden) && (
+        <Section title="Altyazı">
           <Hint>
-            Oynatıcıda ve dışa aktarılan videoda altyazı yok; varsa kadraj, logo ve seslendirme kalır. SRT, VTT ve metin
-            dışa aktarımları etkilenmez. Aşağıdaki ayarlar altyazı yeniden açılınca kullanılır.
+            {settings.kinetic?.on
+              ? "Kinetik tipografi açık: altyazının yerine o çiziliyor."
+              : "Bu projede ekranda yazı yok; SRT, VTT ve metin dışa aktarımları etkilenmez."}{" "}
+            Aşağıdaki ayarlar altyazıya dönünce kullanılır.
           </Hint>
-        )}
-      </Section>
+          <LinkButton type="button" className="justify-self-start" onClick={onScene}>
+            Sahne sekmesine git
+          </LinkButton>
+        </Section>
+      )}
+      {speakerCount > 1 && (
+        <Section title="Konuşmacılar">
+          <Row>
+            <RowLabel wide>Konuşanın adını göster</RowLabel>
+            <Switch checked={!!settings.speakerNames} onChange={(e) => onChange({ ...settings, speakerNames: e.target.checked })} />
+          </Row>
+          <Hint>
+            Konuşan değişince altyazının üstünde adı, renk noktasıyla, stilin kendi görünümünde çıkar; yazı ve vurgu
+            renkleri değişmez. Kinetik tipografide ad sol üst köşede durur. Adlar Metin sekmesindeki Konuşmacılar'dan
+            değişir.
+          </Hint>
+        </Section>
+      )}
       <Section title="Stil">
-        <StylePicker settings={settings} onChange={onChange} />
+        <StylePicker settings={settings} ground={ground} onChange={onChange} />
         <Hint>{preset.note}</Hint>
         {!!settings.overrides?.length && (
           <LinkButton type="button" className="justify-self-start" onClick={resetLook}>
@@ -303,32 +327,6 @@ export function CaptionStudio({
         {(preset.effect !== "none" || settings.voiceEmphasis) && (
           <Swatches label="Vurgu" colors={ACCENT_COLORS} value={settings.accentColor} onChange={(accentColor) => set({ accentColor })} />
         )}
-      </Section>
-
-      <Section title="Ses kayıtlarında arka plan">
-        <Select<AuraPaletteId>
-          label="Aura renkleri"
-          value={settings.aura}
-          options={AURA_PALETTES.map((p) => ({ value: p.id, label: p.label }))}
-          onChange={(aura) => set({ aura })}
-          disabled={disabled}
-          render={(o) => {
-            const [a, b, c] = paletteById(o.value).colors;
-            return (
-              <span className={OPT}>
-                <span
-                  className="h-[22px] w-[30px] flex-none rounded-ui-sm"
-                  aria-hidden
-                  style={{
-                    background: `radial-gradient(circle at 30% 40%, ${a}, transparent 60%), radial-gradient(circle at 70% 60%, ${b}, transparent 55%), radial-gradient(circle at 50% 90%, ${c}, transparent 50%), #05070b`,
-                  }}
-                />
-                <span className={OPT_TITLE}>{o.label}</span>
-              </span>
-            );
-          }}
-        />
-        <Hint>Sadece ses olan dosyalarda ve mikrofon kayıtlarında, görüntü yerine sesle hareket eden bir aura çizilir.</Hint>
       </Section>
 
       <LogoSection value={settings.logo} onChange={(logo) => set({ logo })} />

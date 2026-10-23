@@ -13,28 +13,54 @@ function twoLines(text: string, max = 42): string {
   return best < 0 ? text : `${text.slice(0, best)}\n${text.slice(best + 1)}`;
 }
 
-export function toSrt(cues: Cue[]): string {
+/** Cues break where the speaker changes, so a cue has one. */
+const speakerOf = (c: Cue) => c.words[0]?.speaker;
+
+/**
+ * The name before a cue's text where its speaker takes over from another; "" otherwise.
+ * `speakers` (here and below): the speakers' names, when they were told apart (the words carry `speaker`).
+ */
+function lead(cues: Cue[], i: number, speakers?: string[]): string {
+  const s = speakerOf(cues[i]);
+  if (!speakers || s === undefined || (i > 0 && speakerOf(cues[i - 1]) === s)) return "";
+  return `${speakers[s]}: `;
+}
+
+export function toSrt(cues: Cue[], speakers?: string[]): string {
   return cues
-    .map((c, i) => `${i + 1}\n${stamp(c.start, ",")} --> ${stamp(c.end, ",")}\n${twoLines(cueText(c))}\n`)
+    .map((c, i) => `${i + 1}\n${stamp(c.start, ",")} --> ${stamp(c.end, ",")}\n${twoLines(lead(cues, i, speakers) + cueText(c))}\n`)
     .join("\n");
 }
 
-export function toVtt(cues: Cue[]): string {
-  const body = cues.map((c) => `${stamp(c.start, ".")} --> ${stamp(c.end, ".")}\n${twoLines(cueText(c))}\n`).join("\n");
+/** Speakers go in WebVTT's voice tag, on every cue: players show or style it as they like. */
+export function toVtt(cues: Cue[], speakers?: string[]): string {
+  const voice = (c: Cue) => {
+    const s = speakerOf(c);
+    return speakers && s !== undefined ? `<v ${speakers[s].replace(/[<>&]/g, "")}>` : "";
+  };
+  const body = cues.map((c) => `${stamp(c.start, ".")} --> ${stamp(c.end, ".")}\n${voice(c)}${twoLines(cueText(c))}\n`).join("\n");
   return `WEBVTT\n\n${body}`;
 }
 
-/** Plain text, one paragraph per longer pause. */
-export function toText(words: Word[]): string {
-  return buildCues(words, { gap: 1.5, maxDuration: Infinity, maxChars: Infinity })
-    .map(cueText)
-    .join("\n\n");
+/** Plain text, one paragraph per longer pause (or speaker). */
+export function toText(words: Word[], speakers?: string[]): string {
+  const cues = buildCues(words, { gap: 1.5, maxDuration: Infinity, maxChars: Infinity });
+  return cues.map((c, i) => lead(cues, i, speakers) + cueText(c)).join("\n\n");
 }
 
-export function toJson(words: Word[], meta: Record<string, unknown>): string {
+export function toJson(words: Word[], meta: Record<string, unknown>, speakers?: string[]): string {
   const r = (x: number) => Math.round(x * 100) / 100;
   return JSON.stringify(
-    { ...meta, words: words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end) })) },
+    {
+      ...meta,
+      ...(speakers && { speakers }),
+      words: words.map((w) => ({
+        text: w.text,
+        start: r(w.start),
+        end: r(w.end),
+        ...(speakers && w.speaker !== undefined && { speaker: speakers[w.speaker] }),
+      })),
+    },
     null,
     2,
   );

@@ -19,6 +19,7 @@ import {
   type StoredMedia,
 } from "./projectStore";
 import type { Crop } from "./crop";
+import type { JumpCut } from "./cuts";
 import type { Job, TimeRange } from "./useTranscriber";
 
 const LIVE_NAME = "Canlı kayıt";
@@ -28,7 +29,13 @@ const saveable = (j: Job | null): j is Job =>
   !!j && (j.status === "done" || j.status === "cancelled" || j.status === "idle") && (j.words.length > 0 || !!j.file);
 
 /** Saves the current job as a project as it changes, and opens saved ones. */
-export function useProjects(job: Job | null, settings: CaptionSettings, crop: Crop | null, trim: TimeRange | null) {
+export function useProjects(
+  job: Job | null,
+  settings: CaptionSettings,
+  crop: Crop | null,
+  trim: TimeRange | null,
+  jumpCut: JumpCut | null,
+) {
   const [projects, setProjects] = useState<Project[]>([]);
   /** The project behind each job. */
   const byJob = useRef(new Map<number, Project>());
@@ -75,7 +82,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings, crop: Cr
       const now = Date.now();
       p = {
         id: crypto.randomUUID(),
-        name: stripExt(job.imported ?? job.file?.name ?? LIVE_NAME),
+        name: stripExt((job.imported !== "tts" ? job.imported : undefined) ?? job.file?.name ?? LIVE_NAME),
         createdAt: now,
         updatedAt: now,
         live: job.live,
@@ -109,9 +116,11 @@ export function useProjects(job: Job | null, settings: CaptionSettings, crop: Cr
       bands: job.bands,
       loudness: job.loudness,
       translation: job.translation,
+      speakers: job.speakers,
       settings,
       crop: crop ?? undefined,
       trim: trim ?? undefined,
+      jumpCut: jumpCut ?? undefined,
     });
     const project = p;
     const file = job.file;
@@ -125,7 +134,7 @@ export function useProjects(job: Job | null, settings: CaptionSettings, crop: Cr
         .catch(() => {});
     }, 400);
     return () => clearTimeout(timer);
-  }, [job, settings, crop, trim, writeMedia, remember]);
+  }, [job, settings, crop, trim, jumpCut, writeMedia, remember]);
 
   /** A picked or dropped file came with a handle: keep it instead of a copy. */
   const noteHandle = useCallback((file: File, handle: FileSystemFileHandle) => {

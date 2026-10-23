@@ -25,6 +25,7 @@ import { Button, Hint } from "./ui";
 const GROUPS: { title: string; kinds: PackKind[] }[] = [
   { title: "Yazıya dökme", kinds: ["asr", "vocals"] },
   { title: "Noktalama ve çeviri", kinds: ["punct", "mt"] },
+  { title: "Konuşmacılar", kinds: ["speakers"] },
   { title: "Seslendirme", kinds: ["tts"] },
 ];
 

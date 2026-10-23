@@ -1,13 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { loadCaptionFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
-import type { CaptionSettings } from "../captions/style";
+import { shownPhoto, shownPicture, type CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
-import { cropFor, dragCrop, framing, type Crop } from "../lib/crop";
+import { ASPECTS, cropFor, dragCrop, framing, wholeCrop, type Aspect, type Crop } from "../lib/crop";
 import { clock } from "../lib/format";
 import type { Player } from "../lib/usePlayer";
-import { levelsAt, paletteById, type AuraFrame, type AuraLevels } from "../render/aura";
-import { createCompositor, type Compositor } from "../render/compositor";
+import {
+  historyAt,
+  levelsAt,
+  LiveHistory,
+  paletteById,
+  RelativeLevels,
+  usesHistory,
+  type AuraFrame,
+  type AuraLevels,
+} from "../render/aura";
+import { createCompositor, type Compositor, type PhotoFrame } from "../render/compositor";
+import { backdropFor, KineticRenderer } from "../render/kinetic";
 import type { LogoLayer } from "../render/logoLayer";
 import { CropOverlay } from "./CropOverlay";
 import { IconCollapse, IconCrop, IconExpand, IconPause, IconPlay } from "./icons";
@@ -34,6 +44,7 @@ export function Viewer({
   liveLevels,
   bands,
   loudness,
+  speakers,
   children,
   notice,
   lang,
@@ -42,6 +53,8 @@ export function Viewer({
   onCrop,
   cropLocked = false,
   logo = null,
+  photo = null,
+  size = null,
 }: {
   /** Raw microphone levels while recording (updated in place). */
   liveLevels?: React.RefObject<AuraLevels | null>;
@@ -49,6 +62,8 @@ export function Viewer({
   bands: Float32Array;
   /** Speech loudness, for "Sesle vurgula". */
   loudness: Float32Array;
+  /** The speakers' names to show over the captions; null not to. */
+  speakers: string[] | null;
   player: Player;
   words: Word[];
   settings: CaptionSettings;
@@ -70,6 +85,10 @@ export function Viewer({
   cropLocked?: boolean;
   /** The user's logo in its corner; null for none. */
   logo?: LogoLayer | null;
+  /** The user's photo, drawn in place of the aura when the settings pick it; null when there is none. */
+  photo?: ImageBitmap | null;
+  /** The size the video is written at, when known; the preview draws at it. */
+  size?: { w: number; h: number } | null;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -81,6 +100,8 @@ export function Viewer({
   const [idle, setIdle] = useState(false);
   /** The framing being edited on the player; null when not cropping. */
   const [draft, setDraft] = useState<Crop | null>(null);
+  /** Aspect picker pill shown on the player for audio-only / mic / TTS projects. */
+  const [pickingAspect, setPickingAspect] = useState(false);
   const [stageSize, setStageSize] = useState({ w: 0, h: 0 });
   const { el, isVideo, url } = player;
   const live = !url && liveTime !== null;
@@ -91,6 +112,8 @@ export function Viewer({
   bandsRef.current = bands;
   const paletteRef = useRef(paletteById(settings.aura).colors);
   paletteRef.current = paletteById(settings.aura).colors;
+  const auraStyleRef = useRef(settings.auraStyle ?? "aura");
+  auraStyleRef.current = settings.auraStyle ?? "aura";
 
   // One compositor per canvas.
   useEffect(() => {
@@ -108,13 +131,14 @@ export function Viewer({
     };
   }, [active, url]);
 
+  const activeFont = settings.kinetic?.on ? settings.kinetic.font : settings.font;
   useEffect(() => {
     let live = true;
-    loadCaptionFont(settings.font, document.fonts).then(() => live && setFontTick((n) => n + 1));
+    loadCaptionFont(activeFont, document.fonts).then(() => live && setFontTick((n) => n + 1));
     return () => {
       live = false;
     };
-  }, [settings.font]);
+  }, [activeFont]);
 
   useEffect(() => {
     if (!el || !isVideo) {
@@ -128,20 +152,32 @@ export function Viewer({
     return () => v.removeEventListener("loadedmetadata", update);
   }, [el, isVideo]);
 
-  const hasPicture = isVideo && !live && picture !== AUDIO_FRAME;
-  const canCrop = hasPicture && !!onCrop;
-  const shown = hasPicture ? (draft ?? crop) : null;
+  // The video's picture as drawn: null when there is none, or it is left out (the file used for its sound).
+  const shownPic = shownPicture(settings, isVideo && !live);
+  // Without one, the user's photo may stand in for the aura; the ground is whichever of the two is drawn.
+  const photoPic = shownPic ? null : shownPhoto(settings, !!photo);
+  const ground = shownPic ?? photoPic;
+  const ownPicture = isVideo && !live && picture !== AUDIO_FRAME;
+  // A video used for its sound is framed as an audio stage is: its aura in a frame of the shape picked.
+  const hasPicture = ownPicture && !!shownPic;
+  const canCrop = (hasPicture || !!url || live) && !!onCrop;
+  const shown = hasPicture ? (draft ?? crop) : crop;
   // While a slice is being placed the whole picture shows, the slice marked over it; a fitted picture shows as it comes out.
-  const placing = !!draft && (draft.fit === "fill" || draft.aspect === "free");
+  const placing = hasPicture && !!draft && (draft.fit === "fill" || draft.aspect === "free");
   const framed = useMemo(
     () => (shown && !placing ? framing(shown, picture.w, picture.h) : null),
     [shown, placing, picture],
   );
   const view = framed && !framed.none ? framed : null;
-  const placement = view?.placement ?? null;
-  // Captions are laid out on the frame, as in the export.
-  const fw = view ? view.size.width : picture.w;
-  const fh = view ? view.size.height : picture.h;
+  const placement = hasPicture ? (view?.placement ?? null) : null;
+  // Captions and audio stages are laid out on the frame, as in the export: at the size it is written at,
+  // so a small video made at 1080p shows its captions as sharp as they come out. Not while cropping
+  // (the size follows the crop once it is kept), nor while that size is still of the last frame's shape.
+  const ownW = view ? view.size.width : picture.w;
+  const ownH = view ? view.size.height : picture.h;
+  const sized = ownPicture && !draft && size && Math.abs(size.w / size.h - ownW / ownH) < 0.01 ? size : null;
+  const fw = sized ? sized.w : ownW;
+  const fh = sized ? sized.h : ownH;
   const frame = useMemo(() => ({ w: fw, h: fh }), [fw, fh]);
 
   useEffect(() => compositor?.setPlacement(placement), [compositor, placement]);
@@ -167,7 +203,15 @@ export function Viewer({
 
   const startCrop = () => {
     if (!canCrop || cropLocked) return;
+    if (!hasPicture) {
+      setPickingAspect((v) => !v);
+      return;
+    }
     setDraft(crop ?? cropFor("9:16", picture.w, picture.h));
+  };
+  const pickAudioAspect = (aspect: Aspect) => {
+    if (aspect === "16:9" || aspect === "free") onCrop?.(null);
+    else onCrop?.({ ...wholeCrop(aspect), fit: "fit" });
   };
   const finishCrop = () => {
     if (!draft) return;
@@ -175,25 +219,59 @@ export function Viewer({
     setDraft(null);
   };
   // A new file, or an export starting, ends the editing without a change.
-  useEffect(() => setDraft(null), [url, cropLocked]);
+  useEffect(() => {
+    setDraft(null);
+    setPickingAspect(false);
+  }, [url, cropLocked]);
 
+  // A video's kinetic stage goes over its picture (or its plain ground); an audio project's over the aura or the photo.
+  const kineticSettings = useMemo(
+    () => settings.kinetic && { ...settings.kinetic, backdrop: backdropFor(settings.kinetic, ground) },
+    [settings.kinetic, ground],
+  );
+  // The stage (and the captions it replaces) follows in a deferred render: building it can take a
+  // moment (Fizik works out its whole fall), so the switch shows at once, with "Hazırlanıyor…".
+  const stageSettings = useDeferredValue(kineticSettings);
+  // Only for what builds a stage anew (palette and font are quick): shown at once, since a delay
+  // could not run out while the build holds the page.
+  const preparing =
+    stageSettings !== kineticSettings &&
+    !!kineticSettings?.on &&
+    (!stageSettings?.on || stageSettings.style !== kineticSettings.style);
+  const useKinetic = !!stageSettings?.on;
   const captions = useMemo(
     () =>
       // No caption while cropping: the frame is still being decided.
-      words.length && !draft
-        ? new CaptionRenderer(words, settings, frame.w, frame.h, settings.voiceEmphasis ? loudness : null, lang)
+      words.length && !draft && !useKinetic
+        ? new CaptionRenderer(words, settings, frame.w, frame.h, settings.voiceEmphasis ? loudness : null, lang, speakers)
         : null,
     // fontTick: lay out again once the font file has loaded. Loudness only matters with voiceEmphasis.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null, lang, !draft],
+    [words, settings, frame, fontTick, settings.voiceEmphasis ? loudness : null, lang, speakers, !draft, useKinetic],
   );
+  const kinetic = useMemo(
+    () =>
+      words.length && !draft && useKinetic && stageSettings
+        ? new KineticRenderer(words, stageSettings, frame.w, frame.h, loudness, lang, speakers)
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [words, stageSettings, frame, fontTick, loudness, lang, speakers, !draft, useKinetic],
+  );
+  const blurred = ground === "blur";
+  useEffect(() => compositor?.setBlur(blurred), [compositor, blurred]);
 
   // The loop reads these through refs, so new words (every progress update)
   // never restart it; restarting would reset the aura's clock and stutter.
   const captionsRef = useRef(captions);
   captionsRef.current = captions;
+  const kineticRef = useRef(kinetic);
+  kineticRef.current = kinetic;
   const auraClock = useRef(performance.now());
   const smooth = useRef<AuraLevels>({ low: 0, mid: 0, high: 0 });
+  const slowEnergy = useRef(0);
+  const relativeLive = useRef(new RelativeLevels());
+  const lastLive = useRef(performance.now());
+  const liveHistory = useRef(new LiveHistory());
 
   // Render loop: redraw only when the picture, caption or size changed.
   useEffect(() => {
@@ -205,17 +283,17 @@ export function Viewer({
     /** A video frame has been drawn: from then on a seek keeps it up until the new one is decoded. */
     let drawn = false;
     const cropKey = `${placement ? JSON.stringify(placement) : ""}|${shownLogo ? `${shownLogo.corner}${shownLogo.size}${shownLogo.opacity}` : ""}`;
+    const photoFrame: PhotoFrame | null = photoPic && photo ? { kind: "photo", image: photo } : null;
     const loop = () => {
       const dpr = window.devicePixelRatio || 1;
       const fit = Math.min(1, (st.clientWidth * dpr) / frame.w, (st.clientHeight * dpr) / frame.h);
       const w = Math.max(2, Math.round(frame.w * fit));
       const h = Math.max(2, Math.round(frame.h * fit));
       const t = el && !live ? el.currentTime : liveRef.current;
-      const cap = captionsRef.current?.frame(t) ?? null;
-      // Audio-only: the aura. It follows the media clock (so the export
-      // matches); while recording it drifts with the wall clock instead.
+      // No picture (or a video used for its sound) and no photo: the aura. It follows the media clock (so
+      // the export matches); while recording it drifts with the wall clock instead.
       let aura: AuraFrame | null = null;
-      if (!isVideo || live) {
+      if (!ground) {
         let levels = levelsAt(bandsRef.current, t);
         const raw = live ? liveLevels?.current : null;
         if (raw) {
@@ -224,33 +302,46 @@ export function Viewer({
           for (const k of ["low", "mid", "high"] as const) {
             sm[k] += (raw[k] - sm[k]) * (raw[k] > sm[k] ? 0.35 : 0.08);
           }
-          levels = { ...sm };
+          // Punch: how far the voice is above its own slow average.
+          const e = (sm.low + sm.mid + sm.high) / 3;
+          slowEnergy.current += (e - slowEnergy.current) * 0.04;
+          const now = performance.now();
+          const dt = Math.min(0.1, (now - lastLive.current) / 1000);
+          lastLive.current = now;
+          const punch = Math.min(1, Math.max(0, (e - slowEnergy.current - 0.04) * 4));
+          levels = relativeLive.current.apply({ ...sm, punch }, dt);
         }
-        aura = {
-          kind: "aura",
-          time: live ? (performance.now() - auraClock.current) / 1000 : t,
-          levels,
-          palette: paletteRef.current,
-        };
+        const time = live ? (performance.now() - auraClock.current) / 1000 : t;
+        // Ufuk and Sırtlar draw the last seconds: from the bands, or from what the microphone gave so far.
+        let history: Float32Array | undefined;
+        if (live) liveHistory.current.push(time, levels);
+        if (usesHistory(auraStyleRef.current)) {
+          const bands = bandsRef.current;
+          history = historyAt(live ? liveHistory.current.at : (at) => levelsAt(bands, at), time);
+        }
+        aura = { kind: "aura", time, levels, palette: paletteRef.current, style: auraStyleRef.current, history };
       }
+      const cap = kineticRef.current
+        ? kineticRef.current.frame(t, aura?.levels ?? levelsAt(bandsRef.current, t))
+        : (captionsRef.current?.frame(t) ?? null);
       const key = aura
-        ? `${w}x${h}|${aura.time}|${aura.palette}|${bandsRef.current.length}|${cap ? `${cap.key}|${cap.scale}` : ""}`
+        ? `${w}x${h}|${aura.time}|${aura.palette}|${aura.style}|${bandsRef.current.length}|${cap ? `${cap.key}|${cap.scale}` : ""}`
         : `${w}x${h}|${t}|${el?.readyState}|${cropKey}|${cap ? `${cap.key}|${cap.scale}` : ""}`;
-      const video = !aura && isVideo && el ? (el as HTMLVideoElement) : null;
+      const video = !aura && !photoFrame && isVideo && el ? (el as HTMLVideoElement) : null;
       // While scrubbing, the element has no frame (readyState < 2) until the
       // seek lands; drawing then would flash black, so the last frame stays.
       const waiting = !!video && drawn && video.readyState < 2;
       if (key !== last && !waiting) {
         last = key;
         compositor.resize(w, h);
-        compositor.render(aura ?? video, cap);
+        compositor.render(aura ?? photoFrame ?? video, cap);
         if (video && video.readyState >= 2) drawn = true;
       }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo]);
+  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo, blurred, ground, photoPic, photo]);
 
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === stage.current);
@@ -282,6 +373,7 @@ export function Viewer({
         return;
       }
       if (e.key === " " && !t.closest("button")) player.toggle();
+      else if (e.key === "Escape" && pickingAspect) setPickingAspect(false);
       else if (e.key === "ArrowLeft" && !t.closest("[role=slider]")) player.seek(player.time - 5);
       else if (e.key === "ArrowRight" && !t.closest("[role=slider]")) player.seek(player.time + 5);
       else if (e.key === "f" || e.key === "F") toggleFullscreen();
@@ -337,6 +429,20 @@ export function Viewer({
               <RecDot /> Dinleniyor, konuşmaya başlayabilirsin
             </p>
           )}
+          {canCrop && (
+            <div className={`absolute inset-x-0 bottom-0 flex items-center justify-end gap-2.5 bg-linear-to-b from-transparent to-black/60 transition-opacity duration-200 ease-[ease] ${hud}`}>
+              <button
+                className={`${HUD_BTN} relative disabled:opacity-40`}
+                onClick={startCrop}
+                disabled={cropLocked}
+                aria-label="Sahne oranı"
+                title="Sahne oranı: 9:16, 4:5, 1:1, 16:9 (C)"
+              >
+                <IconCrop />
+                {crop && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-cini" aria-hidden />}
+              </button>
+            </div>
+          )}
         </>
       ) : url ? (
         <>
@@ -389,11 +495,17 @@ export function Viewer({
                   className={`${HUD_BTN} relative ml-auto disabled:opacity-40`}
                   onClick={startCrop}
                   disabled={cropLocked}
-                  aria-label="Kırp"
-                  title={cropLocked ? "Dışa aktarma sürerken kırpılamaz" : "Kırp ve kadrajla (C)"}
+                  aria-label={hasPicture ? "Kırp" : "Sahne oranı"}
+                  title={
+                    cropLocked
+                      ? "Dışa aktarma sürerken değiştirilemez"
+                      : hasPicture
+                        ? "Kırp ve kadrajla (C)"
+                        : "Sahne oranı: 9:16, 4:5, 1:1, 16:9 (C)"
+                  }
                 >
                   <IconCrop />
-                  {/* The video is framed. */}
+                  {/* The video or audio stage is framed. */}
                   {crop && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-cini" aria-hidden />}
                 </button>
               )}
@@ -411,7 +523,47 @@ export function Viewer({
       ) : (
         children
       )}
-      {url && following && !notice && (
+      {!hasPicture && pickingAspect && (url || live) && (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2.5"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className="pointer-events-auto inline-flex items-center gap-0.5 rounded-full bg-black/75 p-0.5 shadow-[0_2px_10px_rgba(0,0,0,0.4)] backdrop-blur-md"
+            role="radiogroup"
+            aria-label="Sahne oranı"
+          >
+            {ASPECTS.filter((a) => a.value !== "free").map((a) => {
+              const activeAspect = crop?.aspect ?? "16:9";
+              const pressed = activeAspect === a.value;
+              return (
+                <button
+                  key={a.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={pressed}
+                  aria-pressed={pressed}
+                  title={`${a.title} (${a.value === "16:9" ? "1920×1080" : a.value === "9:16" ? "1080×1920" : a.value === "4:5" ? "1080×1350" : "1080×1080"})`}
+                  className="h-7 rounded-full border-0 bg-transparent px-3 text-[12px] font-medium text-white/75 transition-colors duration-150 not-aria-pressed:hover:text-white aria-pressed:bg-white aria-pressed:text-black"
+                  onClick={() => pickAudioAspect(a.value)}
+                >
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {url && preparing && !notice && (
+        <p
+          className="pointer-events-none absolute top-2.5 right-2.5 m-0 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white/85"
+          role="status"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-cini motion-reduce:animate-none" aria-hidden />
+          Hazırlanıyor…
+        </p>
+      )}
+      {url && following && !notice && !pickingAspect && (
         <p
           className="pointer-events-none absolute top-2.5 left-2.5 m-0 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white/85"
           role="status"

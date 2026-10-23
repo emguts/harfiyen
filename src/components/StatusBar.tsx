@@ -90,11 +90,13 @@ function JobItem({ job, engine, liveWaiting }: { job: Job | null; engine: Engine
         <span className={ITEM}>
           {job.words.length} kelime
           <span className={DIM}>
-            {job.imported
-              ? `${job.imported} altyazısından`
-              : `${fmtDuration(job.range ? job.range.end - job.range.start : (job.duration ?? job.decoded))} ${
-                  job.range ? "bölüm" : "kayıt"
-                }, ${fmtDuration(job.elapsed ?? 0)} içinde`}
+            {job.imported === "tts"
+              ? `yapay ses, ${fmtDuration(job.duration ?? job.decoded)}, ${fmtDuration(job.elapsed ?? 0)} içinde`
+              : job.imported
+                ? `${job.imported} altyazısından`
+                : `${fmtDuration(job.range ? job.range.end - job.range.start : (job.duration ?? job.decoded))} ${
+                    job.range ? "bölüm" : "kayıt"
+                  }, ${fmtDuration(job.elapsed ?? 0)} içinde`}
           </span>
         </span>
       );

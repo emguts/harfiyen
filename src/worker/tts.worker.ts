@@ -78,6 +78,8 @@ const LEAD_SUPERTONIC = 0.4;
 const TAIL = 20;
 /** Silence kept between two lines when the first one runs late. */
 const GAP = 0.05;
+/** Silence between sentences when reading standalone text (no media clock). */
+const FREE_GAP = 0.22;
 
 const post = (m: FromTts, transfer: Transferable[] = []) => self.postMessage(m, transfer);
 const cancelled = new Set<number>();
@@ -226,14 +228,22 @@ async function dub(jobId: number, lines: DubLine[], duration: number, end: numbe
   /** Per clip: its line, and its length at the model's own pace and how much faster it was read. */
   const made: { line: number; natural: number; speed: number }[] = [];
   const length = (c: DubClip) => c.audio.length / RATE;
+  const timed = end > 0;
   let free = 0; // where the previous clip ends
   for (let i = 0; i < lines.length; i++) {
     if (cancelled.has(jobId)) return post({ type: "cancelled", jobId });
     post({ type: "progress", jobId, done: i, total: lines.length });
     const line = lines[i];
-    const next = i + 1 < lines.length ? lines[i + 1].start : Math.max(duration, line.end);
     let audio = await speak(speaker, line.text, voice);
     const seconds = audio.length / RATE;
+    if (!timed) {
+      if (!audio.length) continue;
+      clips.push({ line: i, start: free, audio });
+      made.push({ line: i, natural: seconds, speed: 1 });
+      free += seconds + FREE_GAP;
+      continue;
+    }
+    const next = i + 1 < lines.length ? lines[i + 1].start : Math.max(duration, line.end);
     // Too long for its place: start earlier, as far as the silence before it allows, then speak faster.
     let start = Math.max(line.start, free);
     if (seconds > next - start) start = Math.max(free, line.start - lead, Math.min(start, next - seconds));
@@ -252,7 +262,7 @@ async function dub(jobId: number, lines: DubLine[], duration: number, end: numbe
   // The last clip whose line starts before `end` must be over by then. By its line, not by where it was placed:
   // lines running late may have pushed a short last one ("Bye.") past the end altogether.
   let last = -1;
-  for (let k = 0; k < clips.length; k++) if (lines[made[k].line].start < end) last = k;
+  if (timed) for (let k = 0; k < clips.length; k++) if (lines[made[k].line].start < end) last = k;
   let overflow: DubOverflow | null = null;
   if (last >= 0 && clips[last].start + length(clips[last]) > end) {
     /** Moves the last clip, and the ones before it as it reaches them, earlier into the pauses between them; what is left over. */

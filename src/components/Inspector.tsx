@@ -1,5 +1,7 @@
-import { useMemo, useState, type ComponentProps } from "react";
+import { useMemo, useState, type ComponentProps, type RefObject } from "react";
 import type { CaptionSettings } from "../captions/style";
+import type { JumpCut } from "../lib/cuts";
+import type { GroundPreview } from "../lib/groundPreview";
 import type { DecodingMethod, SpeechLang } from "../engine";
 import { LANG_NAMES } from "../lib/lang";
 import { writeNumbers, type NumberMode } from "../lib/numbers";
@@ -9,9 +11,11 @@ import { translateProgress, translationLang as targetOf, type TranslateState } f
 import { modelInfo, type ModelId } from "../models";
 import { CaptionStudio, STUDIO } from "./CaptionStudio";
 import { DubPanel } from "./DubPanel";
-import { VideoLang } from "./VideoLang";
-import { LyricsSection } from "./LyricsSection";
+import { SceneStudio } from "./SceneStudio";
+import { JumpCutSection, type JumpCutSummary } from "./JumpCutSection";
+import { SpeakersSection } from "./SpeakersSection";
 import { TimingSection } from "./TimingSection";
+import { VideoLang } from "./VideoLang";
 import { Progress } from "./Indicators";
 import { MethodPicker, methodTitle } from "./MethodPicker";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
@@ -30,7 +34,7 @@ import {
 const TAB =
   "h-[26px] flex-1 rounded-[5px] border-0 bg-transparent text-[12px] font-medium tracking-[-0.01em] text-fg-2 transition-all duration-150 ease-[ease] hover:not-aria-selected:text-fg aria-selected:bg-raised aria-selected:font-[550] aria-selected:text-fg-strong aria-selected:shadow-[0_1px_3px_var(--shadow-pop),inset_0_1px_0_var(--tint)]";
 
-type Tab = "captions" | "transcribe" | "dub";
+export type InspectorTab = "captions" | "scene" | "transcribe" | "dub";
 
 // Each option shows its result rather than its rule.
 const NUMBER_MODES: { value: NumberMode; label: string; sample: string }[] = [
@@ -53,6 +57,7 @@ const NUMBER_MODES: { value: NumberMode; label: string; sample: string }[] = [
 
 export function Inspector({
   settings,
+  ground,
   onSettings,
   burning,
   model,
@@ -102,12 +107,25 @@ export function Inspector({
   onMusic,
   vocals,
   onVocals,
-  lyrics,
-  onShiftAll,
   langIssue,
+  onShiftAll,
+  jumpCut,
+  onJumpCut,
+  jumpCutUnavailable,
+  jumpCutSummary,
+  speakers,
   captionLang,
+  tab: controlledTab,
+  onTab,
+  textMode,
+  customText,
+  onCustomText,
+  textRef,
+  audioOnly = false,
 }: {
   settings: CaptionSettings;
+  /** The project's ground, behind the style cards. */
+  ground?: GroundPreview;
   onSettings: (s: CaptionSettings) => void;
   burning: boolean;
   model: ModelId;
@@ -166,16 +184,30 @@ export function Inspector({
   onMusic: (on: boolean) => void;
   vocals: boolean;
   onVocals: (on: boolean) => void;
-  /** Song lyrics over the transcript, shown in music mode. */
-  lyrics: ComponentProps<typeof LyricsSection>;
-  /** Moves every caption by `seconds`; null when there is nothing to move. */
-  onShiftAll: ((seconds: number) => void) | null;
   /** Why the chosen model cannot transcribe `videoLang`, if it cannot. */
   langIssue: string | null;
+  /** Moves every caption by `seconds`; null when there is nothing to move. */
+  onShiftAll: ((seconds: number) => void) | null;
+  jumpCut: JumpCut;
+  onJumpCut: (j: JumpCut) => void;
+  /** Why the quiet cannot be cut now; null when it can. */
+  jumpCutUnavailable: string | null;
+  jumpCutSummary: JumpCutSummary | null;
+  /** Telling who speaks when. */
+  speakers: ComponentProps<typeof SpeakersSection>;
   /** The language of the captions shown. */
   captionLang: string;
+  tab?: InspectorTab;
+  onTab?: (t: InspectorTab) => void;
+  textMode?: boolean;
+  customText?: string;
+  onCustomText?: (text: string) => void;
+  textRef?: RefObject<HTMLTextAreaElement | null>;
+  audioOnly?: boolean;
 }) {
-  const [tab, setTab] = useState<Tab>("captions");
+  const [innerTab, setInnerTab] = useState<InspectorTab>("captions");
+  const tab = controlledTab ?? innerTab;
+  const setTab = onTab ?? setInnerTab;
   const running = job?.status === "running";
   const translating = translateProgress(translate);
   const info = modelInfo(model);
@@ -227,10 +259,18 @@ export function Inspector({
         <button
           className={TAB}
           role="tab"
+          aria-selected={tab === "scene"}
+          onClick={() => setTab("scene")}
+        >
+          Sahne
+        </button>
+        <button
+          className={TAB}
+          role="tab"
           aria-selected={tab === "transcribe"}
           onClick={() => setTab("transcribe")}
         >
-          Yazıya döküm
+          Metin
         </button>
         <button
           className={TAB}
@@ -245,9 +285,21 @@ export function Inspector({
         {tab === "captions" ? (
           <CaptionStudio
             settings={settings}
+            ground={ground}
             onChange={onSettings}
             disabled={burning}
             lang={captionLang}
+            onScene={() => setTab("scene")}
+            speakerCount={speakers.speakers?.names.length}
+          />
+        ) : tab === "scene" ? (
+          <SceneStudio
+            settings={settings}
+            ground={ground}
+            onChange={onSettings}
+            onCaptions={() => setTab("captions")}
+            video={!audioOnly}
+            disabled={burning}
           />
         ) : tab === "dub" ? (
           <DubPanel
@@ -276,6 +328,10 @@ export function Inspector({
             canTranslateDub={canTranslateDub}
             onTranslateDub={onTranslateDub}
             onCancelTranslate={onCancelTranslate}
+            textMode={textMode}
+            customText={customText}
+            onCustomText={onCustomText}
+            textRef={textRef}
           />
         ) : (
           <div className={STUDIO}>
@@ -297,8 +353,14 @@ export function Inspector({
                 </Hint>
               )}
             </Section>
-            {music && <LyricsSection {...lyrics} />}
             <TimingSection onShiftAll={onShiftAll} />
+            <JumpCutSection
+              value={jumpCut}
+              onChange={onJumpCut}
+              unavailable={jumpCutUnavailable}
+              summary={jumpCutSummary}
+            />
+            <SpeakersSection {...speakers} />
             <Section title="Doğruluk">
               {info.id === "seda" ? (
                 <MethodPicker

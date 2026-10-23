@@ -136,7 +136,7 @@ export const modelFileUrl = (m: ModelInfo, file: string) => `${MODELS_BASE}/${m.
 
 // ---- every downloadable model ----
 
-export type PackKind = "asr" | "vocals" | "punct" | "mt" | "tts";
+export type PackKind = "asr" | "vocals" | "punct" | "mt" | "tts" | "speakers";
 
 /**
  * A set of files downloaded together: a speech model above, or one of the
@@ -179,6 +179,18 @@ export const VOCALS_PACK: ModelPack = {
   files: ["mel-roformer.fp16.onnx"],
   gpuOnly: true,
   needsF16: true,
+};
+
+export const SPEAKER_PACK: ModelPack = {
+  id: "speakers",
+  kind: "speakers",
+  name: "Konuşmacılar",
+  note: "3D-Speaker CAM++; kayıtta kimin ne zaman konuştuğunu sesinden ayırır.",
+  dir: "3dspeaker-campplus",
+  manifest: "model.json",
+  files: ["campplus.onnx"],
+  gpuOnly: false,
+  needsF16: false,
 };
 
 /** Translation directions: from the transcript's language to the other. */
@@ -280,6 +292,7 @@ export const PACKS: ModelPack[] = [
   ),
   VOCALS_PACK,
   PUNCT_PACK,
+  SPEAKER_PACK,
   MT_PACKS["tr-en"],
   MT_PACKS["en-tr"],
   VOICE_PACKS.ema,

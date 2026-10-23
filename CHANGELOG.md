@@ -2,6 +2,54 @@
 
 Yeni sürümler en üstte.
 
+## v0.5.0 (23 Ekim 2026)
+
+Bu sürümdeki zaman düzenleme, metni sese hizalama ve elle tempo tutma
+[emguts](https://github.com/emguts)'un [emguts/harfiyen](https://github.com/emguts/harfiyen) fork'undan uyarlandı;
+ses düzeyi kaydırıcısını [vuxenn1](https://github.com/vuxenn1) ekledi. İkisine de teşekkürler.
+
+- **Kinetik tipografi:** Yeni **Sahne** sekmesinde ekrandaki yazı seçilir: altyazı, kinetik tipografi ya da hiçbiri.
+  Kinetik tipografi altyazı yerine bütün ekranı kullanır; sekiz stil var: 3D Düğüm, Pano, Fizik (Matter.js),
+  2D Kamera, Poster, Darbe, Maske ve Tünel. Beş renk paleti ve bütün yazı tipleri (yüklediklerin de) seçilebilir.
+  Ses dosyalarında aura ya da düz zeminin, videolarda görüntünün (olduğu gibi ya da bulanık) üstünde durur;
+  videonun görüntüsü yerine aura konup yalnızca sesi de kullanılabilir. Oynatıcıda ve altyazılı MP4'te aynı görünür.
+- **Yeni auralar:** Aura'nın yanına Halo, Ufuk, Küre ve Sırtlar geldi; beş renk paleti var (Çini, Gün batımı, Orman,
+  Lavanta, Gece). Kadraj ses dosyalarında da çalışır.
+- **Fotoğraf zemin:** **Sahne → Arka plan**'da auraların yanında kendi fotoğrafın da (JPEG, PNG, WebP; örneğin podcast kapağı)
+  kullanılabilir. Kareyi kaplar, taşan kısmı kesilir; **Net** ya da **Bulanık** seçilir. Kinetik tipografi üstünde
+  ince bir perdeyle durur. Fotoğraf logo gibi bu tarayıcıda saklanır, sonraki projelerde de hazırdır; videolarda
+  seçilince videonun yalnızca sesi kullanılır.
+- **Stil kartlarında kendi zeminin:** Altyazı ve kinetik stil kartları arkada projenin kendi zeminini gösterir:
+  videonun karesi, fotoğraf ya da seçili aura. Yazının o zeminde nasıl okunduğu stil seçerken görülür.
+- **Metin seslendir:** Boş ekrandaki **Metin seslendir** ile dosya olmadan yazdığın ya da yapıştırdığın metin yapay
+  sesle okunur; kelimeler zamanlarıyla altyazıya ve oynatıcıya yerleşir, aura ya da kinetik tipografiyle videoya
+  dönüşür.
+- **Zaman düzenleme:** Satırın ya da tek kelimenin başlangıç ve bitiş zamanı transkriptten değiştirilir: yazarak,
+  ±0,1 sn adımlarla, **Şu an** ile ya da **Alt + ← / →** ile. Bitişik kelimeler aradaki sınırla birlikte uzayıp
+  kısalır. **Metin → Zamanlama** bütün altyazıyı çevirisiyle birlikte öne ya da geriye alır (**[** / **]**).
+- **Metni sese hizala:** Elindeki doğru metni (şarkı sözü, konuşma metni, şiir) yapıştır; kelimeler metinden,
+  zamanlar dökümden gelir. Kısa satırlı metinlerde her satır ayrı altyazı satırı olur. **Sesle ince ayar**
+  Whisper'la kelimeleri doğrudan seste arar; şarkılarda ve gürültülü kayıtlarda fark eder.
+- **Elle tempo tut:** Dökümün duymadığı bölümler için kayıt çalarken her satırın başında **Enter**'a basılır;
+  satırdaki kelimeler o aralıkta duyulan zamanları alır. Tepki payı **+** / **−** ile ayarlanır.
+- **Boşlukları kesme (jump cut):** **Metin** sekmesinde **Sessizlikleri at** kelimeler arasındaki uzun sessizlikleri
+  videodan çıkarır; "ııı", "eee" gibi dolgu sesleri de istenirse kesilir. En kısa sessizlik ve konuşmanın iki
+  yanında kalacak pay ayarlanır. Video, SRT ve VTT kesilmiş hâliyle dışa aktarılır; kapatınca video eski hâline döner.
+- **Konuşmacı ayırma:** **Konuşmacıları ayır** kimin ne zaman konuştuğunu sesinden bulur
+  ([3D-Speaker CAM++](https://github.com/modelscope/3D-Speaker), yaklaşık 28 MB). Konuşmacı sayısı seçilir ya da
+  bulunur. Transkriptte adlar renkli yazar; konuşma başka birine verilir, adlar değiştirilir, aynı kişi birleştirilir.
+  SRT, VTT, metin ve JSON'da adlar yer alır; istenirse altyazıda ve kinetik tipografide de görünür.
+- **Ses düzeyi:** Oynatma çubuğundaki ses düğmesinin üstüne gelince ses düzeyi kaydırıcısı açılır. Seslendirmeyi de
+  orijinal sesi de birlikte kısar; düzey tarayıcıda hatırlanır.
+- **Whisper şarkıda ve sessizlikte daha az uyduruyor:** Döngüye giren bölüm kaldığı yerden yeniden çözülür, sonrası
+  kaybolmaz. Müzik üstündeki şarkı da yazıya dökülür. "İzlediğiniz için teşekkürler", "Abone olmayı unutmayın" gibi
+  sessizlikte uydurulan satırlar atılır.
+- **Küçük videoda keskin altyazı:** 1080p'den küçük videolar varsayılan olarak 1080p dışa aktarılır; görüntü
+  büyütülür, altyazı bu boyutta çizildiği için keskin çıkar. Kaynakla aynı boyut da seçilebilir.
+- **Kesme tutamaçları:** Daha kalın ve tutması kolay. Kesimden sonra zaman çizelgesi yalnızca seçilen bölümü kaplar,
+  **Kes**'e basınca yumuşak bir geçişle bütün dosyaya döner. Bitiş tutamacı en sona çekilince oluşan titreme giderildi.
+- **Sekme adı:** Sağ paneldeki **Yazıya döküm** sekmesinin adı **Metin** oldu.
+
 ## v0.4.1 (20 Ekim 2026)
 
 - **Ekran kartı olmadan video:** WebGPU'yu desteklemeyen tarayıcılarda ve ekran kartı bulunamayan bilgisayarlarda da

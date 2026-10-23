@@ -5,8 +5,9 @@
 import type { Word } from "../engine";
 import { buildCues, type Cue } from "../lib/cues";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
+import { speakerColor } from "../lib/speakers";
 import { loudWords } from "./emphasis";
-import { captionStack, fontById } from "./fonts";
+import { captionStack, fontById, type CaptionFont } from "./fonts";
 import { presetById, type CaptionSettings, type Preset } from "./style";
 
 export interface CaptionImage {
@@ -21,9 +22,10 @@ export interface CaptionImage {
   scale: number;
   /**
    * Frosted glass behind the caption: corner radius, and how far in from the
-   * image's edges it starts (the image has room around it for blur), in caption pixels.
+   * image's edges it starts (the image has room around it for blur, and the
+   * speaker's name above it), in caption pixels.
    */
-  panel: { radius: number; insetX: number; insetY: number } | null;
+  panel: { radius: number; insetX: number; insetTop: number; insetBottom: number } | null;
   /** Frame size the caption was laid out for. */
   frameW: number;
   frameH: number;
@@ -48,6 +50,24 @@ function contrastText(hex: string): string {
   return l > 150 ? "#111111" : "#ffffff";
 }
 
+/** The speaker's name above a caption, laid out (caption pixels). */
+interface TagLayout {
+  text: string;
+  speaker: number;
+  css: string;
+  px: number;
+  w: number;
+  h: number;
+  padX: number;
+  dot: number;
+  gap: number;
+  stroke: number;
+  /** On a pill of its own (box and glass looks); else bare, outlined or shadowed like the words. */
+  pill: boolean;
+  /** Room between it and the caption below. */
+  space: number;
+}
+
 let nextRendererId = 1;
 
 export class CaptionRenderer {
@@ -59,6 +79,8 @@ export class CaptionRenderer {
   private cached: CaptionImage | null = null;
   /** Words said louder than those around them, drawn larger. */
   private loud: Set<Word>;
+  /** Per group, the speaker whose name goes above it (the first caption of their turn), or -1. */
+  private tags: number[];
 
   constructor(
     words: Word[],
@@ -69,10 +91,19 @@ export class CaptionRenderer {
     loudness: Float32Array | null = null,
     /** Language of the words; decides how they are uppercased. */
     private lang: string = TRANSCRIPT_LANG,
+    /** The speakers' names to show (the words carry `speaker`); null not to. One speaker needs no name. */
+    private speakers: string[] | null = null,
   ) {
     this.preset = presetById(s.preset);
     this.groups = buildCues(words, this.preset.grouping);
     this.loud = s.voiceEmphasis && loudness ? loudWords(words, loudness) : new Set();
+    // Groups break where the speaker changes, so a group has one; the name shows where they take over.
+    const named = speakers && speakers.length > 1;
+    const speakerOf = (g: Cue | undefined) => g?.words[0]?.speaker;
+    this.tags = this.groups.map((g, i) => {
+      const sp = speakerOf(g);
+      return named && sp !== undefined && sp < speakers.length && speakerOf(this.groups[i - 1]) !== sp ? sp : -1;
+    });
   }
 
   /** Caption for time t (seconds), or null when nothing is on screen. */
@@ -99,7 +130,7 @@ export class CaptionRenderer {
     const live = moving ? Math.floor(t * LIVE_RATE) : -1;
     // Effects without per-word state draw the same pixels for the whole group.
     const key = `${this.id}|${gi}|${effect === "none" ? 0 : active}|${step}|${live}`;
-    if (this.cached?.key !== key) this.cached = this.draw(g, active, step / WORD_STEPS, t, key);
+    if (this.cached?.key !== key) this.cached = this.draw(g, active, step / WORD_STEPS, t, key, this.tags[gi]);
     const since = t - g.start;
     const scale = this.preset.pop && since < POP_IN ? 0.78 + 0.22 * easeOutBack(Math.max(0, since) / POP_IN) : 1;
     return { ...this.cached, scale };
@@ -123,8 +154,11 @@ export class CaptionRenderer {
     return t < until ? i : -1;
   }
 
-  /** grow: how far the active word has grown in, 0..1 (1 without wordIn); t: the time, for words that move. */
-  private draw(g: Cue, active: number, grow: number, t: number, key: string): CaptionImage {
+  /**
+   * grow: how far the active word has grown in, 0..1 (1 without wordIn); t: the time, for words that move;
+   * speaker: whose name goes above the caption, or -1.
+   */
+  private draw(g: Cue, active: number, grow: number, t: number, key: string, speaker: number): CaptionImage {
     const { s, W, H, preset } = this;
     const font = fontById(s.font);
     const upper = s.uppercase || (font.capsOnly && hasDottedI(this.lang));
@@ -184,10 +218,16 @@ export class CaptionRenderer {
     const grows = preset.wordIn === "sharpen" ? 0.15 : 0;
     const bleedX = blurs ? Math.ceil(px * 0.6 + (Math.max(...lineWidths) * grows) / 2) : 0;
     const bleedY = blurs ? Math.ceil(px * 0.6 + (Math.max(...lineHs) * grows) / 2) : 0;
+    // The name sits above the caption, both centred; the image is as wide as the wider.
+    const tag = speaker >= 0 ? this.tagLayout(ctx, speaker, px, font, !!upper) : null;
+    const top = tag ? tag.h + tag.space : 0;
+    // Widened evenly, so the caption stays whole pixels in from both sides (the glass assumes it).
+    const ox = Math.ceil(Math.max(0, (tag?.w ?? 0) - w) / 2);
+    const cw = w + ox * 2;
 
-    this.canvas.width = w + bleedX * 2;
-    this.canvas.height = h + bleedY * 2;
-    ctx.translate(bleedX, bleedY);
+    this.canvas.width = cw + bleedX * 2;
+    this.canvas.height = h + top + bleedY * 2;
+    ctx.translate(bleedX + ox, bleedY + top);
     ctx.font = fontCss; // resizing resets the context
     // "middle" centres the font's em box, which leaves capitals sitting low
     // (the room below is for descenders). Centre the capital height instead,
@@ -298,20 +338,109 @@ export class CaptionRenderer {
       }
     });
     ctx.globalAlpha = 1;
+    if (tag) {
+      ctx.setTransform(1, 0, 0, 1, bleedX + Math.round((cw - tag.w) / 2), bleedY);
+      this.drawTag(ctx, tag);
+    }
 
+    // The caption stays where it would be without the name; the name goes above it.
     const margin = H > W ? 0.16 : 0.08; // keep clear of phone UI on vertical video
     const y = s.position === "top" ? H * margin : s.position === "middle" ? (H - h) / 2 : H * (1 - margin) - h;
     return {
       source: this.canvas,
       key,
-      x: (W - w) / 2 - bleedX,
-      y: y - bleedY,
-      w: w + bleedX * 2,
-      h: h + bleedY * 2,
+      x: (W - cw) / 2 - bleedX,
+      y: y - top - bleedY,
+      w: cw + bleedX * 2,
+      h: h + top + bleedY * 2,
       scale: 1,
-      panel: s.background === "glass" ? { radius: px * 0.32, insetX: bleedX, insetY: bleedY } : null,
+      panel:
+        s.background === "glass" ? { radius: px * 0.32, insetX: bleedX + ox, insetTop: bleedY + top, insetBottom: bleedY } : null,
       frameW: W,
       frameH: H,
     };
+  }
+
+  /** The speaker's name at about half the caption's size, with a dot in their colour. */
+  private tagLayout(ctx: OffscreenCanvasRenderingContext2D, speaker: number, px: number, font: CaptionFont, upper: boolean): TagLayout {
+    const { s, W } = this;
+    const tp = Math.max(9, Math.round(px * 0.48));
+    const css = `${font.weight} ${tp}px ${captionStack(font.id)}`;
+    const pill = s.background === "box" || s.background === "glass";
+    const stroke = s.background === "outline" ? Math.max(1.5, tp * 0.12) : 0;
+    const padX = pill ? tp * 0.6 : stroke + tp * 0.3;
+    const padY = pill ? tp * 0.3 : stroke + tp * 0.15;
+    const dot = Math.round(tp * 0.55);
+    const gap = tp * 0.45;
+    ctx.font = css;
+    let text = this.speakers![speaker];
+    if (upper) text = text.toLocaleUpperCase(this.lang);
+    const max = W * 0.86 - padX * 2 - dot - gap;
+    // A long name is cut to fit the frame.
+    if (ctx.measureText(text).width > max) {
+      while (text.length > 1 && ctx.measureText(`${text}…`).width > max) text = text.slice(0, -1);
+      text = `${text.trimEnd()}…`;
+    }
+    return {
+      text,
+      speaker,
+      css,
+      px: tp,
+      w: Math.ceil(padX * 2 + dot + gap + ctx.measureText(text).width),
+      h: Math.ceil(tp * 1.2 + padY * 2),
+      padX,
+      dot,
+      gap,
+      stroke,
+      pill,
+      space: Math.round(px * (pill ? 0.16 : 0.06)),
+    };
+  }
+
+  /** The name drawn at 0, 0 in the caption's own look: its box or glass, its outline or shadow. */
+  private drawTag(ctx: OffscreenCanvasRenderingContext2D, L: TagLayout) {
+    const { s } = this;
+    ctx.save();
+    ctx.font = L.css;
+    ctx.textBaseline = "alphabetic";
+    ctx.lineJoin = "round";
+    if (L.pill) {
+      // Glass has no blur of its own here: a lighter tint of the box instead.
+      ctx.fillStyle = s.background === "box" ? "rgba(10, 16, 22, 0.72)" : "rgba(10, 16, 22, 0.42)";
+      ctx.beginPath();
+      ctx.roundRect(0, 0, L.w, L.h, L.h * (s.background === "box" ? 0.3 : 0.5));
+      ctx.fill();
+    }
+    if (s.background === "shadow") {
+      ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
+      ctx.shadowBlur = L.px * 0.3;
+      ctx.shadowOffsetY = L.px * 0.05;
+    } else if (s.background === "glass") {
+      ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+      ctx.shadowBlur = L.px * 0.12;
+      ctx.shadowOffsetY = L.px * 0.03;
+    }
+    const cy = L.h / 2;
+    const r = L.dot / 2;
+    ctx.beginPath();
+    ctx.arc(L.padX + r, cy, r, 0, Math.PI * 2);
+    if (L.stroke) {
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.92)";
+      ctx.lineWidth = L.stroke * 2;
+      ctx.stroke();
+    }
+    ctx.fillStyle = speakerColor(L.speaker);
+    ctx.fill();
+    const tx = L.padX + L.dot + L.gap;
+    const ty = cy + ctx.measureText("H").actualBoundingBoxAscent / 2;
+    if (L.stroke) {
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.92)";
+      ctx.lineWidth = L.stroke * 2;
+      ctx.strokeText(L.text, tx, ty);
+    }
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = s.textColor;
+    ctx.fillText(L.text, tx, ty);
+    ctx.restore();
   }
 }

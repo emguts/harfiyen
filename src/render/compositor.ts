@@ -1,6 +1,6 @@
 import type { CaptionImage } from "../captions/renderer";
 import type { Placement, Rect } from "../lib/crop";
-import { AURA_SHADER, auraUniforms, type AuraFrame } from "./aura";
+import { AURA_SHADER, AURA_UNIFORM_BYTES, auraUniforms, type AuraFrame } from "./aura";
 import { GlassBlur } from "./glass";
 import { logoRect, type LogoLayer } from "./logoLayer";
 
@@ -16,10 +16,17 @@ import { logoRect, type LogoLayer } from "./logoLayer";
 // where on the frame: a slice that fills it, or the whole picture fitted in
 // over black or over a blurred copy of itself. The user's logo goes in its
 // corner under the caption, uploaded once like it. With a glass caption the frame is blurred under the caption
-// (glass.ts) before the text goes on. A 2D-canvas path covers browsers
-// without WebGPU.
+// (glass.ts) before the text goes on. In place of a picture there can be the
+// aura (aura.ts) or the user's photo, which covers the frame. A 2D-canvas
+// path covers browsers without WebGPU.
 
-export type Picture = VideoFrame | HTMLVideoElement | AuraFrame | null;
+/** The user's photo (lib/photo.ts) over the whole frame, cut to its shape. */
+export interface PhotoFrame {
+  kind: "photo";
+  image: ImageBitmap;
+}
+
+export type Picture = VideoFrame | HTMLVideoElement | AuraFrame | PhotoFrame | null;
 type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
 
 export interface Compositor {
@@ -31,6 +38,8 @@ export interface Compositor {
   setPlacement(placement: Placement | null): void;
   /** The logo drawn on every frame from now on; null for none. */
   setLogo(logo: LogoLayer | null): void;
+  /** Blur the whole video picture or photo, under the logo and the caption (the kinetic stage's "blur" backdrop). */
+  setBlur(on: boolean): void;
   /** Draw a picture (black when null) and an optional caption. */
   render(picture: Picture, caption: CaptionImage | null): void;
   destroy(): void;
@@ -113,10 +122,25 @@ export const hasGpu = (): Promise<boolean> => getDevice().then(
 );
 
 const isAura = (p: Picture): p is AuraFrame => !!p && "kind" in p && p.kind === "aura";
+const isPhoto = (p: Picture): p is PhotoFrame => !!p && "kind" in p && p.kind === "photo";
 
 /** Video elements can only be sampled once they have a current frame (and a picture at all). */
 const pictureReady = (p: Picture): p is VideoFrame | HTMLVideoElement =>
-  !!p && !isAura(p) && (!("readyState" in p) || (p.readyState >= 2 && p.videoWidth > 0));
+  !!p && !isAura(p) && !isPhoto(p) && (!("readyState" in p) || (p.readyState >= 2 && p.videoWidth > 0));
+
+/** An image drawn over the whole of a W×H frame, its overflow cut off evenly on both sides. */
+function drawCover(
+  g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+  image: ImageBitmap,
+  W: number,
+  H: number,
+) {
+  const s = Math.max(W / image.width, H / image.height);
+  const w = image.width * s;
+  const h = image.height * s;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(image, (W - w) / 2, (H - h) / 2, w, h);
+}
 
 class GpuCompositor implements Compositor {
   readonly kind = "webgpu" as const;
@@ -133,9 +157,16 @@ class GpuCompositor implements Compositor {
   /** The backdrop's placement: the cover part of the picture over the whole frame. */
   private coverBuffer: GPUBuffer;
   private backdrop: Placement["backdrop"] = null;
+  private blur = false;
   private overlay: { key: string; texture: GPUTexture; bind: GPUBindGroup } | null = null;
   private logo: { layer: LogoLayer; texture: GPUTexture; bind: GPUBindGroup } | null = null;
   private logoBuffer: GPUBuffer;
+  /**
+   * The photo as it covers this canvas, drawn at its size on a 2D canvas (which scales it down
+   * smoothly, the GPU sampler would not) and uploaded once for each image and size.
+   */
+  private photo: { image: ImageBitmap; w: number; h: number; texture: GPUTexture; bind: GPUBindGroup } | null = null;
+  private photoBuffer: GPUBuffer;
   private auraPipeline: GPURenderPipeline;
   private auraBuffer: GPUBuffer;
   private auraBind: GPUBindGroup;
@@ -182,6 +213,9 @@ class GpuCompositor implements Compositor {
     this.rectBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     device.queue.writeBuffer(this.rectBuffer, 16, new Float32Array([1, 0, 0, 0]));
     this.logoBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    // The photo's quad: the whole frame, solid.
+    this.photoBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    device.queue.writeBuffer(this.photoBuffer, 0, new Float32Array([-1, -1, 1, 1, 1, 0, 0, 0]));
     this.placeBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.coverBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.setPlacement(null);
@@ -192,7 +226,7 @@ class GpuCompositor implements Compositor {
       vertex: { module: auraModule, entryPoint: "vs_aura" },
       fragment: { module: auraModule, entryPoint: "fs_aura", targets: [{ format }] },
     });
-    this.auraBuffer = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.auraBuffer = device.createBuffer({ size: AURA_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.auraBind = device.createBindGroup({
       layout: this.auraPipeline.getBindGroupLayout(0),
       entries: [{ binding: 0, resource: { buffer: this.auraBuffer } }],
@@ -210,6 +244,10 @@ class GpuCompositor implements Compositor {
     this.device.queue.writeBuffer(this.placeBuffer, 0, rects(p?.src ?? whole, p?.dst ?? whole));
     this.device.queue.writeBuffer(this.coverBuffer, 0, rects(p?.cover ?? whole, whole));
     this.backdrop = p?.backdrop ?? null;
+  }
+
+  setBlur(on: boolean) {
+    this.blur = on;
   }
 
   setLogo(layer: LogoLayer | null) {
@@ -243,6 +281,32 @@ class GpuCompositor implements Compositor {
     } else this.logo.layer = layer;
   }
 
+  /** The photo's bind group, covering this canvas. */
+  private photoBind(image: ImageBitmap): GPUBindGroup {
+    const { width: W, height: H } = this.canvas;
+    const p = this.photo;
+    if (p && p.image === image && p.w === W && p.h === H) return p.bind;
+    p?.texture.destroy();
+    const sized = new OffscreenCanvas(W, H);
+    drawCover(sized.getContext("2d")!, image, W, H);
+    const texture = this.device.createTexture({
+      size: [W, H],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.device.queue.copyExternalImageToTexture({ source: sized }, { texture, premultipliedAlpha: true }, [W, H]);
+    const bind = this.device.createBindGroup({
+      layout: this.overlayPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: this.sampler },
+        { binding: 2, resource: { buffer: this.photoBuffer } },
+        { binding: 3, resource: texture.createView() },
+      ],
+    });
+    this.photo = { image, w: W, h: H, texture, bind };
+    return bind;
+  }
+
   /** The logo's quad on this canvas: clip-space rect and opacity. */
   private logoQuad(layer: LogoLayer) {
     const { width: W, height: H } = this.canvas;
@@ -268,11 +332,18 @@ class GpuCompositor implements Compositor {
     let pass = enc.beginRenderPass({
       colorAttachments: [{ view, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] }],
     });
+    /** A picture or photo is down, which the blur goes over. */
+    let drawn = false;
     if (isAura(picture)) {
       d.queue.writeBuffer(this.auraBuffer, 0, auraUniforms(picture, this.canvas.width, this.canvas.height));
       pass.setPipeline(this.auraPipeline);
       pass.setBindGroup(0, this.auraBind);
       pass.draw(3);
+    } else if (isPhoto(picture)) {
+      pass.setPipeline(this.overlayPipeline);
+      pass.setBindGroup(0, this.photoBind(picture.image));
+      pass.draw(6);
+      drawn = true;
     } else if (pictureReady(picture)) {
       // A media element can lose its frame (seeking, source change); draw
       // black for that frame instead of throwing out of the render loop.
@@ -304,7 +375,13 @@ class GpuCompositor implements Compositor {
         }
         pass.setBindGroup(0, bind(this.placeBuffer));
         pass.draw(3);
+        drawn = true;
       }
+    }
+    if (drawn && this.blur) {
+      pass.end();
+      (this.glass ??= new GlassBlur(d, this.format)).backdrop(enc, view, this.canvas.width, this.canvas.height);
+      pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
     }
     if (glass && caption?.panel) {
       // The picture is done: blur it, lay the panel on, then go on drawing the text.
@@ -315,11 +392,13 @@ class GpuCompositor implements Compositor {
       const sy = H / frameH;
       // The panel sits inside the image's clear margin.
       const ix = panel.insetX * scale * sx;
-      const iy = panel.insetY * scale * sy;
+      const top = panel.insetTop * scale * sy;
+      const bottom = panel.insetBottom * scale * sy;
       const { rect: r } = this.placed;
-      const rect = new Float32Array([r[0] + (ix / W) * 2, r[1] + (iy / H) * 2, r[2] - (ix / W) * 2, r[3] - (iy / H) * 2]);
+      // Clip space: r[1] is the bottom edge, r[3] the top.
+      const rect = new Float32Array([r[0] + (ix / W) * 2, r[1] + (bottom / H) * 2, r[2] - (ix / W) * 2, r[3] - (top / H) * 2]);
       const w = this.placed.w - ix * 2;
-      const h = this.placed.h - iy * 2;
+      const h = this.placed.h - top - bottom;
       const radius = panel.radius * scale * Math.min(sx, sy);
       glass.draw(enc, view, W, H, rect, w, h, Math.min(radius, w / 2, h / 2));
       pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "load", storeOp: "store" }] });
@@ -393,6 +472,8 @@ class GpuCompositor implements Compositor {
     this.rectBuffer.destroy();
     this.logoBuffer.destroy();
     this.logo?.texture.destroy();
+    this.photo?.texture.destroy();
+    this.photoBuffer.destroy();
     this.placeBuffer.destroy();
     this.coverBuffer.destroy();
     this.auraBuffer.destroy();
@@ -407,6 +488,7 @@ class CanvasCompositor implements Compositor {
   private g: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
   private placement: Placement | null = null;
   private logo: LogoLayer | null = null;
+  private blur = false;
 
   constructor(readonly canvas: AnyCanvas) {
     this.g = canvas.getContext("2d") as CanvasRenderingContext2D;
@@ -423,6 +505,16 @@ class CanvasCompositor implements Compositor {
 
   setLogo(logo: LogoLayer | null) {
     this.logo = logo;
+  }
+
+  setBlur(on: boolean) {
+    this.blur = on;
+  }
+
+  /** The photo over the whole canvas, or the picture as placed. */
+  private drawGround(picture: PhotoFrame | VideoFrame | HTMLVideoElement) {
+    if (isPhoto(picture)) drawCover(this.g, picture.image, this.canvas.width, this.canvas.height);
+    else this.drawPicture(picture);
   }
 
   /** The picture laid out on the canvas: its backdrop, then its placement. */
@@ -447,7 +539,15 @@ class CanvasCompositor implements Compositor {
     this.g.fillStyle = "#000";
     this.g.fillRect(0, 0, W, H);
     if (isAura(picture)) this.drawAura(picture);
-    else if (pictureReady(picture)) this.drawPicture(picture);
+    else if (isPhoto(picture) || pictureReady(picture)) {
+      this.drawGround(picture);
+      // The frame drawn so far, blurred onto itself and darker, like the glass backdrop.
+      if (this.blur && "filter" in this.g) {
+        this.g.filter = `blur(${Math.round(Math.min(W, H) * 0.04)}px) brightness(0.7)`;
+        this.g.drawImage(this.canvas, 0, 0);
+        this.g.filter = "none";
+      }
+    }
     if (this.logo) {
       const l = this.logo;
       const r = logoRect(W, H, l.image, l.corner, l.size);
@@ -464,8 +564,9 @@ class CanvasCompositor implements Compositor {
       const y = (c.y + c.h / 2) * sy - h / 2;
       if (c.panel) {
         const ix = c.panel.insetX * c.scale * sx;
-        const iy = c.panel.insetY * c.scale * sy;
-        this.drawGlass(picture, x + ix, y + iy, w - ix * 2, h - iy * 2, c.panel.radius * c.scale * Math.min(sx, sy));
+        const top = c.panel.insetTop * c.scale * sy;
+        const bottom = c.panel.insetBottom * c.scale * sy;
+        this.drawGlass(picture, x + ix, y + top, w - ix * 2, h - top - bottom, c.panel.radius * c.scale * Math.min(sx, sy));
       }
       this.g.drawImage(c.source, x, y, w, h);
     }
@@ -479,10 +580,11 @@ class CanvasCompositor implements Compositor {
     g.beginPath();
     g.roundRect(x, y, w, h, Math.min(radius, w / 2, h / 2));
     g.clip();
-    const blurs = "filter" in g && pictureReady(picture);
+    const ground = isPhoto(picture) || pictureReady(picture) ? picture : null;
+    const blurs = "filter" in g && !!ground;
     if (blurs) {
       g.filter = `blur(${Math.round(Math.min(W, H) * 0.03)}px)`;
-      this.drawPicture(picture);
+      this.drawGround(ground);
       g.filter = "none";
     }
     // Without the blur the panel is a plain dark box; a bit darker so text still reads.
@@ -491,11 +593,96 @@ class CanvasCompositor implements Compositor {
     g.restore();
   }
 
-  /** Simplified aura: soft colour fields and one gentle wave line. */
+  /** Simplified audio visualizer for the 2D canvas fallback. */
   private drawAura(a: AuraFrame) {
     const { width: W, height: H } = this.canvas;
     const g = this.g;
-    const lv = [a.levels.low, a.levels.mid, a.levels.high];
+    const { low, mid, high } = a.levels;
+    const energy = (low + mid + high) / 3;
+    const style = a.style ?? "aura";
+
+    if (style === "halo") {
+      const short = Math.min(W, H);
+      const baseR = short * (0.22 + 0.05 * low);
+      const grad = g.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, short * 0.55);
+      grad.addColorStop(0, a.palette[0] + "44");
+      grad.addColorStop(1, "#00000000");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, W, H);
+
+      a.palette.forEach((col, k) => {
+        g.strokeStyle = col;
+        g.lineWidth = Math.max(2, short / 240);
+        g.beginPath();
+        for (let i = 0; i <= 120; i++) {
+          const ang = (i / 120) * Math.PI * 2;
+          const r =
+            baseR * (0.94 + k * 0.06) +
+            Math.sin(ang * (5 + k * 4) + a.time * (1.2 + k * 0.5)) * short * 0.02 * (0.2 + (k === 0 ? low : k === 1 ? mid : high));
+          const x = W / 2 + Math.cos(ang) * r;
+          const y = H / 2 + Math.sin(ang) * r;
+          if (i === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        }
+        g.closePath();
+        g.stroke();
+      });
+      return;
+    }
+
+    if (style === "kure") {
+      const short = Math.min(W, H);
+      const punch = a.levels.punch ?? 0;
+      const r = short * (0.25 + 0.035 * low + 0.03 * punch);
+      const glow = g.createRadialGradient(W / 2, H / 2, r * 0.8, W / 2, H / 2, r * (1.7 + energy));
+      glow.addColorStop(0, a.palette[1] + "55");
+      glow.addColorStop(1, "#00000000");
+      g.fillStyle = glow;
+      g.fillRect(0, 0, W, H);
+      g.beginPath();
+      for (let i = 0; i <= 96; i++) {
+        const ang = (i / 96) * Math.PI * 2;
+        const rr =
+          r *
+          (1 +
+            Math.sin(ang * 3 + a.time * 0.9) * (0.04 + 0.1 * low) +
+            Math.sin(ang * 7 - a.time * 1.5) * (0.01 + 0.04 * mid));
+        const x = W / 2 + Math.cos(ang) * rr;
+        const y = H / 2 + Math.sin(ang) * rr;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      const body = g.createRadialGradient(W / 2 - r * 0.35, H / 2 - r * 0.4, r * 0.05, W / 2, H / 2, r * 1.1);
+      body.addColorStop(0, "#ffffffcc");
+      body.addColorStop(0.18, a.palette[2]);
+      body.addColorStop(0.7, a.palette[0]);
+      body.addColorStop(1, a.palette[1]);
+      g.fillStyle = body;
+      g.fill();
+      return;
+    }
+
+    if (style === "spektrum") {
+      for (let k = 0; k < 8; k++) {
+        const depth = k / 7;
+        const baseY = H * (0.3 + depth * 0.54);
+        const band = k >= 5 ? low : k >= 2 ? mid : high;
+        const amp = H * (0.018 + 0.07 * (0.35 * energy + 0.65 * band));
+        g.beginPath();
+        for (let x = 0; x <= W; x += 6) {
+          const u = x / W - 0.5;
+          const env = Math.exp(-u * u * 3);
+          const y = baseY - Math.sin(u * (5 + k) + a.time * (0.5 + depth * 0.4)) * amp * env;
+          if (x === 0) g.moveTo(x, y);
+          else g.lineTo(x, y);
+        }
+        g.strokeStyle = a.palette[k % 3];
+        g.lineWidth = Math.max(1.5, H / 450);
+        g.stroke();
+      }
+      return;
+    }
+
     a.palette.forEach((c, i) => {
       const t = a.time * (0.04 + i * 0.012) + i * 2;
       const x = W / 2 + Math.sin(t) * W * 0.35;
@@ -507,7 +694,6 @@ class CanvasCompositor implements Compositor {
       g.fillStyle = grad;
       g.fillRect(0, 0, W, H);
     });
-    const energy = (lv[0] + lv[1] + lv[2]) / 3;
     g.strokeStyle = "rgba(255,255,255,0.45)";
     g.lineWidth = Math.max(1, H / 600);
     g.beginPath();

@@ -84,11 +84,26 @@ canlı çalışır.
 - Kelime düzeyinde zaman: bir kelimeye tıkla, kayıt o ana atlasın; çalarken konuşulan kelime vurgulanır.
 - Düzenleme: satıra çift tıkla ve düzelt, satırı sil, ⌘Z ile geri al. Değişmeyen kelimelerin zamanları
   korunur.
-- **Zaman düzenleme:** transkriptte satırın üstüne gelip saat simgesine tıkla. Satırın ya da seçilen tek
-  kelimenin başlangıç ve bitiş zamanı yazılarak, ±0,1 sn (Shift ile 0,5) adımlarla ya da **Şu an** ile oynatıcının
-  bulunduğu ana getirilerek değiştirilir; **Alt + ← / →** satırı kaydırır. Satır uzayıp kısalınca kelimeleri aynı
-  oranda yayılır; zamanlar önceki ve sonraki kelimeleri geçmez. **Yazıya döküm → Zamanlama** bütün altyazıyı
-  0,1 / 0,5 sn öne ya da geriye alır (**[** ve **]**, Shift ile 0,5 sn). Hepsi ⌘Z / Ctrl+Z ile geri alınır.
+- Zaman düzenleme: transkriptte satırın üstüne gelip saat simgesine tıkla. Satırın ya da seçilen tek kelimenin
+  başlangıç ve bitiş zamanı yazılarak, ±0,1 sn (Shift ile 0,5) adımlarla ya da **Şu an** ile oynatıcının bulunduğu
+  ana getirilerek değiştirilir; **Alt + ← / →** kaydırır. Satır uzayıp kısalınca kelimeleri aynı oranda yayılır.
+  Zamanlar önceki ve sonraki kelimeleri geçmez; bitişik kelime aradaki sınırla birlikte uzar ya da kısalır.
+  **Metin → Zamanlama** bütün altyazıyı çevirisiyle birlikte 0,1 / 0,5 sn öne ya da geriye alır (**[** ve **]**,
+  Shift ile 0,5 sn). Hepsi ⌘Z / Ctrl+Z ile geri alınır. ([emguts/harfiyen](https://github.com/emguts/harfiyen)
+  fork'undan uyarlandı.)
+- Metni sese hizala: elindeki doğru metni (şarkı sözü, konuşma metni, şiir) transkriptin başlığındaki düğmeyle
+  yapıştır. Kelimeler metinden, zamanlar dökümden gelir: metin dökümle yazılışa göre eşleştirilir, yanlış duyulmuş
+  ama yakın yazılan kelimeler de eşleşir; eşleşmeyenler komşularının arasına konuşma hızında dizilir. Kısa satırlı
+  metinlerde (şarkı sözü, şiir) her satır ayrı bir altyazı satırı olur, altyazı stilleri de orada kırılır;
+  paragraflarda kapalı gelir, istenirse değiştirilir. `[Nakarat]`, `(x2)` gibi tek başına duran başlıklar atlanır.
+  **Sesle ince ayar** açıkken Whisper metnin kelimelerini en fazla 30 saniyelik parçalarda doğrudan seste arar;
+  dökümün kaçırdığı kelimeler de gerçek zamanlarını alır. Eşleşen kelimelerden 2 saniyeden fazla sapan parçalar
+  eski zamanlarında kalır. Şarkılarda ve gürültülü kayıtlarda fark eder; daha yavaştır. Dökümün hiç duymadığı
+  bölümler için **Elle tempo tut**: kayıt baştan (kesilmişse bölümün başından) çalar, her satır (satır kırma kapalıysa
+  her cümle) başlarken **Enter**'a basılır. **Backspace** son işareti siler, **←** / **→** 5 saniye sarar (geri
+  gidince sonraki işaretler silinir), **Boşluk** duraklatır, **+** / **−** tepki payını 25 ms değiştirir (her basıştan
+  düşülür, varsayılan 150 ms), **Esc** bitirir. Satırın içindeki kelimeler o aralıkta duyulan kelimelerin zamanını
+  alır; işaretlenmeyen satırlar sonuncunun ardına dizilir. ⌘Z / Ctrl+Z geri alır. ([emguts/harfiyen](https://github.com/emguts/harfiyen) fork'undan uyarlandı.)
 - Bul ve değiştir (⌘F / Ctrl+F): yanlış tanınan bir kelimeyi ya da ismi bütün transkriptte düzelt. Büyük/küçük
   harfe bakmaz, istenirse yalnızca tam kelimeleri bulur.
 - SRT ve VTT açma: hazır altyazı açılıp stillendirilir ve videoya yazılır. Satırlar ve zamanlar korunur;
@@ -116,6 +131,31 @@ canlı çalışır.
 - Logo: kendi logon (PNG, SVG, WebP, JPEG) seçtiğin köşede, istediğin boyut ve saydamlıkta durur. Bu
   tarayıcıda saklanır, sonraki projelerde de hazırdır; her projede gizlenebilir.
 
+### Sahne ve kinetik tipografi
+
+- **Sahne** sekmesinde ekrandaki yazı seçilir: **Altyazı**, **Kinetik** ya da **Yok**. Arkasında ne olacağı da
+  buradan seçilir: videolarda görüntünün kendisi ya da bulanık hâli, ses dosyalarında bir aura ya da düz zemin.
+  Videonun görüntüsü yerine aura da konabilir; o zaman dosyanın yalnızca sesi kullanılır.
+- **Kinetik tipografi** altyazı yerine bütün ekranı kullanır. Sekiz stil var:
+  - **3D Düğüm:** satır, kendi etrafında dönen bir 3D düğümün üzerinde akar.
+  - **Pano:** havalimanı kalkış panosu gibi her satır tık tık dönerek yerine oturur.
+  - **Fizik (Matter.js):** söylenen her kelime sahneye düşer, çarpar, devrilir ve üst üste yığılır.
+  - **2D Kamera:** her cümle iki yana yaslı bir blok olur, cümle bitince kamera dönerek sıradakine geçer.
+  - **Poster:** arkada dev hayalet tipografi, ortada farklı ölçeklerde dizilen poster bloğu.
+  - **Darbe:** sesin enerjisiyle büyüyen tam ekran kelimeler.
+  - **Maske:** harfler görünmez bir çizginin arkasından yükselir, söylenen kelimenin altı dolar.
+  - **Tünel:** kelimeler uzaktan gelir, söylenirken durur, sonra kameranın içinden geçip gider.
+- Beş renk paleti (Gece & Altın, Siyah & Neon, Krem & Mürekkep, Mercan & Beyaz, Çini & Firuze) ve bütün yazı
+  tipleri (yüklediklerin de) seçilebilir. Oynatıcıda ve altyazılı MP4'te aynı görünür.
+- **Auralar:** **Aura** (yumuşak gradyan ve dalga çizgileri), **Halo** (sesin frekanslarıyla bükülen halkalar),
+  **Ufuk** (sesin son saniyeleri üzerinde uçulan retro dalga arazisi), **Küre** (sesle şekil değiştiren yanardöner
+  3D damla) ve **Sırtlar** (üst üste dizilmiş ışık çizgileri). Beş renk paleti var: Çini, Gün batımı, Orman,
+  Lavanta, Gece.
+- **Fotoğraf:** arka plan olarak kendi fotoğrafın (JPEG, PNG, WebP; örneğin podcast kapağı) kareyi kaplar, taşan kısmı
+  kesilir. **Net** ya da **Bulanık** seçilir; bulanıkta yazı her fotoğrafta okunur. Kinetik tipografi üstünde ince bir
+  perdeyle durur. Fotoğraf bu tarayıcıda saklanır, sonraki projelerde de hazırdır; videolarda seçilince videonun
+  yalnızca sesi kullanılır.
+
 ### Görüntü ve dışa aktarma
 
 - WebGPU oynatıcı: önizlemede gördüğün, dışa aktarılan videonun birebir aynısıdır.
@@ -126,13 +166,25 @@ canlı çalışır.
   9:16'da 1080p'yi önerir.
 - Kesme: zaman çizelgesinin sonundaki **Kes** ile videonun bir bölümü seçilir; seçilen kısım renklenir, uçlar
   sürüklenince oynatıcı o kareyi gösterir. Yalnızca o bölüm yazıya dökülür, oynatılır ve dışa aktarılır; video,
-  SRT ve VTT zamanları 0:00'dan başlar.
+  SRT ve VTT zamanları 0:00'dan başlar. **Tamam**'dan sonra zaman çizelgesi yalnızca seçilen bölümü kaplar
+  (transkript ve oynatıcıdaki zamanlar dosyanınki olarak kalır); **Kes**'e yeniden basınca bütün dosya görünür.
+- Boşlukları kesme (jump cut): **Metin** sekmesinde **Sessizlikleri at** açılınca kelimeler arasındaki uzun
+  sessizlikler videodan çıkar, cümleler arka arkaya gelir. Sessizlikler transkriptin kelime zamanlarından bulunur,
+  sesin düzeyiyle inceltilir: transkriptte olmayan bir ses (gülme, öksürük) kesilmez. **En kısa** kaç saniyelik
+  sessizliğin kesileceğini, **Pay** konuşmanın iki yanında ne kadar sessizlik kalacağını belirler; "ııı", "eee",
+  "hmm" gibi dolgu sesleri de istenirse kesilir ve altyazıda görünmez. Oynatırken kesilen yerler atlanır, zaman
+  çizelgesinde soluk görünür. Video, SRT ve VTT kesilmiş hâliyle dışa aktarılır, sesin her kesimde birkaç
+  milisaniyelik geçişi olur. Seslendirme açıksa okunan cümlelerin altı kesilmez. Transkript ve zamanları
+  değişmez; kapatınca video eski hâline döner.
 - Altyazılı MP4: kareler ekran kartında birleştirilir, video H.264 ya da HEVC olarak kodlanır, ses kopyalanır.
   Tarayıcı destekliyorsa ekran kartı, desteklemiyorsa işlemci kullanılır; menü hangisinin kullanılacağını gösterir.
-- Dışa aktarırken çözünürlük (kaynakla aynı ya da daha küçük: 1080p, 720p) ve kalite seçilir; tahmini dosya
-  boyutu seçim yapılırken görünür.
-- Ses dosyaları ve kayıtlar için **aura**: sesle hareket eden yumuşak bir gradyan ve sakin bir ses
-  görselleştirmesi. Bunlar da altyazılı MP4 olarak 720p, 1080p ya da 4K dışa aktarılabilir.
+- Dışa aktarırken çözünürlük (kaynakla aynı, daha küçük ya da 1080p'ye kadar daha büyük) ve kalite seçilir;
+  tahmini dosya boyutu seçim yapılırken görünür. 1080p'den küçük videolar varsayılan olarak 1080p yazılır:
+  görüntü büyütülür, altyazı bu boyutta çizildiği için keskin çıkar.
+- Ses dosyaları ve kayıtlar aura ya da kinetik tipografiyle (bkz. Sahne ve kinetik tipografi) altyazılı MP4
+  olarak 720p, 1080p ya da 4K dışa aktarılabilir.
+- Ses düzeyi: oynatma çubuğundaki ses düğmesinin üstüne gelince kaydırıcı açılır. Seslendirmeyi ve orijinal sesi
+  birlikte kısar, düzey tarayıcıda hatırlanır; dışa aktarılan videoyu etkilemez.
 - SRT, WebVTT, düz metin, kelime zamanlı JSON ve panoya kopyalama.
 
 ### Seslendirme
@@ -147,6 +199,9 @@ canlı çalışır.
   çevirir, sonra okur; ilerleme tek çubukta görünür. Her cümle Türkçesinin başladığı anda başlar; sığmayan cümle önündeki sessizliğe biraz erken başlar,
   gerekirse en fazla 1,15 kat hızlı okunur (Supertonic daha hızlıda cümle sonunu yutuyor). On ses arasından
   seçilir (Alex, James, Robert, Sam, Daniel, Sarah, Lily, Jessica, Olivia, Emily).
+- **Metin seslendir:** boş ekrandaki **Metin seslendir** ile dosya olmadan, yazılan ya da yapıştırılan metin
+  yapay sesle okunur. Kelimeler zamanlarıyla altyazıya ve oynatıcıya yerleşir; aura ya da kinetik tipografiyle
+  videoya dönüşür.
 - Modellerin cümle başına ve sonuna koyduğu sessizlik kırpılır; böylece cümleler birbirini itmez, seslendirme
   videonun gerisinde kalmaz.
 - Videonun (ya da seçili bölümün) sonuna taşan son cümleler önlerindeki duraklamalara doğru geriye kayar, gerekirse
@@ -180,31 +235,42 @@ canlı çalışır.
 ### Şarkılar
 
 - **Müzik modu:** **Videodaki dil** seçiminin yanındaki kutu. Açıkken Whisper ses etkinliği algılayıcıya (VAD)
-  takılmaz: her 30 saniyelik parçayı işler, hiçbir kelimeyi atmaz. VAD konuşma için eğitildiğinden müziğin altındaki
-  vokali çoğu zaman sessizlik sanıyor. Yalnızca Whisper'da etkilidir; yalnız çalgı olan yerlerde Whisper birkaç
-  uydurma ya da tekrarlanan satır yazabilir.
+  takılmaz: VAD konuşma için eğitildiğinden müziğin altındaki vokali çoğu zaman sessizlik sanıyor. Sessiz parçalar
+  (−40 dBFS altı) yine atlanır; geri kalan her 30 saniyelik parça işlenir, kelimeler VAD'e göre kırpılmaz.
+  "İzlediğiniz için teşekkürler" gibi Whisper'ın sessizlikte uydurduğu bilinen satırlar atılır. Yalnızca Whisper'da
+  etkilidir.
 - **Vokali ayır:** Müzik modu açıkken yanında görünür, varsayılan olarak açıktır. Whisper şarkıyı duymadan önce
   [Mel-Band RoFormer](https://huggingface.co/audiojs/mel-roformer) şarkıdaki sesi çalgılardan ayırır (MUSDB18'de
   vokalde 12,1 dB SDR, açık modellerin en iyilerinden); Whisper yalnızca şarkıcıyı duyar. Gürültülü miksteki sözler
-  daha az kaçar, satırlar duraklamalarda daha doğal bölünür, çalgı yerlerinde uydurma azalır. **Sesle ince ayar** da
-  ayrılmış sesi kullanır. Ekran kartı gerekir; ilk kullanımda yaklaşık 464 MB indirilir. Döküm daha uzun sürer
-  (RTX 4070 SUPER'da 1 dakikalık şarkı ayırmasız 5, ayırarak 20 saniye). Ayrılmış ses yalnızca dökümde kullanılır;
-  oynatıcı, dışa aktarılan video ve dalga formu orijinal sesi kullanır.
-- **Şarkı sözleri:** Müzik modu açıkken **Yazıya döküm** sekmesinde görünür. Sözler, her dize ayrı satırda olacak
-  şekilde yapıştırılır; `[Nakarat]` ya da `(x2)` gibi tek başına duran başlıklar atlanır. Her dize ayrı bir altyazı
-  satırı olur; altyazı stilleri, SRT ve VTT bu satırlara uyar. ⌘Z / Ctrl+Z geri alır.
-  - **Sözleri hizala:** Sözler dökümle kelime kelime eşleştirilir (yazılışa göre; yanlış duyulmuş ama yakın yazılan
-    kelimeler de eşleşir). Kelimeler sözlerden, zamanlar dökümden gelir. İnsanın söyleyemeyeceği kadar hızlı
-    sıkışmaya yol açan eşleşmeler atılır; eşleşmeyen kelimeler komşularının yanına, söyleme hızında dizilir.
-  - **Elle tempo tut:** Şarkı baştan çalar, her dize başlarken **Enter**'a basılır. **Backspace** son işareti
-    siler, **←** / **→** 5 saniye geri / ileri sarar (geri gidince sonraki işaretler silinir), **+** / **−** tepki
-    payını 25 ms değiştirir (her basıştan düşülür, varsayılan 150 ms), **Esc** bitirir. Dize içindeki kelimeler o
-    aralıkta duyulan kelimelerin zamanını alır. Dökümde izi olmayan bölümler (başka dilde söylenen kısımlar, Whisper'ın
-    hiç duymadığı girişler) için en güvenilir yol budur.
-  - **Sesle ince ayar (isteğe bağlı):** Hizalamadan sonra Whisper sözleri en fazla 30 saniyelik parçalarda doğrudan
-    seste arar ve kelime zamanlarını oradan alır. Yeni zamanları eldeki kanıttan (eşleşen kelimeler, işaretler) 2
-    saniyeden fazla sapan parçalar eski zamanlarında kalır. Whisper gerekir; daha yavaştır.
-  - Hizalamadan sonra kalan kaymalar **Zamanlama** ile düzeltilir (bkz. Yazıya döküm → Zaman düzenleme).
+  daha az kaçar, satırlar duraklamalarda daha doğal bölünür, çalgı yerleri sessiz kaldığı için atlanır ve uydurma
+  azalır. **Metni sese hizala**'daki **Sesle ince ayar** da ayrılmış sesi kullanır. Ekran kartı gerekir; ilk
+  kullanımda yaklaşık 464 MB indirilir. Döküm daha uzun sürer (RTX 4070 SUPER'da 1 dakikalık şarkı ayırmasız 5,
+  ayırarak 20 saniye). Ayrılmış ses yalnızca dökümde kullanılır; oynatıcı, dışa aktarılan video ve dalga formu
+  orijinal sesi kullanır.
+- **Şarkı sözleri:** Şarkıyı müzik modunda yazıya döktükten sonra sözleri transkriptin başlığındaki **Metni sese
+  hizala** ile yapıştır (bkz. Metin → Metni sese hizala). Her dize ayrı bir altyazı satırı olur.
+
+### Konuşmacılar
+
+- **Metin** sekmesindeki **Konuşmacıları ayır** kimin ne zaman konuştuğunu sesinden bulur. Konuşmalar her
+  kelimenin zamanından bulunur, her 1,5 saniyelik parçanın ses izi
+  [3D-Speaker CAM++](https://www.modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced) ile
+  çıkarılır, izler kişilere göre gruplanır. Kaç kişi konuştuğu seçilebilir ya da bulunması istenebilir; biliniyorsa
+  seçmek sonucu iyileştirir. Konuşmacılar "Konuşmacı 1", "Konuşmacı 2" diye adlandırılır, kim olduklarını sistem
+  bilmez.
+- Transkriptte her konuşmanın başında konuşanın adı renkli yazar; satırlar konuşmacı değişince bölünür. Ada
+  tıklayınca o konuşma, satırın üstündeki kişi düğmesiyle tek satır başka birine ya da yeni bir konuşmacıya
+  verilir. Adlar değiştirilir; aynı kişi iki kez çıktıysa ikisi birleştirilir. Hepsi ⌘Z ile geri alınır.
+- **Altyazı** sekmesindeki **Konuşanın adını göster** açılınca konuşan değiştiğinde altyazının üstünde adı, renk
+  noktasıyla çıkar. Ad, stilin kendi görünümünü alır: kutulu stilde küçük bir kutu, konturluda kontur, gölgelide
+  gölge, camda yarı saydam bir zemin; yazı ve vurgu renkleri değişmez. Kinetik tipografide stillerin düzenine
+  karışmamak için ad her stilde sol üst köşede durur, konuşan değişince yenisine geçer. Oynatıcı ve altyazılı MP4
+  aynıdır; tek konuşmacıda ad gösterilmez.
+- Konuşmacılar zaman aralığı olarak saklanır: transkript düzeltilse, çevrilse ya da boşluklar kesilse de her kelime
+  konuşanını bulur. SRT'de konuşan değiştiği satırın başına adı yazar ("Ayşe: …"), WebVTT'de ses etiketi
+  (`<v Ayşe>`) kullanılır, düz metin ve JSON'da da adlar yer alır. Konuşmacılar projeyle ve **.harfiyen**
+  dosyasıyla kaydedilir.
+- Model ilk kullanımda yaklaşık 28 MB indirir ve işlemcide (WASM) çalışır; bir dakikalık ses birkaç saniyede biter.
 
 ### Projeler
 
@@ -325,6 +391,13 @@ O sunucuda henüz olmayan vokal ayırma modeli (Mel-Band RoFormer) sabitlenmiş 
 | Kadraj                     | Oynatıcının üstünde kırpma düğmesi ya da **C**; **Enter** uygular, **Esc** vazgeçer        |
 | Bölüm seçmek (kesme)       | Zaman çizelgesinin sonunda **Kes**, uçları sürükle, **Tamam**; oynatırken **I** / **O**    |
 | Satırı düzenlemek          | Satıra çift tıkla, **Enter** kaydeder, **Esc** vazgeçer                                    |
+| Zamanı düzenlemek          | Satırın üstüne gel, saat simgesi; bütün altyazıyı kaydırmak için **[** / **]**             |
+| Metni sese hizalamak       | Transkriptin başlığındaki hizalama düğmesi, metni yapıştır                                 |
+| Sessizlikleri kesmek       | Sağ panelde **Metin → Sessizlikleri at**                                                   |
+| Konuşmacıları ayırmak      | Sağ panelde **Metin → Konuşmacıları ayır**                                                 |
+| Kinetik tipografi, aura    | Sağ panelde **Sahne**                                                                      |
+| Metni seslendirmek         | Boş ekranda **Metin seslendir**                                                            |
+| Ses düzeyi                 | Alt çubuktaki ses düğmesinin üstüne gel                                                    |
 | Geri al                    | **⌘Z** / **Ctrl+Z**                                                                        |
 | Otomatik noktalama         | Sağ panelde **Noktalama ve büyük harf → Otomatik ekle** (varsayılan açık; tercih saklanır) |
 | Noktalamayı elle uygulamak | Döküm bitince aynı bölümde **Şimdi uygula**                                                |
@@ -373,8 +446,11 @@ npm run test:whisper -- kayit.wav   # Whisper motorunu Node'da dener (16 bit WAV
 npm run test:formatter              # noktalamayı sedalib'in çıktısıyla karşılaştırır (model gerekir)
 npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
-npm run test:lyrics                 # şarkı sözlerini dökümle hizalamayı dener
 npm run test:timing                 # elle zaman düzenlemeyi dener
+npm run test:align                  # yapıştırılan metni dökümle hizalamayı dener
+npm run test:cuts                   # boşlukları kesmeyi (jump cut) dener
+npm run test:speakers               # konuşmacı düzeltmelerini ve dışa aktarımı dener
+npm run test:diarize -- ses.wav kim.txt  # konuşmacı ayırmayı bilinen bir kayıtla ölçer (model gerekir)
 npm run test:vocals -- sarki.wav     # vokal ayırmayı dener (44,1 kHz WAV; --ref ile başka bir ayrımla karşılaştırır)
 npm run eval:numbers                # rakama çevirmeyi Vikipedi metniyle ölçer (puan verir)
 npm run test:translate -- ref.json  # çeviriyi Python referansıyla karşılaştırır (scripts/make_mt_refs.py)
@@ -396,9 +472,21 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - Altyazılı video oluşturulurken diske yazılır, uzun videolarda da bellek dolmaz: Chrome ve Edge önce kaydedilecek
   yeri sorar, diğer tarayıcılar videoyu tarayıcının kendi disk alanında hazırlayıp indirir. Sayfa ağdan `http://`
   ile açıldığında bu ikisi de kullanılamaz, video bellekte oluşturulur.
-- Zaman düzenleme transkriptten yapılır; zaman çizelgesinde satır kenarlarını sürüklemek yok.
-- Kesme tek bölümle sınırlı; aradan parça çıkarmak (jump cut) yok. Bölüm dökümden sonra genişletilirse eksik
-  kısım için yeniden yazıya dökmek gerekir.
+- Metni sese hizalamak için önce yazıya dökmek gerekir; zamanlar dökümün duyduğu yerlerden gelir. Dökümün hiç
+  duymadığı bölümlerdeki satırlar (başka dilde söylenen kısımlar, müziğin bastırdığı yerler) komşularının yanına
+  tahminen yerleşir; **Sesle ince ayar** ya da zaman düzenlemeyle düzeltilir. Sesle ince ayar yalnızca model olarak
+  Whisper seçiliyken çalışır (döküm Seda ile yapılmış olabilir) ve ses dosyası gerektirir.
+- Zaman düzenleme transkriptten yapılır; zaman çizelgesinde kelime ya da satır kenarlarını sürüklemek yok. Tek
+  kelimenin ya da satırın zamanı değişince çevirisi kendiliğinden kaymaz (toplu kaydırma ikisini birlikte kaydırır).
+- Kesme tek bölümle sınırlı. Boşlukları kesme yalnızca sessizlikleri ve dolgu seslerini çıkarır; tek tek kesim
+  geri alınamaz, transkriptten kelime silerek videodan kesmek yok. Kelime zamanları sessizliği de kapsıyorsa
+  (Whisper bazen böyle yapar) o boşluk bulunamaz. Bölüm dökümden sonra genişletilirse eksik kısım için yeniden
+  yazıya dökmek gerekir.
+- Konuşmacı ayırma üst üste konuşmayı ayırmaz: aynı anda konuşulan yerde kelimeler tek kişiye gider. "Evet",
+  "hı hı" gibi kısa araya girmeler ve aynı kişinin çok farklı tonda konuştuğu yerler yanlış kişiye ya da yeni bir
+  konuşmacıya düşebilir; transkriptten düzeltilir. Videoda yalnızca ad gösterilir; altyazı rengi ya da konumu
+  konuşmacıya göre değişmez, seslendirme her konuşmacıyı aynı sesle okur. Seslendirmeyi takip eden altyazıda
+  ad görünmez. Döküm sonradan sürdürülürse yeni kısım için yeniden ayırmak gerekir.
 - Kadraj videonun tamamı için sabittir; zamanla kayan kadraj yok. **Sığdır**'da videonun karedeki boyutu ve
   konumu değiştirilemez.
 - Seslendirmede Türkçe modellerin tek sesi var; konuşmacılar ayrılmaz, her konuşmacı aynı sesle okunur. Orijinal ses
@@ -406,7 +494,7 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
   **.harfiyen** proje dosyasına girmez; yalnızca bu tarayıcıda projeyle birlikte saklanır.
 - İngilizce seslendirme Türkçeden uzun olabilir; sıkışık konuşmalarda cümleler Türkçesinden birkaç yüz
   milisaniye geç başlayabilir. Seslendirmeyi takip eden altyazıda kelime zamanları harf sayısından tahmin edilir.
-- Çeviri yalnızca İngilizceye. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
+- Çeviri yalnızca Türkçe ile İngilizce arasında. Çevrilmiş kelimelerin kendi zamanı yok, bu yüzden "Sesle vurgula" çeviride
   çalışmaz. Yemek adları, özel adlar ve argo yanlış çevrilebilir.
 - Ses dosyalarından üretilen MP4'te ses AAC ile kodlanır; tarayıcı AAC kodlayamıyorsa Opus kullanılır.
   Opus'lu MP4'ü QuickTime ve iPhone Fotoğraflar açmayabilir (Chrome, VLC ve sosyal platformlar açar).
@@ -429,8 +517,12 @@ Arayüz [Tailwind CSS v4](https://tailwindcss.com) ile yazılır (`@tailwindcss/
 - [x] **Dikey video ve bölüm seçme:** kadraj (Doldur / Sığdır), kesme ve yalnızca seçili bölümü yazıya dökme.
 - [x] **İngilizce seslendirme (voice-over):** çeviriyi yapay sesle okuma, orijinal sesi altta tutma, altyazıyı
       sese hizalama.
-- [ ] **Konuşmacı ayırma:** konuşmacılara göre altyazı rengi ve etiket; seslendirmede konuşmacı başına ses.
-- [ ] **Jump cut:** sessizlikleri ve dolgu kelimeleri ("ııı", "şey") kesme; transkriptten kesme.
+- [x] **Konuşmacı ayırma:** kimin ne zaman konuştuğunu bulma, transkriptte düzeltme, dışa aktarmada ve videoda
+      adlar.
+- [ ] **Konuşmacıya göre altyazı ve ses:** altyazı rengi ya da konumu konuşmacıya göre (vurgu rengiyle
+      karışmayacak şekilde); seslendirmede konuşmacı başına ses.
+- [x] **Jump cut:** sessizlikleri ve dolgu seslerini ("ııı", "eee") kesme.
+- [ ] **Transkriptten kesme:** kelime ya da cümle silince videodan da kesilmesi; tek tek kesimi geri alma.
 - [ ] **Değişken yazı tipleri için kalınlık ve italik:** yüklenen ve hazır değişken yazı tiplerinde kalınlık
       kaydırıcısı (yazı tipinin kendi aralığında) ve italik anahtarı.
 
@@ -449,6 +541,9 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
 - [openai/whisper-large-v3-turbo](https://huggingface.co/openai/whisper-large-v3-turbo) (MIT), ONNX
   sürümü [onnx-community](https://huggingface.co/onnx-community/whisper-large-v3-turbo_timestamped);
   kelime zamanlama [openai-whisper](https://github.com/openai/whisper)'dan (MIT) uyarlandı.
+- Konuşmacı modeli 3D-Speaker CAM++
+  ([iic/speech_campplus_sv_zh_en_16k-common_advanced](https://www.modelscope.cn/models/iic/speech_campplus_sv_zh_en_16k-common_advanced),
+  [3D-Speaker](https://github.com/modelscope/3D-Speaker)): Apache-2.0. ONNX sürümü sherpa-onnx'in.
 - [Silero VAD](https://github.com/snakers4/silero-vad) v5 (Whisper) ve v6 (Seda, seda-v0.2 ile gelir): MIT.
 - Çeviri modelleri [Helsinki-NLP/opus-mt-tc-big-tr-en](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-tr-en)
   ve [Helsinki-NLP/opus-mt-tc-big-en-tr](https://huggingface.co/Helsinki-NLP/opus-mt-tc-big-en-tr) (OPUS-MT,
@@ -474,5 +569,9 @@ Lisans Harfiyen'in kendi kodunu kapsar. Aşağıdaki model, veri ve kütüphanel
 - Noktalama ölçüm metinleri (`tests/data/`): Türkçe Vikipedi, CC BY-SA 4.0; kaynak makaleler dosyalarda.
 - Algoritmalar [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)'ten (Apache-2.0) uyarlandı.
 - [ONNX Runtime Web](https://onnxruntime.ai) (MIT), [mediabunny](https://mediabunny.dev) (MPL-2.0),
-  [React](https://react.dev) (MIT), [Tailwind CSS](https://tailwindcss.com) (MIT).
+  [React](https://react.dev) (MIT), [Tailwind CSS](https://tailwindcss.com) (MIT),
+  [Matter.js](https://brm.io/matter-js/) (MIT, kinetik tipografinin Fizik stili).
+- Zaman düzenleme, metni sese hizalama ve elle tempo tutma [emguts](https://github.com/emguts)'un
+  [emguts/harfiyen](https://github.com/emguts/harfiyen) fork'undan uyarlandı; ses düzeyi kaydırıcısını
+  [vuxenn1](https://github.com/vuxenn1) ekledi. Teşekkürler.
 - Yazı tipleri: SIL Open Font License 1.1.

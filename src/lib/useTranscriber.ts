@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DecodeOptions, Word } from "../engine";
+import type { DecodeOptions, SpeechLang, Word } from "../engine";
 import { DEFAULT_MODEL, isModelId, modelFileUrl, modelInfo, type ModelId } from "../models";
 import { allCached } from "../worker/modelStore";
 import { BAND_RATE, PEAK_STEP, type AlignSpan, type FromWorker, type ProviderChoice, type ToWorker } from "../worker/protocol";
-import type { SpeechLang } from "../engine";
 import { decodeWithAudioContext } from "./decodeFallback";
 import { LiveMeter, type AuraLevels } from "../render/aura";
 import { MicError, startMicrophone, type Microphone } from "./microphone";
+import type { Speakers } from "./speakers";
 import type { Translation } from "./translation";
 
 export type EngineState =
@@ -61,6 +61,8 @@ export interface Job {
   elapsed: number | null;
   error: string | null;
   translation?: Translation;
+  /** Who speaks when, once the speakers were told apart. */
+  speakers?: Speakers;
   /** Where the current run started in the file: 0, the range's start, or where a stopped job was continued from. */
   startAt?: number;
   /** The part of the file being transcribed; missing for all of it. */
@@ -131,7 +133,7 @@ export function useTranscriber() {
   type Aligned = ({ start: number; end: number }[] | null)[];
   const alignWaiters = useRef(new Map<number, { resolve: (s: Aligned) => void; reject: (e: Error) => void }>());
   const nextAlignId = useRef(1);
-  /** Song lyrics being timed from the audio: spans done of total, or null. */
+  /** A pasted text being timed in the audio: spans done of total, or null. */
   const [aligning, setAligning] = useState<{ done: number; total: number } | null>(null);
   const nextId = useRef(1);
   /** The user's choice; the worker may run on the CPU anyway after a GPU failure. */
@@ -327,6 +329,9 @@ export function useTranscriber() {
       for (const w of punctWaiters.current.values()) w.reject(new Error("Yarıda kaldı"));
       punctWaiters.current.clear();
       setPunct({ phase: "idle" });
+      for (const w of alignWaiters.current.values()) w.reject(new Error("Yarıda kaldı"));
+      alignWaiters.current.clear();
+      setAligning(null);
       setEngineState({ phase: "idle" });
       spawn();
     },
@@ -420,6 +425,7 @@ export function useTranscriber() {
         elapsed: null,
         error: null,
         translation: undefined,
+        speakers: undefined,
         startAt: at,
         range,
       };
@@ -438,7 +444,18 @@ export function useTranscriber() {
     (
       p: Pick<
         Job,
-        "file" | "model" | "imported" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands" | "loudness" | "translation"
+                | "file"
+        | "model"
+        | "imported"
+        | "options"
+        | "duration"
+        | "elapsed"
+        | "words"
+        | "peaks"
+        | "bands"
+        | "loudness"
+        | "translation"
+        | "speakers"
       > & { stoppedAt?: number | null },
     ) => {
       const prev = jobRef.current;
@@ -474,6 +491,23 @@ export function useTranscriber() {
     (file: File) => {
       const j = jobRef.current;
       if (j && j.status !== "running") update(j.id, (x) => ({ ...x, file }));
+    },
+    [update],
+  );
+
+  /** Update a text-to-speech job in place after re-synthesising its words. */
+  const setSpoken = useCallback(
+    (
+      p: Pick<Job, "file" | "options" | "duration" | "elapsed" | "words" | "peaks" | "bands" | "loudness">,
+    ) => {
+      const j = jobRef.current;
+      if (!j || j.status === "running") return;
+      update(j.id, (x) => ({
+        ...x,
+        ...p,
+        decoded: p.duration ?? 0,
+        speed: p.duration && p.elapsed ? p.duration / p.elapsed : 0,
+      }));
     },
     [update],
   );
@@ -577,16 +611,17 @@ export function useTranscriber() {
     [send],
   );
 
-  /** Whisper times known words in spans of a file (song lyrics); one result per span. */
+  /** Whisper times known words in spans of a file (a pasted text); one result per span. `vocals`: in the separated vocals. */
   const alignAudio = useCallback(
     (file: File, lang: SpeechLang, spans: AlignSpan[], vocals = false) =>
       new Promise<Aligned>((resolve, reject) => {
         const id = nextAlignId.current++;
         alignWaiters.current.set(id, { resolve, reject });
         setAligning({ done: 0, total: spans.length });
+        prepare();
         send({ type: "align", id, file, lang, spans, vocals });
       }),
-    [send],
+    [send, prepare],
   );
 
   /** Replace the transcript of a finished job (user edits). */
@@ -603,6 +638,15 @@ export function useTranscriber() {
     (jobId: number, translation: Translation | undefined) => {
       const j = jobRef.current;
       if (j && j.status !== "running") update(jobId, (x) => ({ ...x, translation }));
+    },
+    [update],
+  );
+
+  /** Set, edit or drop who speaks when, if the job is still open. */
+  const setSpeakers = useCallback(
+    (jobId: number, speakers: Speakers | undefined) => {
+      const j = jobRef.current;
+      if (j && j.status !== "running") update(jobId, (x) => ({ ...x, speakers }));
     },
     [update],
   );
@@ -704,7 +748,7 @@ export function useTranscriber() {
     send({ type: "transcribe", jobId: j.id, file: j.file, options: j.options, startAt: at, endAt: range?.end });
   }, [prepare, send, update, setModel]);
 
-  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, liveLevels, liveMeter, punctuate, punct, alignAudio, aligning, vocals };
+  return { engine, job, liveWaiting, provider, setProvider, model, setModel, prepare, open, transcribe, load, attach, setSpoken, startLive, stopLive, cancel, resume, clear, setWords, setTranslation, setSpeakers, liveLevels, liveMeter, punctuate, punct, alignAudio, aligning, vocals };
 }
 
 export { MicError };

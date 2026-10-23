@@ -120,13 +120,6 @@ export const IconEdit = (p: P) => (
   </Svg>
 );
 
-export const IconClock = (p: P) => (
-  <Svg {...p}>
-    <circle cx="8" cy="8" r="6.25" />
-    <path d="M8 4.5V8l2.5 1.5" />
-  </Svg>
-);
-
 export const IconTrash = (p: P) => (
   <Svg {...p}>
     <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
@@ -221,5 +214,27 @@ export const IconMore = (p: P) => (
 export const IconWave = (p: P) => (
   <Svg {...p}>
     <path d="M2.5 7v2M5 5v6M8 2.5v11M11 5v6M13.5 7v2" />
+  </Svg>
+);
+
+export const IconClock = (p: P) => (
+  <Svg {...p}>
+    <circle cx="8" cy="8" r="6.25" />
+    <path d="M8 4.5V8l2.5 1.5" />
+  </Svg>
+);
+
+/** Text lines with a wave beside them: a text placed on the audio. */
+export const IconAlignText = (p: P) => (
+  <Svg {...p}>
+    <path d="M2.5 4h7M2.5 8h5M2.5 12h7M12 6v4M14 7v2" />
+  </Svg>
+);
+
+/** A head and shoulders: who speaks. */
+export const IconSpeaker = (p: P) => (
+  <Svg {...p}>
+    <circle cx="8" cy="5.5" r="2.75" />
+    <path d="M2.75 13.5a5.25 5.25 0 0 1 10.5 0" />
   </Svg>
 );
