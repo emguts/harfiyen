@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { shownPicture, type CaptionSettings } from "../captions/style";
+import type { GroundPreview } from "../lib/groundPreview";
 import { removePhoto, setPhotoFile, usePhoto } from "../lib/photo";
 import { AURA_PALETTES, AURA_STYLES, paletteById, type AuraPaletteId, type AuraStyleId } from "../render/aura";
 import { DEFAULT_KINETIC, kineticPaletteById } from "../render/kinetic";
@@ -80,12 +81,15 @@ const CHOICE =
  */
 export function SceneStudio({
   settings,
+  ground,
   onChange,
   onCaptions,
   video = false,
   disabled,
 }: {
   settings: CaptionSettings;
+  /** The project's ground, behind the kinetic cards. */
+  ground?: GroundPreview;
   onChange: (s: CaptionSettings) => void;
   /** Opens the Altyazı tab. */
   onCaptions: () => void;
@@ -159,6 +163,7 @@ export function SceneStudio({
       {mode === "kinetic" && (
         <KineticControls
           kinetic={kinetic}
+          ground={ground}
           onChange={(k) => onChange({ ...settings, kinetic: k })}
           disabled={disabled}
         />

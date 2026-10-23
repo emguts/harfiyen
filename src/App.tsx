@@ -88,6 +88,7 @@ import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
 import { useLogo } from "./lib/logo";
 import { usePhoto } from "./lib/photo";
+import { useGroundPreview } from "./lib/groundPreview";
 import { DEFAULT_KINETIC } from "./render/kinetic";
 import type { LogoLayer } from "./render/logoLayer";
 import { framing, type Crop } from "./lib/crop";
@@ -425,6 +426,14 @@ export function App() {
     trimming ? NO_CUTS : cuts,
   );
   const following = useFollow(player, job);
+  // The style cards show the project's ground; only made while they are on screen.
+  const ground = useGroundPreview({
+    active: inspectorTab === "captions" || inspectorTab === "scene",
+    settings,
+    video: player.isVideo && player.el ? (player.el as HTMLVideoElement) : null,
+    src: player.url,
+    photo,
+  });
   useDubPlayback(
     player.el,
     dub?.url ?? null,
@@ -2107,6 +2116,7 @@ export function App() {
 
         <Inspector
           settings={settings}
+          ground={ground}
           onSettings={changeSettings}
           burning={burner.state.status === "running"}
           model={model}

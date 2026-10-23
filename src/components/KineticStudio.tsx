@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { captionStack, FONTS, fontById, loadCaptionFont, type FontId } from "../captions/fonts";
 import { useUserFonts } from "../captions/userFonts";
 import type { Word } from "../engine";
+import type { GroundPreview } from "../lib/groundPreview";
 import {
+  backdropFor,
   KINETIC_PALETTES,
   KINETIC_STYLES,
   kineticPaletteById,
   KineticRenderer,
   kineticStyleById,
+  type KineticBackdrop,
   type KineticPaletteId,
   type KineticSettings,
   type KineticStyleId,
@@ -30,12 +33,17 @@ function KineticCard({
   label,
   selected,
   kinetic,
+  backdrop,
+  still,
   onPick,
 }: {
   id: KineticStyleId;
   label: string;
   selected: boolean;
   kinetic: KineticSettings;
+  /** What the stage goes over; all but "stage" are the still behind the card. */
+  backdrop: KineticBackdrop;
+  still: string | null;
   onPick: () => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -56,11 +64,11 @@ function KineticCard({
     c.height = Math.round(c.clientHeight * dpr);
     const g = c.getContext("2d")!;
     g.clearRect(0, 0, c.width, c.height);
-    const r = new KineticRenderer(SAMPLE, { ...kinetic, on: true, style: id, backdrop: "stage" }, FRAME.w, FRAME.h);
+    const r = new KineticRenderer(SAMPLE, { ...kinetic, on: true, style: id, backdrop }, FRAME.w, FRAME.h);
     const img = r.frame(1.22, { low: 0.5, mid: 0.65, high: 0.4 });
     if (!img) return;
     g.drawImage(img.source, 0, 0, c.width, c.height);
-  }, [id, kinetic.palette, kinetic.font, fontTick]);
+  }, [id, kinetic.palette, kinetic.font, backdrop, fontTick]);
 
   return (
     <button
@@ -77,6 +85,13 @@ function KineticCard({
             : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] group-hover/card:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]"
         }`}
       >
+        {backdrop !== "stage" && (
+          <span
+            className="absolute inset-0"
+            style={{ background: `center / cover no-repeat url(${still}), #0b0e13` }}
+            aria-hidden
+          />
+        )}
         <canvas ref={canvas} className="absolute inset-0 size-full" aria-hidden />
         {selected && (
           <span
@@ -97,16 +112,20 @@ function KineticCard({
 /** The kinetic stage's own choices: style, palette and font (the Sahne tab turns it on and picks its ground). */
 export function KineticControls({
   kinetic,
+  ground,
   onChange,
   disabled,
 }: {
   kinetic: KineticSettings;
+  /** The project's ground, behind the cards; without its still they show the palette's own. */
+  ground?: GroundPreview;
   onChange: (k: KineticSettings) => void;
   disabled?: boolean;
 }) {
   const userFonts = useUserFonts();
   const set = (patch: Partial<KineticSettings>) => onChange({ ...kinetic, ...patch });
   const styleInfo = kineticStyleById(kinetic.style);
+  const backdrop = ground?.url ? backdropFor(kinetic, ground.ground) : "stage";
   const font = fontById(kinetic.font);
 
   useEffect(() => {
@@ -129,6 +148,8 @@ export function KineticControls({
               label={s.label}
               selected={kinetic.style === s.id}
               kinetic={kinetic}
+              backdrop={backdrop}
+              still={ground?.url ?? null}
               onPick={() => set({ style: s.id })}
             />
           ))}

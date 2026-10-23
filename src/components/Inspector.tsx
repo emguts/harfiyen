@@ -1,6 +1,7 @@
 import { useMemo, useState, type ComponentProps, type RefObject } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { JumpCut } from "../lib/cuts";
+import type { GroundPreview } from "../lib/groundPreview";
 import type { DecodingMethod, SpeechLang } from "../engine";
 import { LANG_NAMES } from "../lib/lang";
 import { writeNumbers, type NumberMode } from "../lib/numbers";
@@ -56,6 +57,7 @@ const NUMBER_MODES: { value: NumberMode; label: string; sample: string }[] = [
 
 export function Inspector({
   settings,
+  ground,
   onSettings,
   burning,
   model,
@@ -118,6 +120,8 @@ export function Inspector({
   audioOnly = false,
 }: {
   settings: CaptionSettings;
+  /** The project's ground, behind the style cards. */
+  ground?: GroundPreview;
   onSettings: (s: CaptionSettings) => void;
   burning: boolean;
   model: ModelId;
@@ -273,6 +277,7 @@ export function Inspector({
         {tab === "captions" ? (
           <CaptionStudio
             settings={settings}
+            ground={ground}
             onChange={onSettings}
             disabled={burning}
             lang={captionLang}
@@ -282,6 +287,7 @@ export function Inspector({
         ) : tab === "scene" ? (
           <SceneStudio
             settings={settings}
+            ground={ground}
             onChange={onSettings}
             onCaptions={() => setTab("captions")}
             video={!audioOnly}

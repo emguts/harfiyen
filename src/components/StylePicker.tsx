@@ -11,6 +11,7 @@ import {
   type PresetId,
 } from "../captions/style";
 import type { Word } from "../engine";
+import type { GroundPreview } from "../lib/groundPreview";
 import { paletteById } from "../render/aura";
 import { IconCheck } from "./icons";
 
@@ -44,12 +45,15 @@ function StyleCard({
   label,
   selected,
   settings,
+  still,
   onPick,
 }: {
   id: PresetId;
   label: string;
   selected: boolean;
   settings: CaptionSettings;
+  /** The project's ground (lib/groundPreview.ts); null for a ground in the aura's colours. */
+  still: string | null;
   onPick: () => void;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -113,7 +117,9 @@ function StyleCard({
             : "shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] group-hover/card:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.25)]"
         }`}
         style={{
-          background: `radial-gradient(120% 90% at 15% 20%, ${a}cc, transparent 60%), radial-gradient(110% 90% at 85% 30%, ${b}aa, transparent 60%), radial-gradient(120% 100% at 50% 100%, ${c}99, transparent 65%), #0b0e13`,
+          background: still
+            ? `center / cover no-repeat url(${still}), #0b0e13`
+            : `radial-gradient(120% 90% at 15% 20%, ${a}cc, transparent 60%), radial-gradient(110% 90% at 85% 30%, ${b}aa, transparent 60%), radial-gradient(120% 100% at 50% 100%, ${c}99, transparent 65%), #0b0e13`,
         }}
       >
         {panel && (
@@ -148,9 +154,12 @@ function StyleCard({
 
 export function StylePicker({
   settings,
+  ground,
   onChange,
 }: {
   settings: CaptionSettings;
+  /** The project's ground, behind the cards. */
+  ground?: GroundPreview;
   onChange: (s: CaptionSettings) => void;
 }) {
   // Opens on the family of the chosen style, and follows it when it changes
@@ -201,6 +210,7 @@ export function StylePicker({
             label={p.label}
             selected={settings.preset === p.id}
             settings={settings}
+            still={ground?.url ?? null}
             onPick={() => onChange(settingsFor(p.id, settings))}
           />
         ))}

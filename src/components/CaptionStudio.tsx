@@ -9,6 +9,7 @@ import {
   type CaptionSettings,
 } from "../captions/style";
 import { addFontFile, removeFont, useUserFonts } from "../captions/userFonts";
+import type { GroundPreview } from "../lib/groundPreview";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
 import { OPT, OPT_NOTE, OPT_TEXT, OPT_TITLE, Select } from "./Select";
 import { LogoSection } from "./LogoSection";
@@ -87,6 +88,7 @@ const BACKGROUNDS = [
 
 export function CaptionStudio({
   settings,
+  ground,
   onChange,
   disabled,
   lang = TRANSCRIPT_LANG,
@@ -94,6 +96,8 @@ export function CaptionStudio({
   speakerCount = 0,
 }: {
   settings: CaptionSettings;
+  /** The project's ground, behind the style cards. */
+  ground?: GroundPreview;
   onChange: (s: CaptionSettings) => void;
   disabled?: boolean;
   /** The captions' language; decides how they are uppercased. */
@@ -171,7 +175,7 @@ export function CaptionStudio({
         </Section>
       )}
       <Section title="Stil">
-        <StylePicker settings={settings} onChange={onChange} />
+        <StylePicker settings={settings} ground={ground} onChange={onChange} />
         <Hint>{preset.note}</Hint>
         {!!settings.overrides?.length && (
           <LinkButton type="button" className="justify-self-start" onClick={resetLook}>
