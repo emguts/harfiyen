@@ -381,14 +381,26 @@ export const MAX_ORIGINAL = 0.5;
 /**
  * Plays the dub in step with the media element, whose own sound is turned down to `original` (0 to 1)
  * meanwhile. The media element stays the clock: the dub follows its play, pause, seek, rate and mute.
+ * `volume` is the listener's level and scales both; without a dub it is the element's volume.
  */
-export function useDubPlayback(el: HTMLMediaElement | null, url: string | null, on: boolean, original: number) {
+export function useDubPlayback(
+  el: HTMLMediaElement | null,
+  url: string | null,
+  on: boolean,
+  original: number,
+  volume = 1,
+) {
+  const level = useRef(volume);
+  level.current = volume;
+  const playing = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
     if (!el || !url || !on) return;
     const dub = new Audio(url);
+    playing.current = dub;
     const sync = () => {
       dub.playbackRate = el.playbackRate;
       dub.muted = el.muted;
+      dub.volume = level.current;
       if (Math.abs(dub.currentTime - el.currentTime) > 0.15) dub.currentTime = el.currentTime;
       if (el.paused) dub.pause();
       else void dub.play().catch(() => {});
@@ -400,11 +412,14 @@ export function useDubPlayback(el: HTMLMediaElement | null, url: string | null, 
       events.forEach((e) => el.removeEventListener(e, sync));
       dub.pause();
       dub.removeAttribute("src");
-      el.volume = 1;
+      playing.current = null;
     };
   }, [el, url, on]);
-  // Apart, so moving the level does not restart the dub.
+  // Apart, so moving a level does not restart the dub.
   useEffect(() => {
-    if (el && url && on) el.volume = Math.max(0, Math.min(1, original));
-  }, [el, url, on, original]);
+    if (playing.current) playing.current.volume = volume;
+    if (!el) return;
+    const own = url && on ? Math.max(0, Math.min(1, original)) : 1;
+    el.volume = Math.max(0, Math.min(1, own * volume));
+  }, [el, url, on, original, volume]);
 }
