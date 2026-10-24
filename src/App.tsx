@@ -55,7 +55,7 @@ import { StatusBar } from "./components/StatusBar";
 import { Timeline, TIMELINE } from "./components/Timeline";
 import { Transcript } from "./components/Transcript";
 import { Viewer } from "./components/Viewer";
-import type { DecodeOptions, DecodingMethod, SpeechLang, Word } from "./engine";
+import type { DecodeOptions, DecodingMethod, LangChoice, SpeechLang, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
 import { retime, shiftAll, shiftSpan } from "./lib/timing";
@@ -146,8 +146,8 @@ import {
   type Speakers,
 } from "./lib/speakers";
 import { sourceKey, type Translation } from "./lib/translation";
-import { LANG_NAMES } from "./lib/lang";
-import { DEFAULT_MODEL, modelInfo } from "./models";
+import { choiceName, isSpeechLang, langName, transcriptLang } from "./lib/lang";
+import { DEFAULT_MODEL, modelInfo, modelKnows } from "./models";
 
 const EMPTY_BANDS = new Float32Array(0);
 const NO_CUTS: TimeRange[] = [];
@@ -184,7 +184,7 @@ const PICKER_TYPES = [
 
 const optionsFor = (
   method: DecodingMethod,
-  lang: SpeechLang = "tr",
+  lang: LangChoice = "tr",
   music = false,
   vocals = false,
 ): DecodeOptions => ({
@@ -299,9 +299,10 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
   /** The language spoken in the media, for the next transcription; a project brings its own. */
-  const [videoLang, setVideoLang] = useState<SpeechLang>(() =>
-    localStorage.getItem("harfiyen.videoLang") === "en" ? "en" : "tr",
-  );
+  const [videoLang, setVideoLang] = useState<LangChoice>(() => {
+    const v = localStorage.getItem("harfiyen.videoLang");
+    return v === "en" || v === "auto" ? v : "tr";
+  });
   useEffect(
     () => localStorage.setItem("harfiyen.videoLang", videoLang),
     [videoLang],
@@ -396,7 +397,7 @@ export function App() {
   );
   /** A text-to-speech job's own file is already the dub in its source language. */
   const ownFileIsDub =
-    isTts && dubbing?.voice.lang === (job?.options.lang ?? "tr");
+    isTts && dubbing?.voice.lang === transcriptLang(job?.options.lang, job?.detectedLang);
   /** The part of the file used, as the jump cut sees it. */
   const span = useMemo(
     () => trim ?? { start: 0, end: job?.duration ?? job?.decoded ?? 0 },
@@ -534,8 +535,9 @@ export function App() {
         if (gone || !d || !j) return;
         setVoice(d.voice);
         setDubOn(true);
+        const spoken = transcriptLang(j.options.lang, j.detectedLang);
         const read =
-          d.voice.lang === (j.options.lang ?? "tr")
+          d.voice.lang === spoken
             ? j.words
             : j.translation?.lang === d.voice.lang
               ? j.translation.words
@@ -543,7 +545,7 @@ export function App() {
         restoreDub(
           d,
           read,
-          dubBySentence(d.voice.lang, j.options.lang ?? "tr"),
+          dubBySentence(d.voice.lang, spoken),
         );
       })
       .catch(() => {});
@@ -582,6 +584,7 @@ export function App() {
           file,
           model: p.model ?? DEFAULT_MODEL,
           options: optionsFor(p.method, p.lang, p.music, p.vocals),
+          detectedLang: p.detectedLang,
           duration: p.duration,
           elapsed: p.elapsed,
           stoppedAt: p.stoppedAt,
@@ -852,8 +855,8 @@ export function App() {
     settings.speakerNames && speakers && speakers.names.length > 1
       ? speakers.names
       : null;
-  /** The language spoken in the media, as the open transcript was made in. */
-  const sourceLang: SpeechLang = job ? (job.options.lang ?? "tr") : voice.lang;
+  /** The language of the open transcript (with "auto", the one Whisper heard most); any of Whisper's. */
+  const sourceLang: string = job ? transcriptLang(job.options.lang, job.detectedLang) : voice.lang;
   useEffect(() => {
     if (isTts) setCustomText(textFromWords(words));
   }, [isTts, words]);
@@ -1060,7 +1063,8 @@ export function App() {
   useEffect(() => cancelSpeakers(), [job?.id, cancelSpeakers]);
   /** `then` runs with the translation once it is made (not if it is cancelled or the job changes). */
   const translate = (then?: (t: Translation) => void) => {
-    if (!job) return;
+    // Translation runs between Turkish and English only.
+    if (!job || !isSpeechLang(sourceLang)) return;
     const id = job.id;
     const before = job.translation;
     translator.translate(words, sourceLang, (t) => {
@@ -1082,7 +1086,7 @@ export function App() {
         isTts && trimmed === textFromWords(words).trim()
           ? words
           : wordsFromText(trimmed);
-      const langChoice: SpeechLang = isTts ? sourceLang : voice.lang;
+      const langChoice: SpeechLang = isTts && isSpeechLang(sourceLang) ? sourceLang : voice.lang;
       dubProject.current = current?.id ?? null;
       dubber.dub(source, 0, 0, voice, true, (r) => {
         const { peaks, bands, loudness } = dubMetrics(r.clips, r.duration);
@@ -1248,16 +1252,11 @@ export function App() {
           ? (engine.fallbackReason ?? "Ekran kartı kullanılamıyor.")
           : null;
   /** Why the chosen model cannot transcribe the video's language, if it cannot. */
-  const langIssue = langProblem(
-    videoLang,
-    chosen.name,
-    chosen.langs,
-    gpuReason,
-  );
-  const chooseVideoLang = (l: SpeechLang) => {
+  const langIssue = langProblem(videoLang, chosen, gpuReason);
+  const chooseVideoLang = (l: LangChoice) => {
     setVideoLang(l);
-    // Only Whisper knows English: its light version, unless it cannot run here.
-    if (!modelInfo(model).langs.includes(l) && !gpuReason)
+    // Only Whisper knows English, or tells the language itself: its light version, unless it cannot run here.
+    if (!modelKnows(modelInfo(model), l) && !gpuReason)
       setModel("whisper-turbo-q4");
   };
 
@@ -1318,7 +1317,7 @@ export function App() {
       return;
     if (autoPunct && !modelInfo(job.model).punctuates) void applyPunct();
     // The number rules are Turkish.
-    else if (numberMode !== "keep" && (job.options.lang ?? "tr") === "tr")
+    else if (numberMode !== "keep" && transcriptLang(job.options.lang, job.detectedLang) === "tr")
       applyNumbers();
   }, [
     autoPunct,
@@ -1327,6 +1326,7 @@ export function App() {
     job?.id,
     job?.model,
     job?.options.lang,
+    job?.detectedLang,
     job?.words.length,
     applyPunct,
     applyNumbers,
@@ -1610,7 +1610,7 @@ export function App() {
     !!job.file &&
     !job.live &&
     !job.imported &&
-    sourceLang !== videoLang;
+    (job.options.lang ?? "tr") !== videoLang;
   // A finished transcript made with another model than the one chosen now.
   const otherModel =
     job &&
@@ -1819,12 +1819,12 @@ export function App() {
                   {
                     en: false,
                     label: sourceLang.toUpperCase(),
-                    title: `${LANG_NAMES[sourceLang]} transkript`,
+                    title: `${langName(sourceLang)} transkript`,
                   },
                   {
                     en: true,
                     label: translation.lang.toUpperCase(),
-                    title: `${LANG_NAMES[translation.lang]} çeviri`,
+                    title: `${langName(translation.lang)} çeviri`,
                   },
                 ].map((o) => (
                   <button
@@ -1904,7 +1904,11 @@ export function App() {
             <div className="flex flex-none items-center gap-2.5 border-b border-line-soft bg-cini-wash px-3.5 py-2 text-[12px] text-fg-2">
               <span className="min-w-0 flex-1">
                 Bu döküm {modelInfo(job.model).name} ile
-                {otherLang && `, ${LANG_NAMES[sourceLang]} olarak`} yapıldı.
+                {otherLang &&
+                  (job.options.lang === "auto"
+                    ? `, dili kendisi bularak (${langName(sourceLang)})`
+                    : `, ${langName(sourceLang)} olarak`)}{" "}
+                yapıldı.
               </span>
               <Button
                 variant="primary"
@@ -1913,7 +1917,8 @@ export function App() {
                 title={langIssue ?? undefined}
                 onClick={transcribeJob}
               >
-                {chosen.name} ile {otherLang && `${LANG_NAMES[videoLang]} `}
+                {chosen.name} ile{" "}
+                {otherLang && (videoLang === "auto" ? "dili kendisi bularak " : `${choiceName(videoLang)} `)}
                 yeniden dök
               </Button>
             </div>

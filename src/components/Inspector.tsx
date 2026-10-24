@@ -2,8 +2,8 @@ import { useMemo, useState, type ComponentProps, type RefObject } from "react";
 import type { CaptionSettings } from "../captions/style";
 import type { JumpCut } from "../lib/cuts";
 import type { GroundPreview } from "../lib/groundPreview";
-import type { DecodingMethod, SpeechLang } from "../engine";
-import { LANG_NAMES } from "../lib/lang";
+import type { DecodingMethod, LangChoice } from "../engine";
+import { choiceName, isSpeechLang, LANG_NAMES, langName } from "../lib/lang";
 import { writeNumbers, type NumberMode } from "../lib/numbers";
 import type { DubState, PreviewState, Voice } from "../lib/useDubber";
 import type { EngineState, Job } from "../lib/useTranscriber";
@@ -175,11 +175,11 @@ export function Inspector({
   canTranslateDub: boolean;
   onTranslateDub: () => void;
   /** The language of the open transcript, and of its translation if there is one. */
-  sourceLang: SpeechLang;
+  sourceLang: string;
   translationLang: string | null;
   /** The language spoken in the media, for the next transcription. */
-  videoLang: SpeechLang;
-  onVideoLang: (l: SpeechLang) => void;
+  videoLang: LangChoice;
+  onVideoLang: (l: LangChoice) => void;
   music: boolean;
   onMusic: (on: boolean) => void;
   vocals: boolean;
@@ -221,7 +221,7 @@ export function Inspector({
     return writeNumbers(job.words, numberMode).filter((w) => !before.has(w))
       .length;
   }, [job, numberMode]);
-  const otherLang = !!job && sourceLang !== videoLang;
+  const otherLang = !!job && (job.options.lang ?? "tr") !== videoLang;
   // What a new run would change: the language, the model, or (seda only) the method.
   const differs =
     job &&
@@ -234,12 +234,16 @@ export function Inspector({
       : !differs
         ? "Yeniden yazıya dök"
         : otherLang
-          ? `${LANG_NAMES[videoLang]} olarak yeniden dök`
+          ? videoLang === "auto"
+            ? "Dili kendisi bularak yeniden dök"
+            : `${choiceName(videoLang)} olarak yeniden dök`
           : model !== job.model
             ? `${info.name} ile yeniden dök`
             : `${methodTitle(method)} ile yeniden dök`;
   const numbersApply = sourceLang === "tr";
-  const targetLang = targetOf(sourceLang);
+  /** Translation runs between Turkish and English only; a transcript in another language has none. */
+  const translatable = isSpeechLang(sourceLang);
+  const targetLang = targetOf(translatable ? sourceLang : "tr");
   const mtModel = `opus-mt-tc-big-${sourceLang}-${targetLang}`;
 
   return (
@@ -468,6 +472,14 @@ export function Inspector({
                 )}
               </Section>
             )}
+            {!translatable ? (
+              <Section title="Çeviri">
+                <Hint>
+                  Çeviri yalnızca Türkçe ile İngilizce arasında yapılır; bu transkript {langName(sourceLang)}. Altyazı,
+                  dışa aktarma ve video transkriptin kendi dilinde olur.
+                </Hint>
+              </Section>
+            ) : (
             <Section title={`${LANG_NAMES[targetLang]} çeviri`}>
               <Hint>
                 Transkript cümle cümle {LANG_NAMES[targetLang]}ye çevrilir; her cümle aslının
@@ -503,6 +515,7 @@ export function Inspector({
                 bilgisayarda çalışır. Yemek adları, özel adlar ve argo yanlış çevrilebilir; paylaşmadan önce göz at.
               </Hint>
             </Section>
+            )}
             <Section title="Model">
               <dl className="m-0 grid grid-cols-[88px_1fr] gap-x-2.5 gap-y-1.5 text-[12.5px] [&_dd]:m-0 [&_dt]:text-fg-3">
                 <dt>Model</dt>
@@ -512,7 +525,7 @@ export function Inspector({
                     ? ", Türkçe"
                     : info.engine === "duyu"
                       ? ", Türkçe ve İngilizce (Türkçe seçili)"
-                      : ", çok dilli (Türkçe seçili)"}
+                      : `, çok dilli (${videoLang === "auto" ? "dili kendisi buluyor" : `${choiceName(videoLang)} seçili`})`}
                 </dd>
                 <dt>Çalıştığı yer</dt>
                 <dd>

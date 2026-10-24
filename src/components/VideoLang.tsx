@@ -1,7 +1,8 @@
-import type { SpeechLang } from "../engine";
-import { LANG_NAMES } from "../lib/lang";
+import type { LangChoice } from "../engine";
+import { choiceName, LANG_NAMES } from "../lib/lang";
+import { modelKnows, type ModelInfo } from "../models";
 
-const LANGS: SpeechLang[] = ["tr", "en"];
+const LANGS: LangChoice[] = ["tr", "en", "auto"];
 
 const BTN =
   "h-6 rounded-[5px] border-0 bg-transparent px-2.5 text-[12px] font-medium text-fg-2 hover:not-disabled:not-aria-pressed:text-fg aria-pressed:bg-raised aria-pressed:text-fg-strong aria-pressed:shadow-[0_1px_3px_var(--shadow-pop)] disabled:opacity-45";
@@ -16,8 +17,8 @@ export function VideoLang({
   onVocals,
   disabled,
 }: {
-  value: SpeechLang;
-  onChange: (l: SpeechLang) => void;
+  value: LangChoice;
+  onChange: (l: LangChoice) => void;
   /** Songs: Whisper keeps sung words the speech VAD would drop. */
   music?: boolean;
   onMusic?: (on: boolean) => void;
@@ -38,8 +39,13 @@ export function VideoLang({
             aria-pressed={value === l}
             disabled={disabled}
             onClick={() => onChange(l)}
+            title={
+              l === "auto"
+                ? "Whisper her 30 saniyelik parçanın dilini kendisi bulur; iki dilli bir şarkı da olur. Çeviri, seslendirme ve rakamlar yalnızca Türkçe ya da İngilizce çıkarsa kullanılır."
+                : undefined
+            }
           >
-            {LANG_NAMES[l]}
+            {choiceName(l)}
           </button>
         ))}
       </span>
@@ -63,8 +69,9 @@ export function VideoLang({
 }
 
 /** Why the chosen model cannot transcribe `lang`, if it cannot; `gpuReason`: why Whisper cannot run here. */
-export function langProblem(lang: SpeechLang, modelName: string, modelLangs: SpeechLang[], gpuReason: string | null) {
-  if (modelLangs.includes(lang)) return null;
-  if (gpuReason) return `${LANG_NAMES[lang]} yalnızca Whisper ile yazıya dökülür; Whisper bu cihazda çalışmıyor. ${gpuReason}`;
-  return `${modelName} yalnızca Türkçe anlar; ${LANG_NAMES[lang]} için üst çubuktan Whisper Turbo ya da Whisper Turbo Hafif'i seç.`;
+export function langProblem(lang: LangChoice, model: ModelInfo, gpuReason: string | null) {
+  if (modelKnows(model, lang)) return null;
+  const what = lang === "auto" ? "Dili kendiliğinden bulmak" : `${LANG_NAMES[lang]} yazıya dökmek`;
+  if (gpuReason) return `${what} yalnızca Whisper ile olur; Whisper bu cihazda çalışmıyor. ${gpuReason}`;
+  return `${model.name} yalnızca Türkçe anlar; ${what} için üst çubuktan Whisper Turbo ya da Whisper Turbo Hafif'i seç.`;
 }

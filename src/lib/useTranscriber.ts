@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DecodeOptions, SpeechLang, Word } from "../engine";
+import type { DecodeOptions, Word } from "../engine";
 import { DEFAULT_MODEL, isModelId, modelFileUrl, modelInfo, type ModelId } from "../models";
 import { allCached } from "../worker/modelStore";
 import { BAND_RATE, PEAK_STEP, type AlignSpan, type FromWorker, type ProviderChoice, type ToWorker } from "../worker/protocol";
@@ -47,6 +47,8 @@ export interface Job {
   /** Name of the subtitle file the words came from; then no model wrote them. */
   imported?: string;
   options: DecodeOptions;
+  /** Language "auto": the language Whisper heard most (a Whisper code); see transcriptLang. */
+  detectedLang?: string;
   status: JobStatus;
   duration: number | null;
   decoded: number;
@@ -208,6 +210,7 @@ export function useTranscriber() {
             bands: append(j.bands, m.bands),
             loudness: append(j.loudness, m.loudness),
             speed: m.speed,
+            ...(m.lang && { detectedLang: m.lang }),
           }));
           break;
         case "done": {
@@ -226,6 +229,7 @@ export function useTranscriber() {
             bands: append(j.bands, m.bands),
             loudness: append(j.loudness, m.loudness),
             speed: m.decoded / m.elapsed,
+            ...(m.lang && { detectedLang: m.lang }),
           }));
           break;
         }
@@ -414,6 +418,7 @@ export function useTranscriber() {
         model: workerModel.current,
         imported: undefined,
         options,
+        detectedLang: undefined,
         status: "running",
         decoded: at,
         words: [],
@@ -456,6 +461,7 @@ export function useTranscriber() {
         | "loudness"
         | "translation"
         | "speakers"
+        | "detectedLang"
       > & { stoppedAt?: number | null },
     ) => {
       const prev = jobRef.current;
@@ -613,7 +619,7 @@ export function useTranscriber() {
 
   /** Whisper times known words in spans of a file (a pasted text); one result per span. `vocals`: in the separated vocals. */
   const alignAudio = useCallback(
-    (file: File, lang: SpeechLang, spans: AlignSpan[], vocals = false) =>
+    (file: File, lang: string, spans: AlignSpan[], vocals = false) =>
       new Promise<Aligned>((resolve, reject) => {
         const id = nextAlignId.current++;
         alignWaiters.current.set(id, { resolve, reject });

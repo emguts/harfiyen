@@ -63,6 +63,13 @@ canlı çalışır.
   yalnızca Whisper anlar (ekran kartı gerekir); İngilizce seçilince model Whisper Turbo Hafif'e geçer. İngilizce
   transkriptte Türkçe sayı kuralları uygulanmaz; İngilizce seslendirme doğrudan transkripti okur. İngilizce video
   Türkçeye çevrilip Türkçe altyazı ve Türkçe seslendirme (voice-over) yapılabilir.
+- **Otomatik dil:** **Videodaki dil**'de üçüncü seçenek. Whisper her 30 saniyelik parçanın dilini kendisi bulur
+  (Whisper'ın bildiği 100 dilden biri) ve o dilde yazar; Fransızca ve İngilizce karışık bir şarkı da olur. Dil
+  tahmini her parçada zaten hesaplandığı için ek iş yoktur; yalnızca bir parça öncekinden farklı dildeyse o parça
+  bir kez daha çözülür. Transkriptin dili, kelimelerin çoğunun duyulduğu dildir ve projeyle saklanır. Türkçe ya da
+  İngilizce çıkarsa çeviri, seslendirme ve rakamlar her zamanki gibi çalışır; başka bir dilde çeviri ve seslendirme
+  yoktur, altyazı ve dışa aktarma transkriptin kendi dilinde olur. Yalnızca Whisper ile seçilebilir. Türkçe bazen
+  yakın bir dille (Azerbaycan dili gibi) karıştırılabilir; dil biliniyorsa seçmek daha güvenlidir.
 - Üç model, üst çubuktan (telefonda **⋯** menüsünden) seçilir:
   - **Seda** (varsayılan, ~190 MB): küçük ve hızlı, canlı mikrofonda ve her cihazda çalışır. Üç doğruluk
     ayarı var: **Hızlı**, **Dengeli** ve dil modeliyle **En doğru**. Dosyaları daha doğru olan 5,12 saniyelik

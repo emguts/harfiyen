@@ -23,7 +23,6 @@ import { WhisperEngine, type WhisperConfig } from "../whisper";
 import { DuyuEngine, type DuyuConfig } from "../duyu";
 import { VocalModel, type VocalSeparator, type VocalsConfig } from "../separate/vocals";
 import { PEAK_STEP, type AlignSpan, type ErrorCode, type FromWorker, type ProviderChoice, type ToWorker } from "./protocol";
-import type { SpeechLang } from "../engine/config";
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -392,6 +391,7 @@ class Job {
       bands: this.takeBands(),
       loudness: this.takeLoudness(),
       timing: this.rec.timing,
+      lang: this.rec.language ?? undefined,
     });
   }
 
@@ -448,6 +448,7 @@ class Job {
         bands,
         loudness,
         speed: decoded / ((now - this.started) / 1000),
+        lang: this.rec.language ?? undefined,
       },
       [peaks.buffer, bands.buffer, loudness.buffer],
     );
@@ -493,7 +494,7 @@ async function transcribeFile(job: Job, file: File, endAt?: number) {
 }
 
 /** A pasted text: Whisper times its known words span by span; `vocals`: in the separated vocals. */
-async function alignAudio(id: number, file: File, lang: SpeechLang, spans: AlignSpan[], vocals = false) {
+async function alignAudio(id: number, file: File, lang: string, spans: AlignSpan[], vocals = false) {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   try {
     const engine = await getEngine();

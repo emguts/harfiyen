@@ -24,6 +24,8 @@ export interface SpeechStream {
   takeCommitted(): Word[];
   /** Words that may still change. */
   tentative(): Word[];
+  /** Whisper with lang "auto": the language most of the words so far were in (a Whisper code), null before any. */
+  readonly language?: string | null;
 }
 
 export interface SpeechEngine {
