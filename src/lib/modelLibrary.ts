@@ -3,7 +3,7 @@
 
 import ortWasmUrl from "onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url";
 import { PACKS, packFileUrl, type ModelPack } from "../models";
-import { complete, listCached, removeCached, storeFile, type CachedFile, type FileRequest } from "../worker/modelStore";
+import { complete, desktop, listCached, removeCached, storeFile, type CachedFile, type FileRequest } from "../worker/modelStore";
 import { fileSize } from "./format";
 import { askPersist } from "./projectStore";
 
@@ -79,7 +79,8 @@ export async function loadLibrary(): Promise<Library> {
   const packs = PACKS.map((pack, i): PackState => {
     const files: FileRequest[] = [
       ...pack.files.map((n) => ({ url: new URL(packFileUrl(pack, n), location.href).href, size: sizes[i]?.[n] ?? 0 })),
-      RUNTIME,
+      // In the desktop app the runtime is part of the app, not something to download.
+      ...(desktop ? [] : [RUNTIME]),
     ];
     // Counted on the pack's own files: the shared runtime alone does not make every pack partial.
     let present = 0;
@@ -183,7 +184,8 @@ export async function downloadPacks(
 
   const info = await storageInfo();
   const want = total - loaded;
-  if (info && info.quota && info.quota - info.usage < want * 1.1 + 50_000_000) {
+  // The desktop app stores models on disk, outside the browser's quota.
+  if (!desktop && info && info.quota && info.quota - info.usage < want * 1.1 + 50_000_000) {
     throw new Error(`Yer yetmiyor: ${fileSize(want)} gerekiyor, tarayıcının ayırdığı alanda ${fileSize(Math.max(0, info.quota - info.usage))} boş.`);
   }
 
