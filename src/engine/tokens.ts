@@ -21,6 +21,8 @@ export interface Word {
   end: number;
   /** Starts a line of an imported subtitle file; such lines are kept as they were. */
   cue?: true;
+  /** Who says it, by number, when the speakers were told apart (src/lib/speakers.ts sets it from the turns). */
+  speaker?: number;
 }
 
 /**

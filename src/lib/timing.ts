@@ -1,19 +1,36 @@
 // Hand edits to word times: a line or a single word moved or stretched, or the
 // whole transcript shifted. Words keep their order: an edit is held between the
-// words around it rather than pushing them.
+// words around it rather than pushing them. A neighbour that touches the edited
+// words (most transcribed words end where the next begins) shares the boundary:
+// it follows the edit, down to MIN_SPAN of its own.
+//
+// Adapted from emguts/harfiyen (sarki-ozellikleri branch).
 
 import type { Word } from "../engine";
 
 /** Shortest time a word or a line is given, seconds. */
 export const MIN_SPAN = 0.05;
 
+/** Neighbours closer than this share their boundary. */
+const TOUCH = 0.01;
+
 const round = (t: number) => Math.round(t * 1000) / 1000;
 
-/** Where words first..first+count-1 may lie: after the word before, before the word after. */
+/**
+ * Where words first..first+count-1 may lie: after the word before, before the
+ * word after. A touching neighbour gives way down to MIN_SPAN (`joinPrev`,
+ * `joinNext`: it moves with the edit).
+ */
 export function room(words: Word[], first: number, count: number) {
-  const lo = first > 0 ? words[first - 1].end : 0;
+  const prev = words[first - 1];
   const next = words[first + count];
-  return { lo, hi: next ? next.start : Infinity };
+  const s = words[first].start;
+  const e = words[first + count - 1].end;
+  const joinPrev = !!prev && s - prev.end < TOUCH;
+  const joinNext = !!next && next.start - e < TOUCH;
+  const lo = !prev ? 0 : joinPrev ? Math.min(s, prev.start + MIN_SPAN) : prev.end;
+  const hi = !next ? Infinity : joinNext ? Math.max(e, next.end - MIN_SPAN) : next.start;
+  return { lo, hi, joinPrev, joinNext };
 }
 
 /**
@@ -23,7 +40,7 @@ export function room(words: Word[], first: number, count: number) {
  */
 export function retime(words: Word[], first: number, count: number, start: number, end: number): Word[] {
   if (count <= 0) return words;
-  const { lo, hi } = room(words, first, count);
+  const { lo, hi, joinPrev, joinNext } = room(words, first, count);
   let s = Math.max(lo, start);
   let e = Math.min(hi, end);
   if (e - s < MIN_SPAN) {
@@ -40,6 +57,8 @@ export function retime(words: Word[], first: number, count: number, start: numbe
     const w = words[i];
     out[i] = { ...w, start: at(w.start), end: Math.max(at(w.start), at(w.end)) };
   }
+  if (joinPrev) out[first - 1] = { ...words[first - 1], end: out[first].start };
+  if (joinNext) out[first + count] = { ...words[first + count], start: out[first + count - 1].end };
   return out;
 }
 

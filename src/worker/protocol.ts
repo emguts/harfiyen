@@ -27,10 +27,10 @@ export type ToWorker =
   | { type: "live-stop"; jobId: number }
   /** Punctuate and true-case plain words (one entry per transcript word). */
   | { type: "punctuate"; id: number; words: string[] }
-  /** Whisper only: times for known words in parts of a file (song lyrics). */
+  /** Whisper only: times for known words in parts of a file (a pasted text); `vocals`: in the separated vocals. */
   | { type: "align"; id: number; file: File; lang: SpeechLang; spans: AlignSpan[]; vocals?: boolean };
 
-/** Words sung somewhere in start..end (at most 30 s) of a file. */
+/** Words said somewhere in start..end (at most 30 s) of a file. */
 export interface AlignSpan {
   start: number;
   end: number;

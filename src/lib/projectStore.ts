@@ -1,7 +1,7 @@
 // Projects live in IndexedDB: the transcript, style and waveform in one
 // store, the media in another, so the project list never loads a video.
 // Fonts the user adds sit in a third store, shared by every project; the
-// user's logo in a fourth, also shared. A project's dub has a fifth, so
+// user's logo and background photo in a fourth, also shared. A project's dub has a fifth, so
 // neither the list nor the project itself loads its audio.
 //
 // Media is kept one of two ways: a file handle (Chromium; no copy, the file
@@ -12,7 +12,9 @@ import type { UserFont } from "../captions/fonts";
 import type { CaptionSettings } from "../captions/style";
 import type { DecodingMethod, SpeechLang, Word } from "../engine";
 import { readCrop, type Crop } from "./crop";
+import { DEFAULT_JUMP_CUT, type JumpCut } from "./cuts";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
+import { readSpeakers, type Speakers } from "./speakers";
 import type { Translation } from "./translation";
 import type { TimeRange } from "./useTranscriber";
 import type { DubOverflow, Voice } from "../worker/tts.worker";
@@ -50,11 +52,15 @@ export interface Project {
   /** Missing in projects saved before "Sesle vurgula". */
   loudness?: Float32Array;
   translation?: Translation;
+  /** Who speaks when; missing when the speakers were never told apart. */
+  speakers?: Speakers;
   settings: CaptionSettings;
   /** The part of the picture shown and exported; missing shows all of it. */
   crop?: Crop;
   /** The part of the media used (transcribed, played, exported); missing for all of it. */
   trim?: TimeRange;
+  /** Cutting out the quiet between words; missing when it was never turned on. */
+  jumpCut?: JumpCut;
   media: MediaInfo | null;
   storage: MediaStorage;
 }
@@ -69,7 +75,7 @@ const DB_NAME = "harfiyen";
 const PROJECTS = "projects";
 const MEDIA = "media";
 const FONTS = "fonts";
-/** Single files kept by name (the logo). */
+/** Single files kept by name (the logo, the background photo). */
 const ASSETS = "assets";
 const DUBS = "dubs";
 
@@ -180,20 +186,23 @@ export const saveFont = (f: UserFont) => tx([FONTS], "readwrite", (t) => t.objec
 
 export const deleteFont = (id: string) => tx([FONTS], "readwrite", (t) => t.objectStore(FONTS).delete(id));
 
-/** The user's logo: the file as added, by name. */
-export interface StoredLogo {
+/** One of the user's images (the logo, the background photo): the file as added, by name. */
+export interface StoredImage {
   name: string;
   blob: Blob;
 }
 
-export async function getLogo(): Promise<StoredLogo | undefined> {
+export type AssetKey = "logo" | "photo";
+
+export async function getAsset(key: AssetKey): Promise<StoredImage | undefined> {
   const t = (await open()).transaction(ASSETS);
-  return done(t.objectStore(ASSETS).get("logo") as IDBRequest<StoredLogo | undefined>);
+  return done(t.objectStore(ASSETS).get(key) as IDBRequest<StoredImage | undefined>);
 }
 
-export const saveLogo = (l: StoredLogo) => tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).put(l, "logo"));
+export const saveAsset = (key: AssetKey, l: StoredImage) =>
+  tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).put(l, key));
 
-export const deleteLogo = () => tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).delete("logo"));
+export const deleteAsset = (key: AssetKey) => tx([ASSETS], "readwrite", (t) => t.objectStore(ASSETS).delete(key));
 
 /** Room for a copy of `bytes`, leaving some headroom. */
 export async function canCopy(bytes: number): Promise<boolean> {
@@ -297,12 +306,19 @@ export function projectToFile(p: Project): string {
     settings: p.settings,
     ...(p.crop && { crop: p.crop }),
     ...(p.trim && { trim: p.trim }),
+    ...(p.jumpCut && { jumpCut: p.jumpCut }),
     words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
     ...(p.translation && {
       translation: {
         lang: p.translation.lang,
         source: p.translation.source,
         words: p.translation.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end) })),
+      },
+    }),
+    ...(p.speakers && {
+      speakers: {
+        names: p.speakers.names,
+        turns: p.speakers.turns.map((t) => ({ start: r(t.start), end: r(t.end), speaker: t.speaker })),
       },
     }),
     peaks: toBase64(p.peaks),
@@ -316,6 +332,20 @@ function readTrim(x: unknown): TimeRange | undefined {
   const r = x as Partial<TimeRange> | null;
   const ok = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
   return r && ok(r.start) && ok(r.end) && r.end > r.start ? { start: r.start, end: r.end } : undefined;
+}
+
+/** Jump cut settings read back from a project file; undefined when missing. Values that are not numbers are the defaults. */
+export function readJumpCut(x: unknown): JumpCut | undefined {
+  const j = x as Partial<JumpCut> | null;
+  if (!j || typeof j !== "object") return undefined;
+  const num = (v: unknown, d: number, max: number) =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.min(max, v) : d;
+  return {
+    on: j.on === true,
+    gap: num(j.gap, DEFAULT_JUMP_CUT.gap, 5),
+    pad: num(j.pad, DEFAULT_JUMP_CUT.pad, 1),
+    fillers: j.fillers !== false,
+  };
 }
 
 /** Read a project file; throws a readable message when it is not one. */
@@ -365,9 +395,11 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     bands: fromBase64(d.bands),
     loudness: fromBase64(d.loudness),
     translation,
+    speakers: readSpeakers(d.speakers),
     settings: { ...defaults, ...(d.settings as Partial<CaptionSettings>) },
     crop: readCrop(d.crop) ?? undefined,
     trim: readTrim(d.trim),
+    jumpCut: readJumpCut(d.jumpCut),
     media: media && typeof media.name === "string" && typeof media.size === "number" ? media : null,
     storage: "none",
   };

@@ -74,8 +74,8 @@ export function useSourceInfo(file: File | null, crop: Crop | null): SourceInfo 
     };
   }, [file]);
 
-  // The picture as exported: the crop's frame for a video, else the whole picture.
-  const frame = base?.video && crop ? framing(crop, base.width, base.height) : null;
+  // The picture as exported: the crop's frame when one is set, else the whole picture.
+  const frame = base && crop ? framing(crop, base.width, base.height) : null;
   const width = frame && !frame.none ? frame.size.width : (base?.width ?? 0);
   const height = frame && !frame.none ? frame.size.height : (base?.height ?? 0);
   const ratio = frame && !frame.none ? frame.ratio : width / height;

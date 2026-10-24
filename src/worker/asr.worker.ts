@@ -16,6 +16,7 @@ import { modelFileUrl, modelInfo, packFileUrl, PUNCT_PACK, VOCALS_PACK, type Mod
 import { Formatter, type FormatterConfig } from "../punct/formatter";
 import type { WordPieceVocab } from "../punct/wordpiece";
 import { fetchAll } from "./modelStore";
+import { readPcm, readVocals } from "./pcm";
 import { BandTracker } from "../render/aura";
 import { WhisperEngine, type WhisperConfig } from "../whisper";
 import { DuyuEngine, type DuyuConfig } from "../duyu";
@@ -458,62 +459,13 @@ async function transcribeFile(job: Job, file: File, endAt?: number) {
   input.dispose();
 }
 
-/** Mono 16 kHz audio of from..to seconds of a track; with a separator, its vocals. */
-async function readPcm(
-  sink: AudioSampleSink,
-  rate: number,
-  from: number,
-  to: number,
-  vocals: VocalSeparator | null = null,
-): Promise<Float32Array> {
-  const sepRate = vocals?.config.sampleRate ?? 16000;
-  const toSep = vocals && rate !== sepRate ? [new Resampler(rate, sepRate), new Resampler(rate, sepRate)] : null;
-  const resampler = new Resampler(vocals ? sepRate : rate, 16000);
-  const parts: Float32Array[] = [];
-  const add = async (channels: Float32Array[], last = false) => {
-    if (!vocals) return void parts.push(resampler.process(downmix(channels), last));
-    const stereo = channels.length > 1 ? channels.slice(0, 2) : [channels[0], channels[0]];
-    let out = await vocals.push(toSep ? stereo.map((c, i) => toSep[i].process(c, last)) : stereo);
-    if (last) out = concatPcm(out, await vocals.finish());
-    parts.push(resampler.process(out, last));
-  };
-  for await (const sample of sink.samples(from, to)) {
-    const frames = sample.numberOfFrames;
-    const skip = Math.max(0, Math.min(frames, Math.round((from - sample.timestamp) * sample.sampleRate)));
-    const stop = Math.max(skip, Math.min(frames, Math.round((to - sample.timestamp) * sample.sampleRate)));
-    const channels: Float32Array[] = [];
-    for (let ch = 0; ch < sample.numberOfChannels; ch++) {
-      const buf = new Float32Array(frames);
-      sample.copyTo(buf, { planeIndex: ch, format: "f32-planar" });
-      channels.push(buf.subarray(skip, stop));
-    }
-    sample.close();
-    if (skip < stop) await add(channels);
-  }
-  await add([new Float32Array(0)], true);
-  const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  return out;
-}
-
-function concatPcm(a: Float32Array, b: Float32Array) {
-  const out = new Float32Array(a.length + b.length);
-  out.set(a);
-  out.set(b, a.length);
-  return out;
-}
-
-/** Song lyrics: Whisper times known words span by span; `vocals`: in the separated vocals. */
+/** A pasted text: Whisper times its known words span by span; `vocals`: in the separated vocals. */
 async function alignAudio(id: number, file: File, lang: SpeechLang, spans: AlignSpan[], vocals = false) {
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   try {
     const engine = await getEngine();
     if (!(engine instanceof WhisperEngine)) {
-      throw new Error("Sesle ince ayar yalnızca Whisper ile çalışır; üst çubuktan Whisper Turbo'yu seç.");
+      throw new Error("Sesle ince ayar yalnızca Whisper ile çalışır; model olarak Whisper'ı seç.");
     }
     const track = await input.getPrimaryAudioTrack();
     if (!track) throw new Error("Bu dosyada ses kanalı yok.");
@@ -522,7 +474,9 @@ async function alignAudio(id: number, file: File, lang: SpeechLang, spans: Align
     post({ type: "align-progress", id, done: 0, total: spans.length });
     for (const [n, s] of spans.entries()) {
       const sep = vocals ? (await getVocals()).separator() : null;
-      const pcm = await readPcm(sink, track.sampleRate, s.start, s.end, sep);
+      const pcm = sep
+        ? await readVocals(sink, track.sampleRate, s.start, s.end, sep)
+        : await readPcm(sink, track.sampleRate, s.start, s.end);
       out.push(await engine.alignText(pcm, s.start, s.words, lang));
       post({ type: "align-progress", id, done: n + 1, total: spans.length });
     }
@@ -672,6 +626,7 @@ self.onmessage = (ev: MessageEvent<ToWorker>) => {
       queue = queue.then(() => punctuate(m.id, m.words));
       break;
     case "align":
+      // Queued after transcription jobs: the same model does both.
       queue = queue.then(() => alignAudio(m.id, m.file, m.lang, m.spans, m.vocals));
       break;
   }

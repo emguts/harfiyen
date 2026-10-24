@@ -62,7 +62,10 @@ export function ExportMenu({
   baseName,
   videoName,
   captions,
+  kinetic,
+  photo,
   meta,
+  speakers,
   complete,
   isVideo,
   canBurn,
@@ -80,7 +83,13 @@ export function ExportMenu({
   videoName: string;
   /** Captions are drawn into the video (they can be hidden). */
   captions: boolean;
+  /** The kinetic stage is drawn in place of the captions. */
+  kinetic: boolean;
+  /** An audio project's ground is the user's photo, not the aura. */
+  photo: boolean;
   meta: Record<string, unknown>;
+  /** The speakers' names, when they were told apart. */
+  speakers?: string[];
   /** The transcript is final (subtitle files and video need it). */
   complete: boolean;
   isVideo: boolean;
@@ -113,6 +122,8 @@ export function ExportMenu({
   const out = effectiveOutput(output, source);
   const resolution = source && resolutionOf(out, source);
   const encoder = resolution?.encoders[out.codec];
+  // A video written larger than its own picture.
+  const upscaled = !!source?.video && !!resolution && resolution.height * resolution.width > source.width * source.height;
   const size = (o: VideoOutput) => (source ? `${megabytes(estimateSize(o, source))} MB` : "");
   const badCodec = undecodable(source);
   const canCreate = has && complete && canBurn && (!source || !!encoder) && !badCodec;
@@ -180,12 +191,12 @@ export function ExportMenu({
           </div>
         ) : (
           <div className="grid gap-3 px-2 pt-1 pb-2">
-            {/* Only when there is a choice: a small video has nothing below its own size. */}
-            {source && source.resolutions.length > 1 && (
+            {/* Only when there is a choice. */}
+            {source && resolution && source.resolutions.length > 1 && (
               <Field label="Çözünürlük">
                 <Select<OutputResolution>
                   label="Çözünürlük"
-                  value={out.resolution}
+                  value={resolution.value}
                   options={source.resolutions.map((r) => ({ value: r.value, label: RESOLUTION_NAMES[r.value] }))}
                   onChange={(value) => onOutput({ ...output, resolution: value })}
                   render={(o) => {
@@ -200,6 +211,7 @@ export function ExportMenu({
                     );
                   }}
                 />
+                {upscaled && <MenuNote>Görüntü büyütülür; altyazı bu boyutta çizildiği için keskin çıkar.</MenuNote>}
               </Field>
             )}
             <Field label="Video kodlaması">
@@ -256,12 +268,16 @@ export function ExportMenu({
               ) : (
                 <MenuNote>
                   {isVideo
-                    ? captions
-                      ? "Altyazı görüntüye yazılır"
-                      : "Altyazısız; varsa kadraj ve logoyla"
-                    : captions
-                      ? "Ses, hareketli aura ve altyazı"
-                      : "Ses ve hareketli aura, altyazısız; varsa logoyla"}
+                    ? kinetic
+                      ? "Kinetik tipografi görüntüye yazılır"
+                      : captions
+                        ? "Altyazı görüntüye yazılır"
+                        : "Altyazısız; varsa kadraj ve logoyla"
+                    : kinetic
+                      ? "Ses ve kinetik tipografi"
+                      : captions
+                        ? `Ses, ${photo ? "fotoğraf" : "hareketli aura"} ve altyazı`
+                        : `Ses ve ${photo ? "fotoğraf" : "hareketli aura"}, altyazısız; varsa logoyla`}
                   , MP4
                   {source && `, yaklaşık ${size(out)}`}.
                 </MenuNote>
@@ -276,18 +292,18 @@ export function ExportMenu({
       </MenuGroup>
       <MenuGroup>
         <MenuTitle>Altyazı dosyası</MenuTitle>
-        {item("SRT", "Çoğu oynatıcı ve kurgu programı", () => download(`${baseName}.srt`, toSrt(cues()), "application/x-subrip"))}
-        {item("WebVTT", "Web ve YouTube", () => download(`${baseName}.vtt`, toVtt(cues()), "text/vtt"))}
+        {item("SRT", "Çoğu oynatıcı ve kurgu programı", () => download(`${baseName}.srt`, toSrt(cues(), speakers), "application/x-subrip"))}
+        {item("WebVTT", "Web ve YouTube", () => download(`${baseName}.vtt`, toVtt(cues(), speakers), "text/vtt"))}
       </MenuGroup>
       <MenuGroup>
         <MenuTitle>Metin</MenuTitle>
-        {item("Düz metin", "TXT, paragraflar", () => download(`${baseName}.txt`, toText(words), "text/plain"), has)}
-        {item("Kelime zamanları", "JSON", () => download(`${baseName}.json`, toJson(words, meta), "application/json"), has)}
+        {item("Düz metin", "TXT, paragraflar", () => download(`${baseName}.txt`, toText(words, speakers), "text/plain"), has)}
+        {item("Kelime zamanları", "JSON", () => download(`${baseName}.json`, toJson(words, meta, speakers), "application/json"), has)}
         {item(
           copied ? "Kopyalandı" : "Metni kopyala",
           "Panoya",
           async () => {
-            await navigator.clipboard.writeText(toText(words));
+            await navigator.clipboard.writeText(toText(words, speakers));
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           },

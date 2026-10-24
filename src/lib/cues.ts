@@ -39,10 +39,11 @@ export function buildCues(words: Word[], rules: CueRules = SUBTITLE_RULES): Cue[
     // and never past a sentence end.
     const brief = !!cur && w.start - cur.start < (rules.minDuration ?? 0) && !/[.?!…]$/.test(prev);
     const full = !!cur && cur.words.length >= (rules.maxWords ?? Infinity) && !brief;
-    // A line of an imported subtitle file or of pasted lyrics always starts anew.
+    // A line of an imported subtitle file or of an aligned text always starts anew, and so does another speaker.
     const brk =
       !cur ||
       !!w.cue ||
+      w.speaker !== cur.words[cur.words.length - 1].speaker ||
       sentenceEnd ||
       full ||
       w.start - cur.end >= rules.gap ||
@@ -62,9 +63,10 @@ export function buildCues(words: Word[], rules: CueRules = SUBTITLE_RULES): Cue[
 }
 
 /**
- * The lines of an imported subtitle file (words marked `cue`), or null when
- * the words were transcribed. Subtitle exports and the transcript keep them;
- * caption styles still group words their own way.
+ * The lines of an imported subtitle file or an aligned text (words marked
+ * `cue`), or null when the words were transcribed. Subtitle exports and the
+ * transcript keep them; caption styles break there too, and within a line
+ * group words their own way.
  */
 export function importedCues(words: Word[]): Cue[] | null {
   if (!words.some((w) => w.cue)) return null;

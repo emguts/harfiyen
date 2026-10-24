@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import type { SpeechLang } from "../engine";
 import { LANG_NAMES } from "../lib/lang";
 import { translateProgress, translationLang as targetOf, type TranslateState } from "../lib/useTranslator";
@@ -138,6 +139,10 @@ export function DubPanel({
   canTranslateDub,
   onTranslateDub,
   onCancelTranslate,
+  textMode = false,
+  customText = "",
+  onCustomText,
+  textRef,
 }: {
   state: DubState;
   /** The transcript changed after the dub was made. */
@@ -174,6 +179,11 @@ export function DubPanel({
   /** Translate, then dub the translation. */
   onTranslateDub: () => void;
   onCancelTranslate: () => void;
+  /** Standalone text-to-speech (no underlying media file). */
+  textMode?: boolean;
+  customText?: string;
+  onCustomText?: (text: string) => void;
+  textRef?: RefObject<HTMLTextAreaElement | null>;
 }) {
   const translating = translateProgress(translate);
   // While translating for the dub too: it starts with the voice chosen when it was asked for.
@@ -181,13 +191,13 @@ export function DubPanel({
   const setVoice = (v: Partial<Voice>) => onVoice({ ...voice, ...v });
   const model = MODELS[voice.model];
   // A dub in the other language reads the translation into it.
-  const fromTranslation = voice.lang !== sourceLang;
+  const fromTranslation = (!textMode || canTranslateDub) && voice.lang !== sourceLang;
   const hasTranslation = translation && translationLang === voice.lang;
   // The transcript is translated into its other language only.
   const translatable = targetOf(sourceLang) === voice.lang;
   // The one button translates first.
   const needsTranslation = fromTranslation && !hasTranslation && translatable;
-  const ready = needsTranslation ? canTranslateDub : canDub;
+  const ready = textMode && !fromTranslation ? customText.trim().length > 0 : needsTranslation ? canTranslateDub : canDub;
   const setLang = (lang: DubLang) =>
     setVoice({ lang, model: LANG_MODELS[lang].includes(voice.model) ? voice.model : LANG_MODELS[lang][0] });
   const modelOptions = LANG_MODELS[voice.lang].map((id) => ({ value: id, label: MODELS[id].name }));
@@ -195,9 +205,11 @@ export function DubPanel({
     <div className={STUDIO}>
       <Section title="Yapay sesle seslendirme">
         <Hint>
-          {fromTranslation
-            ? `${LANG_NAMES[voice.lang]} çeviri yapay bir sesle okunur. Her cümle aslının başladığı anda başlar; yerine sığmayan cümleler biraz hızlı okunur.`
-            : "Transkript yapay bir sesle yeniden okunur. Her altyazı satırı kendi zamanında başlar; yerine sığmayan satırlar biraz hızlı okunur."}{" "}
+          {textMode && !fromTranslation
+            ? "Yazdığın metin yapay bir sesle okunur, kelime zamanlarıyla oynatıcıya ve altyazıya yerleşir."
+            : fromTranslation
+              ? `${LANG_NAMES[voice.lang]} çeviri yapay bir sesle okunur. Her cümle aslının başladığı anda başlar; yerine sığmayan cümleler biraz hızlı okunur.`
+              : "Transkript yapay bir sesle yeniden okunur. Her altyazı satırı kendi zamanında başlar; yerine sığmayan satırlar biraz hızlı okunur."}{" "}
           Seçili ses ilk kullanımda yaklaşık {model.size} indirir.
         </Hint>
         <RowGroup role="group" aria-label="Seslendirme dili">
@@ -215,6 +227,22 @@ export function DubPanel({
             </button>
           ))}
         </RowGroup>
+        {textMode && !fromTranslation && (
+          <textarea
+            ref={textRef}
+            rows={5}
+            className="block w-full resize-y rounded-ui border border-line bg-bg px-2.5 py-2 text-[13px] leading-[1.55] text-fg outline-none focus:border-cini disabled:opacity-45 [font-family:inherit]"
+            placeholder={
+              voice.lang === "en"
+                ? "Write or paste the text to read aloud…"
+                : "Okunacak metni buraya yaz ya da yapıştır…"
+            }
+            value={customText}
+            disabled={working}
+            aria-label="Seslendirilecek metin"
+            onChange={(e) => onCustomText?.(e.target.value)}
+          />
+        )}
         {fromTranslation && !hasTranslation && !translatable && (
           <Hint>
             {LANG_NAMES[voice.lang]} seslendirme için {LANG_NAMES[sourceLang]} transkriptin çevirisi gerekir;{" "}
@@ -271,7 +299,9 @@ export function DubPanel({
         )}
         {state.status === "done" && stale && (
           <Hint>
-            {fromTranslation ? "Çeviri" : "Transkript"}, ses ayarları ya da seçili bölüm seslendirmeden sonra değişti.
+            {textMode && !fromTranslation
+              ? "Metin ya da ses ayarları seslendirmeden sonra değişti."
+              : `${fromTranslation ? "Çeviri" : "Transkript"}, ses ayarları ya da seçili bölüm seslendirmeden sonra değişti.`}
           </Hint>
         )}
         <SectionActions>
@@ -302,7 +332,7 @@ export function DubPanel({
             </a>
           )}
         </SectionActions>
-        {!ready && state.status === "idle" && !(fromTranslation && !hasTranslation && !translatable) && (
+        {!ready && !textMode && state.status === "idle" && !(fromTranslation && !hasTranslation && !translatable) && (
           <Hint>Önce bir dosyayı yazıya dök.</Hint>
         )}
       </Section>
@@ -423,35 +453,37 @@ export function DubPanel({
           </Button>
         </SectionActions>
       </Section>
-      <Section title="Dinleme ve dışa aktarma">
-        <Row>
-          <RowLabel wide>Yapay sesi kullan</RowLabel>
-          <Switch
-            checked={on}
-            disabled={state.status !== "done" || busy}
-            onChange={(e) => onOn(e.target.checked)}
-          />
-        </Row>
-        <Row>
-          <RowLabel>Orijinal ses</RowLabel>
-          <Range
-            min={0}
-            max={MAX_ORIGINAL}
-            step={0.05}
-            value={original}
-            disabled={busy}
-            onChange={(e) => onOriginal(Number(e.target.value))}
-            onDoubleClick={() => onOriginal(0)}
-          />
-          <RowValue>%{Math.round(original * 100)}</RowValue>
-        </Row>
-        <Hint>
-          Açıkken oynatıcı ve altyazılı video yapay sesi kullanır. Orijinal ses
-          {original > 0
-            ? ` altta %${Math.round(original * 100)} seviyesinde duyulur; konuşma, müzik ve ortam sesi hafifçe kalır.`
-            : " hiç duyulmaz; müzik ve ortam sesi de kalkar."}
-        </Hint>
-      </Section>
+      {!textMode && (
+        <Section title="Dinleme ve dışa aktarma">
+          <Row>
+            <RowLabel wide>Yapay sesi kullan</RowLabel>
+            <Switch
+              checked={on}
+              disabled={state.status !== "done" || busy}
+              onChange={(e) => onOn(e.target.checked)}
+            />
+          </Row>
+          <Row>
+            <RowLabel>Orijinal ses</RowLabel>
+            <Range
+              min={0}
+              max={MAX_ORIGINAL}
+              step={0.05}
+              value={original}
+              disabled={busy}
+              onChange={(e) => onOriginal(Number(e.target.value))}
+              onDoubleClick={() => onOriginal(0)}
+            />
+            <RowValue>%{Math.round(original * 100)}</RowValue>
+          </Row>
+          <Hint>
+            Açıkken oynatıcı ve altyazılı video yapay sesi kullanır. Orijinal ses
+            {original > 0
+              ? ` altta %${Math.round(original * 100)} seviyesinde duyulur; konuşma, müzik ve ortam sesi hafifçe kalır.`
+              : " hiç duyulmaz; müzik ve ortam sesi de kalkar."}
+          </Hint>
+        </Section>
+      )}
       <Section title="Model">
         <Hint>
           <a href={model.link}>{model.name}</a>, {model.note} Ses bu

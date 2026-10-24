@@ -1,4 +1,5 @@
-// Whisper's byte-level BPE vocabulary, used only for decoding. Token strings
+// Whisper's byte-level BPE vocabulary, used for decoding (and, roughly, for
+// encoding known text to align it, see encodeWord). Token strings
 // spell bytes with GPT-2's printable byte alphabet; a Turkish letter can be
 // split across two tokens, so words are assembled from bytes, not strings.
 
@@ -43,7 +44,7 @@ export class WhisperTokenizer {
    * Tokens for one word with its leading space, for forced alignment. Greedy
    * longest match over the vocabulary: without the BPE merges this is not
    * always Whisper's own split, but it spells the same bytes, which is what
-   * the alignment heads follow.
+   * the alignment heads follow. From emguts/harfiyen.
    */
   encodeWord(word: string): number[] {
     const s = Array.from(new TextEncoder().encode(` ${word}`), (b) => this.byteChar[b]).join("");

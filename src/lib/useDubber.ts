@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { buildCues, cueText, READING_RULES } from "./cues";
+import { buildCues, cueText, importedCues, READING_RULES } from "./cues";
 import type { Word } from "../engine";
 import { dubWav, type DubClip } from "../tts/dub";
 import type { StoredDub } from "./projectStore";
@@ -36,8 +36,44 @@ const SAMPLE: Record<DubLang, string> = {
 export const dubBySentence = (voiceLang: DubLang, transcriptLang: DubLang) =>
   voiceLang !== transcriptLang || voiceLang === "en";
 
+/** Turn plain user text into timed placeholder words (one cue per sentence or line). */
+export function wordsFromText(text: string): Word[] {
+  const sentences = text
+    .split(/(?:\r?\n)+|(?<=[.!?…]["'”’»)\]]*)\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const out: Word[] = [];
+  let t = 0;
+  for (const s of sentences) {
+    const parts = s.split(/\s+/).filter(Boolean);
+    if (!parts.length) continue;
+    if (out.length) t += 1.5;
+    parts.forEach((w, i) => {
+      const d = ([...w].length + 1) * 0.06;
+      out.push({ text: w, start: t, end: t + d, ...(i === 0 && { cue: true }) });
+      t += d;
+    });
+  }
+  return out;
+}
+
+/** Plain text of `words`, one cue per line. */
+export function textFromWords(words: Word[]): string {
+  const cues = importedCues(words) ?? buildCues(words, READING_RULES);
+  return cues.map(cueText).join("\n");
+}
+
 /** What the dub reads: `words` a sentence or a caption line at a time (dubBySentence). */
 function dubLines(words: Word[], bySentence: boolean): SpokenLine[] {
+  const imported = importedCues(words);
+  if (imported)
+    return imported.map((c) => ({
+      start: c.start,
+      end: c.end,
+      text: cueText(c),
+      first: c.first,
+      count: c.words.length,
+    }));
   if (bySentence)
     return splitSentences(words).map((s) => ({
       start: words[s.first].start,
@@ -143,13 +179,27 @@ export type DubState =
     }
   | { status: "error"; message: string };
 
+export interface DubResult {
+  clips: DubClip[];
+  wav: Blob;
+  duration: number;
+  timed: Word[];
+  voice: Voice;
+  elapsed: number;
+}
+
 /** Reads the transcript aloud with the chosen voice model in its own worker, one line at a time. */
 export function useDubber() {
   const worker = useRef<Worker | null>(null);
   const jobId = useRef(0);
-  const pending = useRef<{ words: Word[]; lines: SpokenLine[]; duration: number; end: number; voice: Voice } | null>(
-    null,
-  );
+  const pending = useRef<{
+    words: Word[];
+    lines: SpokenLine[];
+    duration: number;
+    end: number;
+    voice: Voice;
+    onDone?: (r: DubResult) => void;
+  } | null>(null);
   const [state, setState] = useState<DubState>({ status: "idle" });
   // Previews run alongside a finished dub without touching it, so they count their own jobs; the worker sees
   // them as negative ids.
@@ -195,21 +245,27 @@ export function useDubber() {
           setState({ status: "running", done: m.done, total: m.total });
           break;
         case "done": {
-          const { words, lines, duration, end, voice } = pending.current!;
-          const url = URL.createObjectURL(dubWav(m.clips, duration));
+          const { words, lines, duration, end, voice, onDone } = pending.current!;
+          const last = m.clips.at(-1);
+          const totalDuration = Math.max(duration, last ? last.start + last.audio.length / RATE : 0);
+          const wav = dubWav(m.clips, totalDuration);
+          const url = URL.createObjectURL(wav);
           const timed = timeToDub(words, lines, m.clips);
+          const key = end > 0 ? dubKey(words) : dubKey(timed);
+          const finalEnd = end > 0 ? end : totalDuration;
           setState({
             status: "done",
             clips: m.clips,
             url,
-            key: dubKey(words),
-            duration,
+            key,
+            duration: totalDuration,
             timed,
             voice,
-            end,
+            end: finalEnd,
             overflow: m.overflow,
             elapsed: m.elapsed,
           });
+          onDone?.({ clips: m.clips, wav, duration: totalDuration, timed, voice, elapsed: m.elapsed });
           break;
         }
         case "cancelled":
@@ -236,12 +292,19 @@ export function useDubber() {
   const url = state.status === "done" ? state.url : null;
   useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);
 
-  /** `end`: where the dub must be over by (the video's end, or the trim's). */
+  /** `end`: where the dub must be over by (the video's end, or the trim's); 0 for standalone text. */
   const dub = useCallback(
-    (words: Word[], duration: number, end: number, voice: Voice, bySentence: boolean) => {
+    (
+      words: Word[],
+      duration: number,
+      end: number,
+      voice: Voice,
+      bySentence: boolean,
+      onDone?: (r: DubResult) => void,
+    ) => {
       const id = ++jobId.current;
       const lines = dubLines(words, bySentence);
-      pending.current = { words, lines, duration, end, voice };
+      pending.current = { words, lines, duration, end, voice, onDone };
       setState({ status: "running", done: 0, total: 0 });
       ensureWorker().postMessage({
         type: "dub",
@@ -257,7 +320,7 @@ export function useDubber() {
 
   /** Reads the first line of `words` with `voice`; a second call while one runs stops it. */
   const listen = useCallback(
-    (words: Word[], voice: Voice, bySentence: boolean) => {
+    (words: Word[], voice: Voice, bySentence: boolean, sampleText?: string) => {
       stopSample();
       const id = ++previewId.current;
       // A sample already on its way is dropped when it arrives: its id is out of date.
@@ -265,7 +328,8 @@ export function useDubber() {
         setPreview({ status: "idle" });
         return;
       }
-      const text = dubLines(words, bySentence)[0]?.text.trim() || SAMPLE[voice.lang];
+      const source = sampleText?.trim() ? wordsFromText(sampleText) : words;
+      const text = dubLines(source, bySentence)[0]?.text.trim() || SAMPLE[voice.lang];
       setPreview({ status: "running" });
       ensureWorker().postMessage({ type: "preview", jobId: -id, text, voice } satisfies ToTts);
     },
@@ -317,14 +381,26 @@ export const MAX_ORIGINAL = 0.5;
 /**
  * Plays the dub in step with the media element, whose own sound is turned down to `original` (0 to 1)
  * meanwhile. The media element stays the clock: the dub follows its play, pause, seek, rate and mute.
+ * `volume` is the listener's level and scales both; without a dub it is the element's volume.
  */
-export function useDubPlayback(el: HTMLMediaElement | null, url: string | null, on: boolean, original: number) {
+export function useDubPlayback(
+  el: HTMLMediaElement | null,
+  url: string | null,
+  on: boolean,
+  original: number,
+  volume = 1,
+) {
+  const level = useRef(volume);
+  level.current = volume;
+  const playing = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
     if (!el || !url || !on) return;
     const dub = new Audio(url);
+    playing.current = dub;
     const sync = () => {
       dub.playbackRate = el.playbackRate;
       dub.muted = el.muted;
+      dub.volume = level.current;
       if (Math.abs(dub.currentTime - el.currentTime) > 0.15) dub.currentTime = el.currentTime;
       if (el.paused) dub.pause();
       else void dub.play().catch(() => {});
@@ -336,11 +412,14 @@ export function useDubPlayback(el: HTMLMediaElement | null, url: string | null, 
       events.forEach((e) => el.removeEventListener(e, sync));
       dub.pause();
       dub.removeAttribute("src");
-      el.volume = 1;
+      playing.current = null;
     };
   }, [el, url, on]);
-  // Apart, so moving the level does not restart the dub.
+  // Apart, so moving a level does not restart the dub.
   useEffect(() => {
-    if (el && url && on) el.volume = Math.max(0, Math.min(1, original));
-  }, [el, url, on, original]);
+    if (playing.current) playing.current.volume = volume;
+    if (!el) return;
+    const own = url && on ? Math.max(0, Math.min(1, original)) : 1;
+    el.volume = Math.max(0, Math.min(1, own * volume));
+  }, [el, url, on, original, volume]);
 }

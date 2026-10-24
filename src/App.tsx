@@ -3,6 +3,7 @@ import {
   DEFAULT_LOGO,
   DEFAULT_SETTINGS,
   presetById,
+  shownPhoto,
   type CaptionSettings,
 } from "./captions/style";
 import { ExportMenu } from "./components/ExportMenu";
@@ -21,6 +22,7 @@ import {
   toolbarButton,
 } from "./components/ui";
 import { Dropzone } from "./components/Dropzone";
+import { AlignBar } from "./components/AlignBar";
 import { FindBar, useFind } from "./components/FindBar";
 import {
   ProjectList,
@@ -38,10 +40,12 @@ import {
   IconSettings,
   IconSound,
   IconSearch,
+  IconAlignText,
   IconUndo,
 } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
-import { Inspector } from "./components/Inspector";
+import { Inspector, type InspectorTab } from "./components/Inspector";
+import { SHIFT, SHIFT_BIG } from "./components/TimingSection";
 import { ModelMenu } from "./components/ModelMenu";
 import { langProblem, VideoLang } from "./components/VideoLang";
 import { MoreMenu } from "./components/MoreMenu";
@@ -55,21 +59,50 @@ import type { DecodeOptions, DecodingMethod, SpeechLang, Word } from "./engine";
 import { buildCues } from "./lib/cues";
 import { replaceRange } from "./lib/edit";
 import { retime, shiftAll, shiftSpan } from "./lib/timing";
-import { applySpans, planSpans, roughAlign, tapAlign, type LyricTiming } from "./lib/lyrics";
-import type { LyricsOptions } from "./components/LyricsSection";
+import {
+  alignText,
+  applySpans,
+  planSpans,
+  tapAlign,
+  type TextTiming,
+} from "./lib/align";
 import { writeNumbers, type NumberMode } from "./lib/numbers";
 import { plainWord } from "./punct/turkish";
-import { isSubtitle, parseSubtitles, readSubtitle, SUBTITLE_EXTS } from "./lib/subtitles";
+import {
+  isSubtitle,
+  parseSubtitles,
+  readSubtitle,
+  SUBTITLE_EXTS,
+} from "./lib/subtitles";
 import { download } from "./lib/exporters";
 import { clock, duration as fmtDuration } from "./lib/format";
-import { getDub, PROJECT_EXT, projectTitle, sameMedia, saveDub } from "./lib/projectStore";
+import {
+  getDub,
+  PROJECT_EXT,
+  projectTitle,
+  sameMedia,
+  saveDub,
+} from "./lib/projectStore";
 import { useBurner } from "./lib/useBurner";
 import { useSourceInfo } from "./lib/useSourceInfo";
 import { useWaveform } from "./lib/useWaveform";
 import { useLogo } from "./lib/logo";
+import { usePhoto } from "./lib/photo";
+import { useGroundPreview } from "./lib/groundPreview";
+import { DEFAULT_KINETIC } from "./render/kinetic";
 import type { LogoLayer } from "./render/logoLayer";
 import { framing, type Crop } from "./lib/crop";
 import { wordsIn } from "./lib/trim";
+import {
+  DEFAULT_JUMP_CUT,
+  findCuts,
+  keptLength,
+  keptParts,
+  wordsOutside,
+  wordsThrough,
+  type JumpCut,
+} from "./lib/cuts";
+import { readJumpCut } from "./lib/projectStore";
 import {
   effectiveOutput,
   loadOutput,
@@ -89,18 +122,35 @@ import {
   MAX_ORIGINAL,
   sameVoice,
   storedDub,
+  textFromWords,
   useDubber,
   useDubPlayback,
+  wordsFromText,
   type Voice,
 } from "./lib/useDubber";
+import { DUB_RATE, dubMetrics } from "./tts/dub";
 import { useProjects } from "./lib/useProjects";
-import { canResume, modelIsCached, useTranscriber, type TimeRange } from "./lib/useTranscriber";
+import {
+  canResume,
+  modelIsCached,
+  useTranscriber,
+  type TimeRange,
+} from "./lib/useTranscriber";
 import { useTranslator } from "./lib/useTranslator";
+import { useSpeakers } from "./lib/useSpeakers";
+import {
+  assign as assignSpeaker,
+  labelWords,
+  merge as mergeSpeakers,
+  rename as renameSpeaker,
+  type Speakers,
+} from "./lib/speakers";
 import { sourceKey, type Translation } from "./lib/translation";
 import { LANG_NAMES } from "./lib/lang";
 import { DEFAULT_MODEL, modelInfo } from "./models";
 
 const EMPTY_BANDS = new Float32Array(0);
+const NO_CUTS: TimeRange[] = [];
 /** Play and mute in the transport bar. */
 const TP_BTN =
   "grid size-8 flex-none place-items-center rounded-ui border-0 bg-transparent text-fg transition-all duration-150 ease-[ease] hover:not-disabled:bg-raised hover:not-disabled:text-fg-strong disabled:opacity-35 max-[860px]:size-10";
@@ -132,7 +182,12 @@ const PICKER_TYPES = [
   },
 ];
 
-const optionsFor = (method: DecodingMethod, lang: SpeechLang = "tr", music = false, vocals = false): DecodeOptions => ({
+const optionsFor = (
+  method: DecodingMethod,
+  lang: SpeechLang = "tr",
+  music = false,
+  vocals = false,
+): DecodeOptions => ({
   method,
   lang,
   music,
@@ -153,9 +208,38 @@ function loadSettings(): CaptionSettings {
   }
 }
 
-// A new project starts without "Sesle vurgula" and with its captions shown; the rest of the look carries over.
-const forNewProject = (s: CaptionSettings) =>
-  s.voiceEmphasis || s.hidden ? { ...s, voiceEmphasis: false, hidden: false } : s;
+// A new project starts without "Sesle vurgula", with its captions shown (not the kinetic stage) and its picture; the rest of the look carries over.
+/** The jump cut a new project starts with: off, with the lengths last used. */
+function offJumpCut(): JumpCut {
+  try {
+    return {
+      ...(readJumpCut(
+        JSON.parse(localStorage.getItem("harfiyen.jumpCut") ?? "null"),
+      ) ?? DEFAULT_JUMP_CUT),
+      on: false,
+    };
+  } catch {
+    return DEFAULT_JUMP_CUT;
+  }
+}
+
+const forNewProject = (s: CaptionSettings): CaptionSettings => {
+  const preset = presetById(s.preset).id;
+  return s.voiceEmphasis ||
+    s.hidden ||
+    s.kinetic?.on ||
+    (s.picture ?? "video") !== "video" ||
+    s.preset !== preset
+    ? {
+        ...s,
+        preset,
+        voiceEmphasis: false,
+        hidden: false,
+        picture: "video",
+        ...(s.kinetic && { kinetic: { ...s.kinetic, on: false } }),
+      }
+    : s;
+};
 
 function baseName(name: string) {
   const i = name.lastIndexOf(".");
@@ -179,6 +263,7 @@ export function App() {
     transcribe,
     load,
     attach,
+    setSpoken,
     clear,
     startLive,
     stopLive,
@@ -186,12 +271,13 @@ export function App() {
     resume,
     setWords,
     setTranslation,
+    setSpeakers,
     liveLevels,
     liveMeter,
     punctuate,
-    punct,
     alignAudio,
-    aligning,
+    aligning: alignProgress,
+    punct,
     vocals: vocalsState,
   } = useTranscriber();
   const [autoPunct, setAutoPunct] = useState(
@@ -205,7 +291,10 @@ export function App() {
     const saved = localStorage.getItem("harfiyen.numbers");
     return saved === "all" || saved === "keep" ? saved : "rule";
   });
-  useEffect(() => localStorage.setItem("harfiyen.numbers", numberMode), [numberMode]);
+  useEffect(
+    () => localStorage.setItem("harfiyen.numbers", numberMode),
+    [numberMode],
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [method, setMethod] = useState<DecodingMethod>("beam-lm");
@@ -213,7 +302,10 @@ export function App() {
   const [videoLang, setVideoLang] = useState<SpeechLang>(() =>
     localStorage.getItem("harfiyen.videoLang") === "en" ? "en" : "tr",
   );
-  useEffect(() => localStorage.setItem("harfiyen.videoLang", videoLang), [videoLang]);
+  useEffect(
+    () => localStorage.setItem("harfiyen.videoLang", videoLang),
+    [videoLang],
+  );
   /** Songs: Whisper without the speech VAD. */
   const [music, setMusic] = useState(() => localStorage.getItem("harfiyen.music") === "1");
   useEffect(() => localStorage.setItem("harfiyen.music", music ? "1" : "0"), [music]);
@@ -229,6 +321,15 @@ export function App() {
   const [trimming, setTrimming] = useState(false);
   const [trimDraft, setTrimDraft] = useState<TimeRange | null>(null);
   const trimAtRef = useRef<(end: "start" | "end", t: number) => void>(() => {});
+  /** Cutting out the quiet between words; belongs to the project, its lengths are remembered for the next. */
+  const [jumpCut, setJumpCut] = useState<JumpCut>(offJumpCut);
+  useEffect(() => {
+    const { gap, pad, fillers } = jumpCut;
+    localStorage.setItem(
+      "harfiyen.jumpCut",
+      JSON.stringify({ gap, pad, fillers }),
+    );
+  }, [jumpCut]);
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const burner = useBurner();
@@ -236,11 +337,13 @@ export function App() {
   /** Framed for Reels: 1080×1920 is offered first; the saved size comes back without the frame. */
   const reels = crop?.aspect === "9:16";
   useEffect(
-    () => setVideoOutput((o) => ({ ...o, resolution: reels ? "1080" : loadOutput().resolution })),
+    () =>
+      setVideoOutput((o) => ({
+        ...o,
+        resolution: reels ? "1080" : loadOutput().resolution,
+      })),
     [reels],
   );
-  // While picking, playback keeps to the range being picked.
-  const player = usePlayer(job?.file ?? null, trimming ? trimDraft : trim);
   const wave = useWaveform(job?.live ? null : (job?.file ?? null));
   const { logo: logoImage } = useLogo();
   // A video made with another logo (or none) is out of date.
@@ -250,13 +353,30 @@ export function App() {
   const logo = useMemo<LogoLayer | null>(
     () =>
       logoImage && logoSettings.on
-        ? { image: logoImage.bitmap, corner: logoSettings.corner, size: logoSettings.size, opacity: logoSettings.opacity }
+        ? {
+            image: logoImage.bitmap,
+            corner: logoSettings.corner,
+            size: logoSettings.size,
+            opacity: logoSettings.opacity,
+          }
         : null,
     [logoImage, logoSettings],
   );
-  const following = useFollow(player, job);
+  const { photo: photoImage } = usePhoto();
+  useEffect(() => burner.reset(), [photoImage, burner.reset]);
+  /** The photo, when there is one and this project uses it in place of the aura. */
+  const photo = settings.photo ? (photoImage?.bitmap ?? null) : null;
   const dubber = useDubber();
   const translator = useTranslator();
+  const speakerTool = useSpeakers();
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("captions");
+  const [customText, setCustomText] = useState("");
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const spokenJob = useRef<number | null>(null);
+  const autoPlay = useRef(false);
+  /** Standalone text-to-speech project: the synthesized WAV is already the job's own file. */
+  const isTts = job?.imported === "tts";
+  const textMode = !job || isTts;
   /** Show the English translation instead of the transcript, once there is one. */
   const [showEn, setShowEn] = useState(false);
   /** Play and export the dub instead of the original sound, once there is one. */
@@ -266,18 +386,86 @@ export function App() {
   /** How loud the file's own sound stays under the dub, 0 to MAX_ORIGINAL. */
   const [dubOriginal, setDubOriginal] = useState(() => {
     const saved = Number(localStorage.getItem("harfiyen.dubOriginal"));
-    return Number.isFinite(saved) ? Math.max(0, Math.min(MAX_ORIGINAL, saved)) : 0;
+    return Number.isFinite(saved)
+      ? Math.max(0, Math.min(MAX_ORIGINAL, saved))
+      : 0;
   });
-  useEffect(() => localStorage.setItem("harfiyen.dubOriginal", String(dubOriginal)), [dubOriginal]);
-  useDubPlayback(player.el, dub?.url ?? null, !!dubbing, dubOriginal);
+  useEffect(
+    () => localStorage.setItem("harfiyen.dubOriginal", String(dubOriginal)),
+    [dubOriginal],
+  );
+  /** A text-to-speech job's own file is already the dub in its source language. */
+  const ownFileIsDub =
+    isTts && dubbing?.voice.lang === (job?.options.lang ?? "tr");
+  /** The part of the file used, as the jump cut sees it. */
+  const span = useMemo(
+    () => trim ?? { start: 0, end: job?.duration ?? job?.decoded ?? 0 },
+    [trim, job?.duration, job?.decoded],
+  );
+  /** Why the quiet cannot be cut now; null when it can. */
+  const jumpCutUnavailable = !job?.file
+    ? "Önce bir video ya da ses dosyası aç."
+    : job.live
+      ? "Canlı kayıtta kullanılmaz."
+      : job.status === "running"
+        ? "Yazıya döküm bitince kullanılabilir."
+        : !job.words.length
+          ? "Önce yazıya dök: boşluklar transkriptten bulunur."
+          : null;
+  /** Where the dub's voice is heard: never cut, so no line of it is cut off. */
+  const dubSpans = useMemo(
+    () =>
+      dubbing && !ownFileIsDub
+        ? dubbing.clips.map((c) => ({
+            start: c.start,
+            end: c.start + c.audio.length / DUB_RATE,
+          }))
+        : NO_CUTS,
+    [dubbing, ownFileIsDub],
+  );
+  /** The stretches the jump cut takes out, in file time; none while it is off. */
+  const cuts = useMemo(
+    () =>
+      jumpCut.on && !jumpCutUnavailable && job
+        ? findCuts(job.words, span, jumpCut, job.loudness, dubSpans)
+        : NO_CUTS,
+    [jumpCut, jumpCutUnavailable, job?.words, job?.loudness, span, dubSpans],
+  );
+  const player = usePlayer(
+    job?.file ?? null,
+    trimming ? trimDraft : trim,
+    trimming ? NO_CUTS : cuts,
+  );
+  const following = useFollow(player, job);
+  // The style cards show the project's ground; only made while they are on screen.
+  const ground = useGroundPreview({
+    active: inspectorTab === "captions" || inspectorTab === "scene",
+    settings,
+    video: player.isVideo && player.el ? (player.el as HTMLVideoElement) : null,
+    src: player.url,
+    photo,
+  });
+  useDubPlayback(
+    player.el,
+    dub?.url ?? null,
+    !!dubbing && !ownFileIsDub,
+    dubOriginal,
+    player.volume,
+  );
   const [voice, setVoice] = useState<Voice>(() => {
     try {
-      return fitVoice({ ...DEFAULT_VOICE, ...JSON.parse(localStorage.getItem("harfiyen.voice") ?? "{}") });
+      return fitVoice({
+        ...DEFAULT_VOICE,
+        ...JSON.parse(localStorage.getItem("harfiyen.voice") ?? "{}"),
+      });
     } catch {
       return DEFAULT_VOICE;
     }
   });
-  useEffect(() => localStorage.setItem("harfiyen.voice", JSON.stringify(voice)), [voice]);
+  useEffect(
+    () => localStorage.setItem("harfiyen.voice", JSON.stringify(voice)),
+    [voice],
+  );
   const {
     projects: saved,
     current,
@@ -290,7 +478,7 @@ export function App() {
     rename,
     importFile,
     exportText,
-  } = useProjects(job, settings, crop, trim);
+  } = useProjects(job, settings, crop, trim, jumpCut);
   /** A saved project opened without its media (not stored, or not found). */
   const needsMedia =
     !!job && !job.file && !job.live && (!!current || !!job.imported);
@@ -315,13 +503,23 @@ export function App() {
   const resetBurn = burner.reset;
   // A dub belongs to its job; an export made with or without it is out of date once that changes.
   const resetDub = dubber.reset;
-  useEffect(() => resetDub(), [job?.id, resetDub]);
+  useEffect(() => {
+    if (job?.id !== spokenJob.current) resetDub();
+  }, [job?.id, resetDub]);
   /** The project a dub was started in, which it is saved with once done (the open one may have changed by then). */
   const dubProject = useRef<string | null>(null);
   useEffect(() => {
-    if (!dub || dub.restored || !dubProject.current) return;
-    void saveDub(dubProject.current, storedDub(dub)).catch(() => {}); // Over quota: the dub just is not kept.
-  }, [dub]);
+    const targetId =
+      dubProject.current ??
+      (job?.id === spokenJob.current ? current?.id : null);
+    if (!dub || dub.restored || !targetId) return;
+    void saveDub(targetId, storedDub(dub)).catch(() => {}); // Over quota: the dub just is not kept.
+  }, [dub, current?.id, job?.id]);
+  useEffect(() => {
+    if (!autoPlay.current || !player.el || !player.url) return;
+    autoPlay.current = false;
+    void player.el.play().catch(() => {});
+  }, [player.el, player.url]);
   // A reopened project brings its dub back, with the voice it was made with.
   const latestJob = useRef(job);
   latestJob.current = job;
@@ -342,14 +540,21 @@ export function App() {
             : j.translation?.lang === d.voice.lang
               ? j.translation.words
               : [];
-        restoreDub(d, read, dubBySentence(d.voice.lang, j.options.lang ?? "tr"));
+        restoreDub(
+          d,
+          read,
+          dubBySentence(d.voice.lang, j.options.lang ?? "tr"),
+        );
       })
       .catch(() => {});
     return () => {
       gone = true;
     };
   }, [projectId, restoreDub]);
-  useEffect(() => resetBurn(), [dubbing, dubOriginal, settings.hidden, resetBurn]);
+  useEffect(
+    () => resetBurn(),
+    [dubbing, dubOriginal, settings.hidden, resetBurn],
+  );
   const openProject = useCallback(
     async (id: string) => {
       try {
@@ -366,6 +571,7 @@ export function App() {
         setSettings(p.settings);
         setCrop(p.crop ?? null);
         setTrim(p.trim ?? null);
+        setJumpCut(p.jumpCut ?? offJumpCut());
         setMethod(p.method);
         setVideoLang(p.lang ?? "tr");
         const jobId = load({
@@ -381,6 +587,7 @@ export function App() {
           bands: p.bands,
           loudness: p.loudness ?? EMPTY_BANDS,
           translation: p.translation,
+          speakers: p.speakers,
         });
         punctuated.current.add(jobId);
         bind(jobId, p, file);
@@ -413,7 +620,9 @@ export function App() {
       try {
         subs = parseSubtitles(await readSubtitle(f));
       } catch (e) {
-        setNotice(e instanceof Error ? e.message : "Altyazı dosyası okunamadı.");
+        setNotice(
+          e instanceof Error ? e.message : "Altyazı dosyası okunamadı.",
+        );
         return;
       }
       const media = job?.file ? job : null;
@@ -468,6 +677,7 @@ export function App() {
       resetBurn();
       setCrop(null);
       setTrim(null);
+      setJumpCut(offJumpCut());
       // Not transcribed yet: first the frame and the part to use, then "Yazıya dök".
       open(f, optionsFor(method, videoLang, music, vocals));
     },
@@ -520,6 +730,8 @@ export function App() {
     resetBurn();
     setCrop(null);
     setTrim(null);
+    setJumpCut(offJumpCut());
+    setCustomText("");
     clear();
   };
 
@@ -530,7 +742,9 @@ export function App() {
     const worked = job.speed > 0 ? job.decoded / job.speed : 0;
     if (
       worked >= LONG_JOB_SEC &&
-      !confirm(`Yazıya dökme iptal edilsin mi? Şimdiye kadar dökülen ${fmtDuration(job.decoded)} silinir, proje kaydedilmez.`)
+      !confirm(
+        `Yazıya dökme iptal edilsin mi? Şimdiye kadar dökülen ${fmtDuration(job.decoded)} silinir, proje kaydedilmez.`,
+      )
     ) {
       return;
     }
@@ -625,37 +839,70 @@ export function App() {
   /** The transcript as spoken; dubbing, punctuation and numbers always work on it. */
   const words = job?.words ?? [];
   const translation = job?.translation;
+  /** Who speaks when; the words shown carry their speaker. */
+  const speakers = job?.speakers;
+  const speakersNow = useRef(speakers);
+  speakersNow.current = speakers;
+  /** The names shown over the captions, when asked for and there is more than one speaker. */
+  const captionSpeakers =
+    settings.speakerNames && speakers && speakers.names.length > 1
+      ? speakers.names
+      : null;
   /** The language spoken in the media, as the open transcript was made in. */
-  const sourceLang: SpeechLang = job?.options.lang ?? "tr";
+  const sourceLang: SpeechLang = job ? (job.options.lang ?? "tr") : voice.lang;
+  useEffect(() => {
+    if (isTts) setCustomText(textFromWords(words));
+  }, [isTts, words]);
   /** Showing the translation rather than the transcript. */
   const translated = showEn && !!translation;
   const lang = translated ? translation.lang : sourceLang;
   /** What the transcript pane, the player and the exports show: the transcript or its translation. */
-  const shown = translated ? translation.words : words;
+  const shown = useMemo(
+    () => labelWords(translated ? translation.words : words, speakers),
+    [translated, translation, words, speakers],
+  );
   const liveWords = useMemo(
     () =>
       translated
-        ? translation.words
+        ? shown
         : job?.tentative.length
           ? (job.words ?? []).concat(job.tentative)
-          : (job?.words ?? []),
-    [translated, translation, job?.words, job?.tentative],
+          : shown,
+    [translated, shown, job?.words, job?.tentative],
   );
   /** What the dub reads: the transcript in its own language, or the translation into the other. */
   const dubWords =
-    voice.lang === sourceLang ? words : translation?.lang === voice.lang ? translation.words : [];
+    voice.lang === sourceLang
+      ? words
+      : translation?.lang === voice.lang
+        ? translation.words
+        : [];
   const fileDuration = player.duration || job?.duration || 0;
   /** Where the dub must be over by: the trim's end, or the file's. */
   const dubEnd = trim?.end ?? fileDuration;
   const dubWordsKey = useMemo(() => dubKey(dubWords), [dubWords]);
-  const dubStale = !!dub && (dub.key !== dubWordsKey || !sameVoice(dub.voice, voice) || dub.end !== dubEnd);
+  const textEdited =
+    isTts &&
+    voice.lang === sourceLang &&
+    customText.trim() !== textFromWords(words).trim();
+  const dubStale =
+    textEdited ||
+    (!!dub &&
+      (dub.key !== dubWordsKey ||
+        !sameVoice(dub.voice, voice) ||
+        (!textMode && dub.end !== dubEnd)));
   /**
    * With the dub on and captions in its language, the captions follow the dub: its words at the times it says
    * them. The transcript pane and edits keep the spoken times.
    */
-  const dubTimed = dubbing && !dubStale && dubbing.voice.lang === lang ? dubbing.timed : null;
+  const dubTimed =
+    dubbing && !dubStale && dubbing.voice.lang === lang ? dubbing.timed : null;
   /** What the player, the timeline and the exports caption with. */
-  const captionWords = dubTimed ?? liveWords;
+  /** A filler the jump cut takes out is not captioned either. */
+  const captionWords = useMemo(
+    () => wordsOutside(dubTimed ?? liveWords, cuts),
+    [dubTimed, liveWords, cuts],
+  );
   // Timeline blocks follow the grouping of the chosen caption style.
   const groups = useMemo(
     () => buildCues(captionWords, presetById(settings.preset).grouping),
@@ -672,7 +919,14 @@ export function App() {
   useEffect(() => resetBurn(), [lang, resetBurn]);
 
   // Transcript edits, with undo (⌘Z / Ctrl+Z outside text fields). `en`: the edit was to the translation.
-  const history = useRef<{ jobId: number; en: boolean; words: Word[] }[]>([]);
+  // `translation`: the translation as it was, when the edit moved it too (a shift of every caption).
+  // An edit of who speaks keeps the speakers as they were instead.
+  const history = useRef<
+    (
+      | { jobId: number; en: boolean; words: Word[]; translation?: Translation }
+      | { jobId: number; speakers: Speakers | undefined }
+    )[]
+  >([]);
   const [canUndo, setCanUndo] = useState(false);
   const editable = !!job && job.status !== "running" && shown.length > 0;
   const commitWords = useCallback(
@@ -684,35 +938,122 @@ export function App() {
       else setWords(next);
       if (burner.state.status === "done") resetBurn();
     },
-    [job, translated, shown, translation, setWords, setTranslation, burner.state.status, resetBurn],
+    [
+      job,
+      translated,
+      shown,
+      translation,
+      setWords,
+      setTranslation,
+      burner.state.status,
+      resetBurn,
+    ],
   );
   const onEdit = useCallback(
-    (first: number, count: number, text: string) => commitWords(replaceRange(shown, first, count, text)),
+    (first: number, count: number, text: string) =>
+      commitWords(replaceRange(shown, first, count, text)),
     [shown, commitWords],
   );
-  // Hand-edited times: a line or a word placed, moved, or the whole transcript shifted.
+  // Hand-edited times: a line or a word placed or moved in what is shown.
   const onRetime = useCallback(
-    (first: number, count: number, start: number, end: number) => commitWords(retime(shown, first, count, start, end)),
+    (first: number, count: number, start: number, end: number) =>
+      commitWords(retime(shown, first, count, start, end)),
     [shown, commitWords],
   );
   const onShiftSpan = useCallback(
-    (first: number, count: number, seconds: number) => commitWords(shiftSpan(shown, first, count, seconds)),
+    (first: number, count: number, seconds: number) =>
+      commitWords(shiftSpan(shown, first, count, seconds)),
     [shown, commitWords],
   );
-  const onShiftAll = useCallback((seconds: number) => commitWords(shiftAll(shown, seconds)), [shown, commitWords]);
+  /** Every caption moved: the transcript and its translation together, so they stay in step; one undo. */
+  const onShiftAll = useCallback(
+    (seconds: number) => {
+      if (!job) return;
+      // The earliest word of either stops at 0, so both move by the same amount.
+      const first = Math.min(
+        words[0]?.start ?? Infinity,
+        translation?.words[0]?.start ?? Infinity,
+      );
+      const d = Math.max(seconds, -(Number.isFinite(first) ? first : 0));
+      if (!d) return;
+      history.current.push({ jobId: job.id, en: false, words, translation });
+      setCanUndo(true);
+      setWords(shiftAll(words, d));
+      if (translation)
+        setTranslation(job.id, {
+          ...translation,
+          words: shiftAll(translation.words, d),
+        });
+      if (burner.state.status === "done") resetBurn();
+    },
+    [
+      job,
+      words,
+      translation,
+      setWords,
+      setTranslation,
+      burner.state.status,
+      resetBurn,
+    ],
+  );
   const undo = useCallback(() => {
     const h = history.current;
     while (h.length && h[h.length - 1].jobId !== job?.id) h.pop();
     const prev = h.pop();
-    if (prev?.en && job?.translation) {
+    if (prev && "speakers" in prev) {
+      if (job) setSpeakers(job.id, prev.speakers);
+    } else if (prev?.en && job?.translation) {
       setTranslation(job.id, { ...job.translation, words: prev.words });
       setShowEn(true);
     } else if (prev && !prev.en) {
       setWords(prev.words);
-      setShowEn(false);
+      if (prev.translation && job) setTranslation(job.id, prev.translation);
+      else setShowEn(false);
     }
     setCanUndo(h.length > 0);
-  }, [job?.id, job?.translation, setWords, setTranslation]);
+  }, [job?.id, job?.translation, setWords, setTranslation, setSpeakers]);
+  /** A change to who speaks, with undo. */
+  const commitSpeakers = useCallback(
+    (next: Speakers | undefined) => {
+      if (!job) return;
+      history.current.push({ jobId: job.id, speakers: job.speakers });
+      setCanUndo(true);
+      setSpeakers(job.id, next);
+      if (burner.state.status === "done") resetBurn();
+    },
+    [job, setSpeakers, burner.state.status, resetBurn],
+  );
+  const onSpeaker = useCallback(
+    (start: number, end: number, speaker: number) =>
+      speakers && commitSpeakers(assignSpeaker(speakers, start, end, speaker)),
+    [speakers, commitSpeakers],
+  );
+  /** Why the speakers cannot be told apart now; null when they can. */
+  const speakersUnavailable = !job?.file
+    ? "Önce bir video ya da ses dosyası aç."
+    : job.status === "running"
+      ? "Yazıya döküm bitince kullanılabilir."
+      : !job.words.length
+        ? "Önce yazıya dök: konuşmacılar kelimelerin zamanından ayrılır."
+        : null;
+  const runSpeakers = (count: number | undefined) => {
+    if (!job?.file) return;
+    const id = job.id;
+    const end = job.duration ?? job.decoded;
+    const range = {
+      start: Math.max(0, (job.words[0]?.start ?? 0) - 1),
+      end: Math.min(end, (job.words.at(-1)?.end ?? end) + 1),
+    };
+    // Called only while the job is open (it is cancelled when another opens).
+    speakerTool.diarize(job.file, range, job.words, count, (sp) => {
+      history.current.push({ jobId: id, speakers: speakersNow.current });
+      setCanUndo(true);
+      setSpeakers(id, sp);
+    });
+  };
+  // Who speaks belongs to its job.
+  const cancelSpeakers = speakerTool.cancel;
+  useEffect(() => cancelSpeakers(), [job?.id, cancelSpeakers]);
   /** `then` runs with the translation once it is made (not if it is cancelled or the job changes). */
   const translate = (then?: (t: Translation) => void) => {
     if (!job) return;
@@ -730,19 +1071,163 @@ export function App() {
     });
   };
   const startDub = (read: Word[]) => {
+    if (textMode && (!isTts || voice.lang === sourceLang)) {
+      const trimmed = customText.trim();
+      if (!trimmed) return;
+      const source =
+        isTts && trimmed === textFromWords(words).trim()
+          ? words
+          : wordsFromText(trimmed);
+      const langChoice: SpeechLang = isTts ? sourceLang : voice.lang;
+      dubProject.current = current?.id ?? null;
+      dubber.dub(source, 0, 0, voice, true, (r) => {
+        const { peaks, bands, loudness } = dubMetrics(r.clips, r.duration);
+        const file = new File([r.wav], "Metin seslendirme.wav", {
+          type: "audio/wav",
+        });
+        const opts = optionsFor(method, langChoice);
+        resetBurn();
+        autoPlay.current = true;
+        if (isTts && job) {
+          if (trimmed !== textFromWords(words).trim()) {
+            history.current.push({ jobId: job.id, en: false, words });
+            setCanUndo(true);
+          }
+          spokenJob.current = job.id;
+          setSpoken({
+            file,
+            options: opts,
+            duration: r.duration,
+            elapsed: r.elapsed,
+            words: r.timed,
+            peaks,
+            bands,
+            loudness,
+          });
+        } else {
+          setNotice(null);
+          setPendingHandle(null);
+          setSettings((s) => {
+            const clean = forNewProject(s);
+            return {
+              ...clean,
+              kinetic: { ...(clean.kinetic ?? DEFAULT_KINETIC), on: true },
+            };
+          });
+          setCrop(null);
+          setTrim(null);
+          setJumpCut(offJumpCut());
+          setVideoLang(langChoice);
+          const id = load({
+            file,
+            model,
+            imported: "tts",
+            options: opts,
+            duration: r.duration,
+            elapsed: r.elapsed,
+            words: r.timed,
+            peaks,
+            bands,
+            loudness,
+          });
+          spokenJob.current = id;
+          punctuated.current.add(id);
+        }
+      });
+      return;
+    }
     dubProject.current = current?.id ?? null;
-    dubber.dub(read, fileDuration, dubEnd, voice, dubBySentence(voice.lang, sourceLang));
+    dubber.dub(
+      read,
+      fileDuration,
+      dubEnd,
+      voice,
+      dubBySentence(voice.lang, sourceLang),
+    );
   };
   const find = useFind(shown, lang);
   const { close: closeFind, show: showFind } = find;
   const found = useMemo(
-    () => (find.open && editable ? { matches: find.matches, current: find.current } : undefined),
+    () =>
+      find.open && editable
+        ? { matches: find.matches, current: find.current }
+        : undefined,
     [find.open, editable, find.matches, find.current],
   );
+  // A pasted text placed on the audio in place of the transcript (song lyrics, a script). Not over a
+  // translation, nor a project made from a text, whose words are already the text.
+  const [aligning, setAligning] = useState(false);
+  const [alignDraft, setAlignDraft] = useState("");
+  const canAlign = editable && !translated && !isTts;
+  /** Why Whisper cannot look for the words in the audio ("Sesle ince ayar"), or null. */
+  const refineIssue = !job?.file
+    ? "Bu projede ses dosyası yok."
+    : modelInfo(model).engine !== "whisper"
+      ? "Whisper gerekir: model menüsünden Whisper'ı seç (döküm yeniden yapılmaz)."
+      : null;
+  // Whisper answers later: the transcript must still be the one it was asked about.
+  const latestWords = useRef(words);
+  latestWords.current = words;
+  /** Places the text with `time` (from the transcript, or from taps), then optionally refines it in the audio. */
+  const placeText = async (
+    time: (heard: Word[]) => TextTiming,
+    refine: boolean,
+  ): Promise<string | null> => {
+    if (!job) return null;
+    try {
+      const timing = time(words);
+      let next = timing.words;
+      if (refine && job.file && !refineIssue) {
+        const spans = planSpans(timing, fileDuration);
+        const found = await alignAudio(
+          job.file,
+          sourceLang,
+          spans.map((s) => ({
+            start: s.start,
+            end: s.end,
+            words: timing.words.slice(s.first, s.last + 1).map((w) => w.text),
+          })),
+          // Music mode heard the separated vocals: the words are looked for there too.
+          !!job.options.vocals,
+        );
+        if (latestWords.current !== words)
+          return "Transkript bu sırada değişti; yeniden hizala.";
+        next = applySpans(timing, spans, found);
+      }
+      commitWords(next);
+      setAligning(false);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  };
+  const onAlign = (text: string, lines: boolean, refine: boolean) =>
+    placeText((heard) => alignText(heard, text, { lines }), refine);
+  const onTaps = (
+    text: string,
+    lines: boolean,
+    taps: number[],
+    refine: boolean,
+  ) => placeText((heard) => tapAlign(heard, text, taps, { lines }), refine);
+  /** The player, for timing by hand: from the trim's start, if there is one. */
+  const tapPlayback = {
+    start: () => {
+      player.seek(trim?.start ?? 0);
+      if (!player.playing) player.toggle();
+    },
+    stop: () => {
+      if (player.playing) player.toggle();
+    },
+    toggle: player.toggle,
+    playing: player.playing,
+    seek: player.seek,
+    time: () => player.el?.currentTime ?? player.time,
+  };
   useEffect(() => {
     history.current = [];
     setCanUndo(false);
     closeFind();
+    setAligning(false);
   }, [job?.id, closeFind]);
 
   const chosen = modelInfo(model);
@@ -752,18 +1237,30 @@ export function App() {
       ? "İşlemci (WASM) seçili; bu model ekran kartı gerektirir."
       : !("gpu" in navigator)
         ? "Bu tarayıcı WebGPU desteklemiyor."
-        : engine.phase === "ready" && engine.provider === "wasm" && !chosen.gpuOnly && !chosen.cpuOnly
+        : engine.phase === "ready" &&
+            engine.provider === "wasm" &&
+            !chosen.gpuOnly &&
+            !chosen.cpuOnly
           ? (engine.fallbackReason ?? "Ekran kartı kullanılamıyor.")
           : null;
   /** Why the chosen model cannot transcribe the video's language, if it cannot. */
-  const langIssue = langProblem(videoLang, chosen.name, chosen.langs, gpuReason);
+  const langIssue = langProblem(
+    videoLang,
+    chosen.name,
+    chosen.langs,
+    gpuReason,
+  );
   const chooseVideoLang = (l: SpeechLang) => {
     setVideoLang(l);
     // Only Whisper knows English: its light version, unless it cannot run here.
-    if (!modelInfo(model).langs.includes(l) && !gpuReason) setModel("whisper-turbo-q4");
+    if (!modelInfo(model).langs.includes(l) && !gpuReason)
+      setModel("whisper-turbo-q4");
   };
 
-  const withDigits = useCallback((list: Word[]) => writeNumbers(list, numberMode), [numberMode]);
+  const withDigits = useCallback(
+    (list: Word[]) => writeNumbers(list, numberMode),
+    [numberMode],
+  );
   // Punctuation and capitals, then numbers in digits, once per finished
   // transcript (one undo restores the plain text).
   const applyPunct = useCallback(async () => {
@@ -776,84 +1273,30 @@ export function App() {
       );
       // Words already in digits ("1923'te") keep their writing; only the punctuation after them changes.
       const keep = (old: string, now: string) =>
-        /\d/.test(old) ? old.replace(/[.,;:!?…]+$/, "") + (/[.,;:!?…]+$/.exec(now)?.[0] ?? "") : now;
+        /\d/.test(old)
+          ? old.replace(/[.,;:!?…]+$/, "") +
+            (/[.,;:!?…]+$/.exec(now)?.[0] ?? "")
+          : now;
       history.current.push({ jobId: job.id, en: false, words: source });
       setCanUndo(true);
-      setWords(withDigits(source.map((w, i) => ({ ...w, text: keep(w.text, written[i]) }))));
+      setWords(
+        withDigits(
+          source.map((w, i) => ({ ...w, text: keep(w.text, written[i]) })),
+        ),
+      );
     } catch {
       // Shown in the status bar; the transcript stays as it was.
     }
   }, [job, punctuate, setWords, withDigits]);
   // Numbers on their own: for Whisper, with punctuation off, or from the button.
-  /**
-   * Pasted song lyrics take the transcript's place: timed from it, or from
-   * taps (line starts marked by hand), and with `acoustic` refined by Whisper
-   * in the audio. Resolves with an error to show, if any.
-   */
-  const openJob = useRef<number | undefined>(undefined);
-  openJob.current = job?.id;
-  const applyLyrics = useCallback(
-    async (time: (heard: Word[]) => LyricTiming, opts: LyricsOptions): Promise<string | null> => {
-      if (!job || job.status !== "done" || !job.words.length) return "Önce şarkıyı yazıya dök.";
-      const before = job.words;
-      let next: Word[];
-      try {
-        const timing = time(before);
-        next = timing.words;
-        if (opts.acoustic && job.file) {
-          const duration = player.duration || job.duration || next[next.length - 1].end + 5;
-          const spans = planSpans(timing, duration);
-          const found = await alignAudio(
-            job.file,
-            job.options.lang ?? "tr",
-            spans.map((s) => ({ start: s.start, end: s.end, words: timing.words.slice(s.first, s.last + 1).map((w) => w.text) })),
-            !!job.options.vocals,
-          );
-          next = applySpans(timing, spans, found);
-        }
-      } catch (e) {
-        return e instanceof Error ? e.message : String(e);
-      }
-      // Another project was opened while Whisper worked: the result is not for it.
-      if (openJob.current !== job.id) return null;
-      // The lyrics are written as they are: no punctuation model, no number rewriting.
-      punctuated.current.add(job.id);
-      history.current.push({ jobId: job.id, en: false, words: before });
-      setCanUndo(true);
-      setShowEn(false);
-      setWords(next);
-      resetBurn();
-      return null;
-    },
-    [job, player.duration, alignAudio, setWords, resetBurn],
-  );
-  const lyricsProps = {
-    disabled: !job || job.status !== "done" || !job.words.length,
-    canRefine:
-      chosen.engine !== "whisper"
-        ? "Sesle ince ayar için üst çubuktan Whisper Turbo'yu seç."
-        : gpuReason
-          ? `Whisper bu cihazda çalışmıyor. ${gpuReason}`
-          : null,
-    aligning,
-    onAlign: (text: string, opts: LyricsOptions) => applyLyrics((heard) => roughAlign(heard, text), opts),
-    onTaps: (text: string, taps: number[], opts: LyricsOptions) => applyLyrics((heard) => tapAlign(heard, text, taps), opts),
-    playback: {
-      seek: (t: number) => player.seek(t),
-      start: () => {
-        player.seek(trim?.start ?? 0);
-        if (!player.playing) player.toggle();
-      },
-      stop: () => {
-        if (player.playing) player.toggle();
-      },
-      toggle: () => player.toggle(),
-      playing: player.playing,
-      time: () => player.el?.currentTime ?? player.time,
-    },
-  };
   const applyNumbers = useCallback(() => {
-    if (!job || job.status !== "done" || !job.words.length || numberMode === "keep") return;
+    if (
+      !job ||
+      job.status !== "done" ||
+      !job.words.length ||
+      numberMode === "keep"
+    )
+      return;
     punctuated.current.add(job.id);
     const next = withDigits(job.words);
     if (next.every((w, i) => w === job.words[i])) return;
@@ -863,11 +1306,27 @@ export function App() {
   }, [job, numberMode, setWords, withDigits]);
   // Whisper punctuates by itself; numbers are written the chosen way for every model.
   useEffect(() => {
-    if (job?.status !== "done" || !job.words.length || punctuated.current.has(job.id)) return;
+    if (
+      job?.status !== "done" ||
+      !job.words.length ||
+      punctuated.current.has(job.id)
+    )
+      return;
     if (autoPunct && !modelInfo(job.model).punctuates) void applyPunct();
     // The number rules are Turkish.
-    else if (numberMode !== "keep" && (job.options.lang ?? "tr") === "tr") applyNumbers();
-  }, [autoPunct, numberMode, job?.status, job?.id, job?.model, job?.options.lang, job?.words.length, applyPunct, applyNumbers]);
+    else if (numberMode !== "keep" && (job.options.lang ?? "tr") === "tr")
+      applyNumbers();
+  }, [
+    autoPunct,
+    numberMode,
+    job?.status,
+    job?.id,
+    job?.model,
+    job?.options.lang,
+    job?.words.length,
+    applyPunct,
+    applyNumbers,
+  ]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Not behind an open window (settings).
@@ -889,7 +1348,8 @@ export function App() {
       }
       // Picking the trim: Enter keeps it, Escape drops it.
       if (trimming && !inField && (e.key === "Enter" || e.key === "Escape")) {
-        if (e.key === "Enter" && (e.target as HTMLElement).closest("button")) return;
+        if (e.key === "Enter" && (e.target as HTMLElement).closest("button"))
+          return;
         e.preventDefault();
         if (e.key === "Enter") finishTrimming();
         else setTrimming(false);
@@ -897,10 +1357,31 @@ export function App() {
       }
       // I and O: the trim starts or ends at the playhead.
       const key = e.key.toLowerCase();
-      if (!inField && !e.metaKey && !e.ctrlKey && !e.altKey && (key === "i" || key === "o")) {
-        if (!job?.file || job.live || job.status === "running" || !player.el) return;
+      if (
+        !inField &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        (key === "i" || key === "o")
+      ) {
+        if (!job?.file || job.live || job.status === "running" || !player.el)
+          return;
         e.preventDefault();
         trimAtRef.current(key === "i" ? "start" : "end", player.el.currentTime);
+        return;
+      }
+      // [ and ]: every caption earlier or later (with Shift: the bigger step).
+      if (
+        !inField &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        (e.code === "BracketLeft" || e.code === "BracketRight")
+      ) {
+        if (!editable) return;
+        e.preventDefault();
+        const step = e.shiftKey ? SHIFT_BIG : SHIFT;
+        onShiftAll(e.code === "BracketLeft" ? -step : step);
         return;
       }
       if (
@@ -936,12 +1417,45 @@ export function App() {
   const sourceInfo = useSourceInfo(job?.file ?? null, crop);
   // A picture this browser cannot decode (AV1 in Safari without the hardware for it): said up front, not at export.
   const badCodec = undecodable(sourceInfo);
-  // Exports are of the trimmed part: subtitle times from its start, sizes for its length.
-  const exportWords = useMemo(() => wordsIn(dubTimed ?? shown, trim, true), [dubTimed, shown, trim]);
-  const exportSource = useMemo(
-    () => (sourceInfo && trim ? { ...sourceInfo, duration: trim.end - trim.start } : sourceInfo),
-    [sourceInfo, trim],
+  // Exports are of the trimmed part, less the jump cuts: subtitle times from its start, sizes for its length.
+  const kept = useMemo(
+    () => (cuts.length ? keptParts(span, cuts) : null),
+    [span, cuts],
   );
+  const exportWords = useMemo(
+    () =>
+      cuts.length
+        ? wordsThrough(dubTimed ?? shown, span, cuts)
+        : wordsIn(dubTimed ?? shown, trim, true),
+    [dubTimed, shown, trim, span, cuts],
+  );
+  const exportSource = useMemo(
+    () =>
+      sourceInfo && (trim || kept)
+        ? {
+            ...sourceInfo,
+            duration: kept ? keptLength(kept) : trim!.end - trim!.start,
+          }
+        : sourceInfo,
+    [sourceInfo, trim, kept],
+  );
+  const jumpCutSummary =
+    jumpCut.on && !jumpCutUnavailable
+      ? {
+          count: cuts.length,
+          before: span.end - span.start,
+          after: kept ? keptLength(kept) : span.end - span.start,
+        }
+      : null;
+  // The preview draws a video at the size it is written at.
+  const outputSize = useMemo(() => {
+    if (!sourceInfo?.video) return null;
+    const r = resolutionOf(
+      effectiveOutput(videoOutput, sourceInfo),
+      sourceInfo,
+    );
+    return { w: r.width, h: r.height };
+  }, [sourceInfo, videoOutput]);
   const changeOutput = (o: VideoOutput) => {
     setVideoOutput(o);
     // A size picked for Reels stays with Reels; other videos keep the saved one.
@@ -956,25 +1470,52 @@ export function App() {
     const out = effectiveOutput(videoOutput, sourceInfo);
     const resolution = sourceInfo && resolutionOf(out, sourceInfo);
     const picture = sourceInfo?.video;
-    const frame = crop && picture ? framing(crop, picture.width, picture.height) : null;
+    const frame =
+      crop && picture ? framing(crop, picture.width, picture.height) : null;
     const framed = frame && !frame.none ? frame : null;
     const encode = {
       codec: out.codec,
       bitrate: sourceInfo ? videoBitrate(out, sourceInfo) : null,
       encoder: resolution?.encoders[out.codec] ?? null,
-      size: resolution && { width: resolution.width, height: resolution.height },
+      size: resolution && {
+        width: resolution.width,
+        height: resolution.height,
+      },
       crop: framed?.crop ?? null,
       fit: framed && !framed.crop ? framed.placement : null,
       trim,
+      cuts: cuts.length ? cuts : null,
     };
     // Translated or dub-timed words are not timed by the voice, so "Sesle vurgula" has nothing to go by.
-    const loudness = translated || dubTimed ? EMPTY_BANDS : job.loudness;
+    const loudness =
+      translated || (dubTimed && !ownFileIsDub) ? EMPTY_BANDS : job.loudness;
     // Only the trimmed part's words, so no caption line reaches outside it.
-    void burner.burn(job.file, wordsIn(dubTimed ?? shown, trim), settings, job.bands, loudness, lang, encode, dubbing && { clips: dubbing.clips, original: dubOriginal }, logo, `${exportName}${videoSuffix}`);
+    void burner.burn(
+      job.file,
+      wordsOutside(wordsIn(dubTimed ?? shown, trim), cuts),
+      settings,
+      job.bands,
+      loudness,
+      lang,
+      captionSpeakers,
+      encode,
+      dubbing && !ownFileIsDub
+        ? { clips: dubbing.clips, original: dubOriginal }
+        : null,
+      logo,
+      photo,
+      `${exportName}${videoSuffix}`,
+    );
   };
 
   const changeCrop = (c: Crop | null) => {
     setCrop(c);
+    if (burner.state.status === "done" || burner.state.status === "error")
+      burner.reset();
+  };
+
+  const changeJumpCut = (j: JumpCut) => {
+    setJumpCut(j);
     if (burner.state.status === "done" || burner.state.status === "error")
       burner.reset();
   };
@@ -988,8 +1529,13 @@ export function App() {
     setTrimDraft(trim);
     setTrimming(true);
   };
+  /** The range being picked, or null when it holds the whole file (the handles keep a range while dragged). */
+  const draftWhole =
+    !trimDraft ||
+    (trimDraft.start <= 0.01 &&
+      trimDraft.end >= (player.duration || job?.duration || 0) - 0.01);
   const finishTrimming = () => {
-    if (trimming) changeTrim(trimDraft);
+    if (trimming) changeTrim(draftWhole ? null : trimDraft);
     setTrimming(false);
   };
   // Transcription starting, or another file, ends the picking without a change.
@@ -1007,7 +1553,8 @@ export function App() {
     const start = end === "start" ? t : (cur?.start ?? 0);
     const stop = end === "end" ? t : (cur?.end ?? total);
     const whole = start <= 0.01 && stop >= total - 0.01;
-    if (stop - start < 0.5) set(end === "start" ? { start: t, end: total } : { start: 0, end: t });
+    if (stop - start < 0.5)
+      set(end === "start" ? { start: t, end: total } : { start: 0, end: t });
     else set(whole ? null : { start, end: stop });
   };
 
@@ -1028,12 +1575,19 @@ export function App() {
   /** Exports of the translation say so in their name. */
   const exportName = translated ? `${name}.${lang}` : name;
   /** The exported video's name says what is in it: captions, or a dub without them. */
-  const videoSuffix = !settings.hidden ? ".altyazili.mp4" : dubbing ? ".seslendirme.mp4" : ".mp4";
+  const videoSuffix = !settings.hidden
+    ? ".altyazili.mp4"
+    : dubbing
+      ? ".seslendirme.mp4"
+      : ".mp4";
   const dubOverflow = dub?.overflow ?? null;
   /** The trim, lengthened past the end so the last line of the dub fits; null when there is no more video. */
   const longerTrim =
     trim && dubOverflow && trim.end < fileDuration - 0.05
-      ? { start: trim.start, end: Math.min(fileDuration, trim.end + dubOverflow.seconds + 0.3) }
+      ? {
+          start: trim.start,
+          end: Math.min(fileDuration, trim.end + dubOverflow.seconds + 0.3),
+        }
       : null;
   const exportProject = () => {
     const text = exportText();
@@ -1068,7 +1622,13 @@ export function App() {
     job?.status === "running" ||
     punct.phase === "run" ||
     punct.phase === "download";
-  const modelProps = { value: model, onChange: setModel, gpuReason, locked: engineBusy, lang: videoLang };
+  const modelProps = {
+    value: model,
+    onChange: setModel,
+    gpuReason,
+    locked: engineBusy,
+    lang: videoLang,
+  };
   const providerProps = {
     value: provider,
     engine,
@@ -1076,8 +1636,17 @@ export function App() {
     cpuUnavailable: chosen.gpuOnly
       ? `${chosen.name} işlemcide çalışmaz; önce Seda'ya geç.`
       : null,
-    gpuUnavailable: chosen.cpuOnly ? `${chosen.name} yalnızca işlemcide çalışır.` : null,
+    gpuUnavailable: chosen.cpuOnly
+      ? `${chosen.name} yalnızca işlemcide çalışır.`
+      : null,
     locked: engineBusy,
+  };
+  const openTextDub = () => {
+    setInspectorTab("dub");
+    requestAnimationFrame(() => {
+      textRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      textRef.current?.focus();
+    });
   };
   const goLiveRef = useRef<() => Promise<void>>(async () => {});
   const goLive = async () => {
@@ -1087,6 +1656,7 @@ export function App() {
     setSettings(forNewProject);
     setCrop(null);
     setTrim(null);
+    setJumpCut(offJumpCut());
     try {
       // The microphone goes through Seda, which knows only Turkish.
       await startLive(optionsFor(method, "tr"));
@@ -1118,8 +1688,15 @@ export function App() {
             />
           </picture>
           <picture className="hidden light:block">
-            <source media="(max-width: 860px)" srcSet={`${import.meta.env.BASE_URL}brand/harfiyen-mark.png`} />
-            <img className="block h-5 w-auto" src={`${import.meta.env.BASE_URL}brand/harfiyen-logo.png`} alt="Harfiyen" />
+            <source
+              media="(max-width: 860px)"
+              srcSet={`${import.meta.env.BASE_URL}brand/harfiyen-mark.png`}
+            />
+            <img
+              className="block h-5 w-auto"
+              src={`${import.meta.env.BASE_URL}brand/harfiyen-logo.png`}
+              alt="Harfiyen"
+            />
           </picture>
         </h1>
         <a
@@ -1167,16 +1744,20 @@ export function App() {
         {job && (
           <ExportMenu
             words={exportWords}
+            speakers={speakers?.names}
             baseName={exportName}
             videoName={`${exportName}${videoSuffix}`}
             captions={!settings.hidden}
+            kinetic={!!settings.kinetic?.on}
+            photo={!!photo && !!shownPhoto(settings, true)}
             meta={{
               file: title,
               model: modelInfo(job.model).spec,
               ...(job.model === "seda" && { method: job.options.method }),
             }}
             complete={job.status === "done"}
-            isVideo={player.isVideo}
+            // A video used for its sound comes out as an audio file's does.
+            isVideo={player.isVideo && settings.picture !== "hidden"}
             canBurn={!!job.file}
             burn={burner.state}
             output={videoOutput}
@@ -1211,7 +1792,11 @@ export function App() {
           <IconGitHub /> <TbLabel>GitHub</TbLabel>
         </a>
         <div className="hidden max-[480px]:block">
-          <MoreMenu model={modelProps} provider={providerProps} onSettings={() => setSettingsOpen(true)} />
+          <MoreMenu
+            model={modelProps}
+            provider={providerProps}
+            onSettings={() => setSettingsOpen(true)}
+          />
         </div>
       </header>
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
@@ -1227,8 +1812,16 @@ export function App() {
                 aria-label="Gösterilen dil"
               >
                 {[
-                  { en: false, label: sourceLang.toUpperCase(), title: `${LANG_NAMES[sourceLang]} transkript` },
-                  { en: true, label: translation.lang.toUpperCase(), title: `${LANG_NAMES[translation.lang]} çeviri` },
+                  {
+                    en: false,
+                    label: sourceLang.toUpperCase(),
+                    title: `${LANG_NAMES[sourceLang]} transkript`,
+                  },
+                  {
+                    en: true,
+                    label: translation.lang.toUpperCase(),
+                    title: `${LANG_NAMES[translation.lang]} çeviri`,
+                  },
                 ].map((o) => (
                   <button
                     key={o.label}
@@ -1248,6 +1841,17 @@ export function App() {
             )}
             {(canUndo || editable) && (
               <span className="-my-1 -mr-1 flex gap-0.5 self-center">
+                {canAlign && (
+                  <IconButton
+                    className={aligning ? "bg-line text-fg" : ""}
+                    onClick={() => setAligning(!aligning)}
+                    aria-pressed={aligning}
+                    title="Metni sese hizala: şarkı sözü, konuşma metni ya da şiir yapıştır"
+                    aria-label="Metni sese hizala"
+                  >
+                    <IconAlignText />
+                  </IconButton>
+                )}
                 {editable && (
                   <IconButton
                     className={found ? "bg-line text-fg" : ""}
@@ -1271,6 +1875,19 @@ export function App() {
               </span>
             )}
           </PaneHead>
+          {aligning && canAlign && (
+            <AlignBar
+              text={alignDraft}
+              onText={setAlignDraft}
+              lang={sourceLang}
+              refineIssue={refineIssue}
+              progress={alignProgress}
+              playback={job?.file ? tapPlayback : null}
+              onAlign={onAlign}
+              onTaps={onTaps}
+              onClose={() => setAligning(false)}
+            />
+          )}
           {found && (
             <FindBar
               find={find}
@@ -1292,7 +1909,8 @@ export function App() {
                 title={langIssue ?? undefined}
                 onClick={transcribeJob}
               >
-                {chosen.name} ile {otherLang && `${LANG_NAMES[videoLang]} `}yeniden dök
+                {chosen.name} ile {otherLang && `${LANG_NAMES[videoLang]} `}
+                yeniden dök
               </Button>
             </div>
           )}
@@ -1311,8 +1929,21 @@ export function App() {
                       : `Dosyanın tamamı${player.duration ? `, ${fmtDuration(player.duration)}` : ""}`}
                   </p>
                 )}
-                {job.file && <VideoLang value={videoLang} onChange={chooseVideoLang} music={music} onMusic={setMusic} vocals={vocals} onVocals={setVocals} />}
-                {job.file && langIssue && <p className="m-0 text-[12px] leading-normal text-mercan-text">{langIssue}</p>}
+                {job.file && (
+                  <VideoLang
+                    value={videoLang}
+                    onChange={chooseVideoLang}
+                    music={music}
+                    onMusic={setMusic}
+                    vocals={vocals}
+                    onVocals={setVocals}
+                  />
+                )}
+                {job.file && langIssue && (
+                  <p className="m-0 text-[12px] leading-normal text-mercan-text">
+                    {langIssue}
+                  </p>
+                )}
                 <Button
                   variant="primary"
                   className="justify-self-start"
@@ -1341,6 +1972,8 @@ export function App() {
                 onRetime={editable ? onRetime : undefined}
                 onShift={editable ? onShiftSpan : undefined}
                 found={found}
+                speakerNames={speakers?.names}
+                onSpeaker={editable ? onSpeaker : undefined}
               />
             ) : (
               <EmptyNote>
@@ -1357,14 +1990,20 @@ export function App() {
             player={player}
             words={captionWords}
             settings={settings}
+            speakers={captionSpeakers}
             liveTime={job?.live && !job.file ? job.decoded : null}
             following={following}
             crop={crop}
             onCrop={changeCrop}
             cropLocked={burner.state.status === "running"}
             logo={logo}
+            photo={photo}
+            size={outputSize}
             bands={job?.bands ?? EMPTY_BANDS}
-            loudness={(!translated && !dubTimed && job?.loudness) || EMPTY_BANDS}
+            loudness={
+              (!translated && (!dubTimed || ownFileIsDub) && job?.loudness) ||
+              EMPTY_BANDS
+            }
             lang={lang}
             liveLevels={liveLevels}
             notice={
@@ -1456,14 +2095,21 @@ export function App() {
                         <IconMic /> Mikrofonla başla
                       </Button>
                     )}
+                    <Button
+                      size="lg"
+                      className={DROP_BTN}
+                      onClick={openTextDub}
+                    >
+                      <IconSound /> Metin seslendir
+                    </Button>
                   </>
                 }
                 fine={
                   <>
                     Dosyayı pencereye sürükleyebilirsin: MP4, MOV, MKV, WebM,
-                    MP3, M4A, WAV, FLAC, OGG; altyazı için SRT ve VTT. İlk kullanımda yaklaşık{" "}
-                    {chosen.size} model ({chosen.name}) indirilir ve
-                    saklanır.
+                    MP3, M4A, WAV, FLAC, OGG; altyazı için SRT ve VTT. İlk
+                    kullanımda yaklaşık {chosen.size} model ({chosen.name})
+                    indirilir ve saklanır.
                     {engine.phase === "idle" && (
                       <>
                         {" "}
@@ -1491,6 +2137,7 @@ export function App() {
 
         <Inspector
           settings={settings}
+          ground={ground}
           onSettings={changeSettings}
           burning={burner.state.status === "running"}
           model={model}
@@ -1528,7 +2175,16 @@ export function App() {
           voice={voice}
           onVoice={setVoice}
           preview={dubber.preview}
-          onListen={() => dubber.listen(dubWords, voice, dubBySentence(voice.lang, sourceLang))}
+          onListen={() =>
+            dubber.listen(
+              dubWords,
+              voice,
+              dubBySentence(voice.lang, sourceLang),
+              textMode && (!isTts || voice.lang === sourceLang)
+                ? customText
+                : undefined,
+            )
+          }
           translate={translator.state}
           translation={!!translation}
           translationLang={translation?.lang ?? null}
@@ -1539,16 +2195,38 @@ export function App() {
           onMusic={setMusic}
           vocals={vocals}
           onVocals={setVocals}
-          lyrics={lyricsProps}
-          onShiftAll={editable ? onShiftAll : null}
           langIssue={langIssue}
           captionLang={lang}
+          onShiftAll={editable ? onShiftAll : null}
+          jumpCut={jumpCut}
+          onJumpCut={changeJumpCut}
+          jumpCutUnavailable={jumpCutUnavailable}
+          jumpCutSummary={jumpCutSummary}
+          speakers={{
+            speakers,
+            state: speakerTool.state,
+            unavailable: speakersUnavailable,
+            onRun: runSpeakers,
+            onCancel: speakerTool.cancel,
+            onRename: (i, name) =>
+              speakers && commitSpeakers(renameSpeaker(speakers, i, name)),
+            onMerge: (from, into) =>
+              speakers && commitSpeakers(mergeSpeakers(speakers, from, into)),
+            onClear: () => commitSpeakers(undefined),
+          }}
           translationStale={translationStale}
           canTranslate={!!job && job.status !== "running" && words.length > 0}
           onTranslate={() => translate()}
           onCancelTranslate={translator.cancel}
           canTranslateDub={editable && !!job?.file && words.length > 0}
           onTranslateDub={() => translate((t) => startDub(t.words))}
+          tab={inspectorTab}
+          onTab={setInspectorTab}
+          textMode={textMode}
+          customText={customText}
+          onCustomText={setCustomText}
+          textRef={textRef}
+          audioOnly={!player.isVideo}
         />
       </div>
 
@@ -1575,14 +2253,40 @@ export function App() {
           </strong>{" "}
           / {clock(player.duration || job?.duration || 0)}
         </span>
-        <button
-          className={TP_BTN}
-          onClick={() => player.setMuted(!player.muted)}
-          disabled={!job || job.recording}
-          aria-label={player.muted ? "Sesi aç" : "Sesi kapat"}
-        >
-          {player.muted ? <IconMuted /> : <IconSound />}
-        </button>
+        <div className="group/vol relative flex flex-none items-center">
+          <button
+            className={TP_BTN}
+            onClick={() => {
+              if (player.muted || player.volume === 0) {
+                player.setMuted(false);
+                if (player.volume === 0) player.setVolume(1);
+              } else player.setMuted(true);
+            }}
+            disabled={!job || job.recording}
+            aria-label={
+              player.muted || player.volume === 0 ? "Sesi aç" : "Sesi kapat"
+            }
+          >
+            {player.muted || player.volume === 0 ? <IconMuted /> : <IconSound />}
+          </button>
+          {job && !job.recording && (
+            <div className="pointer-events-none invisible absolute bottom-full left-1/2 z-20 -translate-x-1/2 translate-y-1 pb-1.5 opacity-0 transition-all duration-150 ease-out group-focus-within/vol:pointer-events-auto group-focus-within/vol:visible group-focus-within/vol:translate-y-0 group-focus-within/vol:opacity-100 group-hover/vol:pointer-events-auto group-hover/vol:visible group-hover/vol:translate-y-0 group-hover/vol:opacity-100">
+              <div className="flex h-28 w-8 items-center justify-center rounded-[10px] border border-popover-line bg-popover shadow-[0_12px_28px_var(--shadow-pop),0_0_0_1px_var(--tint)] backdrop-blur-[16px]">
+                <input
+                  type="range"
+                  className="slider m-0 h-[18px] w-20 flex-none -rotate-90"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={player.muted ? 0 : player.volume}
+                  aria-label="Ses düzeyi"
+                  title={`Ses: %${Math.round((player.muted ? 0 : player.volume) * 100)}`}
+                  onChange={(e) => player.setVolume(Number(e.target.value))}
+                />
+              </div>
+            </div>
+          )}
+        </div>
         {job ? (
           <Timeline
             peaks={wave ?? job.peaks}
@@ -1596,18 +2300,29 @@ export function App() {
             onSeek={player.seek}
             range={trimming ? trimDraft : trim}
             onRange={trimming ? setTrimDraft : undefined}
+            cuts={cuts}
           />
         ) : (
           <div className={TIMELINE} />
         )}
         {job && !job.live && trimming ? (
           <div className="ml-2 flex flex-none items-center gap-1.5 max-[860px]:ml-auto">
-            <span className="text-[12px] text-fg-3 tabular-nums max-[1100px]:hidden">
-              {trimDraft
-                ? `${clock(trimDraft.start)} – ${clock(trimDraft.end)}, ${fmtDuration(trimDraft.end - trimDraft.start)}`
-                : "Tamamı"}
+            {/* As wide as the whole file's range (an invisible copy): text of another length would
+                resize the timeline under the dragged handle. */}
+            <span className="grid text-right text-[12px] text-fg-3 tabular-nums max-[1100px]:hidden">
+              <span className="invisible col-start-1 row-start-1" aria-hidden>
+                {`${clock(0)} – ${clock(fileDuration)}, ${fmtDuration(fileDuration)}`}
+              </span>
+              <span className="col-start-1 row-start-1">
+                {trimDraft && !draftWhole
+                  ? `${clock(trimDraft.start)} – ${clock(trimDraft.end)}, ${fmtDuration(trimDraft.end - trimDraft.start)}`
+                  : "Tamamı"}
+              </span>
             </span>
-            {trimDraft && <Button onClick={() => setTrimDraft(null)}>Sıfırla</Button>}
+            {/* Always there, so the timeline keeps its width while a handle is dragged. */}
+            <Button onClick={() => setTrimDraft(null)} disabled={draftWhole}>
+              Sıfırla
+            </Button>
             <Button onClick={() => setTrimming(false)}>Vazgeç</Button>
             <Button variant="primary" onClick={finishTrimming}>
               Tamam
@@ -1629,7 +2344,12 @@ export function App() {
             >
               <IconScissors />
               {/* A part is cut out. */}
-              {trim && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-firuze" aria-hidden />}
+              {trim && (
+                <span
+                  className="absolute top-1 right-1 size-1.5 rounded-full bg-firuze"
+                  aria-hidden
+                />
+              )}
             </button>
           )
         )}

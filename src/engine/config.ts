@@ -47,8 +47,9 @@ export interface DecodeOptions {
   /** Missing in jobs and projects from before there was a choice: Turkish. */
   lang?: SpeechLang;
   /**
-   * Songs: Whisper decodes every window and keeps every word. The speech VAD
-   * mistakes sung vocals over instruments for silence.
+   * Songs: Whisper does not ask the speech VAD, which mistakes sung vocals over
+   * instruments for silence; only quiet windows are skipped, and words are not
+   * trimmed to the VAD's speech.
    */
   music?: boolean;
   /** Music mode on Whisper: separate the vocals from the band first (src/separate/vocals.ts). */

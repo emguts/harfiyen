@@ -41,7 +41,7 @@ function TimeField({ label, value, onChange }: { label: string; value: number; o
 /**
  * Start and end of a line, or of one of its words, edited by hand: typed,
  * nudged, or set to the playhead. `now`: the playhead. The callbacks take
- * absolute word indices (cue.first on).
+ * absolute word indices (cue.first on). Adapted from emguts/harfiyen.
  */
 export function TimingEditor({
   cue,
@@ -139,8 +139,8 @@ export function TimingEditor({
       </div>
       <p className="m-0 text-[11.5px] leading-normal text-fg-3">
         Bir kelimeye tıklayınca yalnız onun zamanı değişir. Satırın uzunluğu değişince kelimeleri aynı oranda
-        yayılır. Zamanlar önceki ve sonraki kelimeleri geçmez. Alt + ← / → kaydırır, Shift ile 0,5 sn; her değişiklik
-        ⌘Z / Ctrl+Z ile geri alınır.
+        yayılır. Zamanlar önceki ve sonraki kelimeleri geçmez; bitişik kelime aradaki sınırla birlikte uzar ya da
+        kısalır. Alt + ← / → kaydırır, Shift ile 0,5 sn; her değişiklik ⌘Z / Ctrl+Z ile geri alınır.
       </p>
     </div>
   );

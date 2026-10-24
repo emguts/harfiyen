@@ -17,6 +17,20 @@ export interface Player {
   /** How often the user played, paused or sought; changes mean they took over. */
   touches: RefObject<number>;
   setMuted: (m: boolean) => void;
+  /** The listener's level, 0 to 1. useDubPlayback applies it to the element. */
+  volume: number;
+  setVolume: (v: number) => void;
+}
+
+const VOLUME_KEY = "harfiyen.volume";
+
+function savedVolume() {
+  try {
+    const v = Number(localStorage.getItem(VOLUME_KEY));
+    return localStorage.getItem(VOLUME_KEY) !== null && v >= 0 && v <= 1 ? v : 1;
+  } catch {
+    return 1;
+  }
 }
 
 /** Might have a picture. Containers like WebM/MP4 can also be audio-only;
@@ -27,15 +41,21 @@ export const isVideoFile = (f: File) =>
 /**
  * Media element state for the custom WebGPU player. With a `range` (the
  * trim), playback stops at its end, and playing from outside it starts at
- * its beginning; seeking anywhere still works, to look around.
+ * its beginning; seeking anywhere still works, to look around. Playback
+ * jumps over the `cuts` (jump cut), as the exported video does.
  */
-export function usePlayer(file: File | null, range: { start: number; end: number } | null = null): Player {
+export function usePlayer(
+  file: File | null,
+  range: { start: number; end: number } | null = null,
+  cuts: { start: number; end: number }[] = [],
+): Player {
   const [el, setEl] = useState<HTMLMediaElement | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [muted, setMutedState] = useState(false);
+  const [volume, setVolumeState] = useState(savedVolume);
   /** null until metadata says whether the file has a picture. */
   const [hasPicture, setHasPicture] = useState<boolean | null>(null);
   /** Where a scrub wants to be once the running seek lands. */
@@ -46,6 +66,8 @@ export function usePlayer(file: File | null, range: { start: number; end: number
   const touches = useRef(0);
   const rangeRef = useRef(range);
   rangeRef.current = range;
+  const cutsRef = useRef(cuts);
+  cutsRef.current = cuts;
 
   // Object URL tied to the effect, so StrictMode's re-run cannot revoke one in use.
   useEffect(() => {
@@ -94,6 +116,12 @@ export function usePlayer(file: File | null, range: { start: number; end: number
       if (r && !el.paused && el.currentTime >= r.end) {
         el.pause();
         el.currentTime = r.end;
+      }
+      // In a cut: on to its end (not while that seek is still running).
+      if (!el.paused && !el.seeking && cutsRef.current.length) {
+        const t = el.currentTime;
+        const cut = cutsRef.current.find((c) => t >= c.start && t < c.end - 0.02);
+        if (cut) el.currentTime = cut.end;
       }
       if (!el.paused && Math.abs(el.currentTime - last) >= 0.04) {
         last = el.currentTime;
@@ -149,6 +177,21 @@ export function usePlayer(file: File | null, range: { start: number; end: number
 
   const setMuted = useCallback((m: boolean) => el && (el.muted = m), [el]);
 
+  const setVolume = useCallback(
+    (v: number) => {
+      const to = Math.max(0, Math.min(1, v));
+      setVolumeState(to);
+      // Moving the level up means the listener wants to hear it.
+      if (el && to > 0) el.muted = false;
+      try {
+        localStorage.setItem(VOLUME_KEY, String(to));
+      } catch {
+        /* private mode: the level just is not remembered */
+      }
+    },
+    [el],
+  );
+
   return {
     ref: setEl,
     el,
@@ -164,5 +207,7 @@ export function usePlayer(file: File | null, range: { start: number; end: number
     preview,
     touches,
     setMuted,
+    volume,
+    setVolume,
   };
 }
