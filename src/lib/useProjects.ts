@@ -108,6 +108,8 @@ export function useProjects(
       imported: job.imported,
       method: job.options.method,
       lang: job.options.lang,
+      music: job.options.music || undefined,
+      vocals: (job.options.music && job.options.vocals) || undefined,
       duration: job.duration ?? job.decoded,
       elapsed: job.elapsed,
       stoppedAt: job.status === "cancelled" && !job.live ? job.decoded : undefined,

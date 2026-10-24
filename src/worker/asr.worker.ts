@@ -17,6 +17,7 @@ import { Formatter, type FormatterConfig } from "../punct/formatter";
 import type { WordPieceVocab } from "../punct/wordpiece";
 import { fetchAll } from "./modelStore";
 import { readPcm, readVocals } from "./pcm";
+import { OnlineFbank } from "../engine/fbank";
 import { BandTracker } from "../render/aura";
 import { WhisperEngine, type WhisperConfig } from "../whisper";
 import { DuyuEngine, type DuyuConfig } from "../duyu";
@@ -270,6 +271,7 @@ class Job {
   private rec: SpeechStream;
   private resampler: Resampler | null = null;
   private peaks: number[] = [];
+  /** Band levels and loudness of what the recognizer hears. */
   private bands = new BandTracker();
   private peakAcc = 0;
   private peakCount = 0;
@@ -281,8 +283,15 @@ class Job {
   private vocals: VocalSeparator | null;
   /** To the separator's rate, per channel; null when the file already has it. */
   private toSep: Resampler[] | null = null;
-  /** The mix at 16 kHz, for the waveform: the separated vocals would draw only the singer. */
+  /**
+   * The mix at 16 kHz, for the waveform and the band levels (the aura, kinetic
+   * typography): from the separated vocals they would follow only the singer,
+   * not the drums and the bass.
+   */
   private mix: Resampler | null = null;
+  private mixFbank: OnlineFbank | null = null;
+  /** The mix's band levels; the loudness ("Sesle vurgula" picks words by it) stays the singer's. */
+  private mixBands: BandTracker | null = null;
 
   /**
    * offset: seconds of the file before this job's audio (a continued job); times are reported from the file's start.
@@ -300,6 +309,10 @@ class Job {
     this.onGpu = engine.provider === "webgpu";
     this.rec = engine.createRecognizer(options, live);
     this.rec.onFeature = (f) => this.bands.push(f);
+    if (vocals) {
+      this.mixFbank = new OnlineFbank(80);
+      this.mixBands = new BandTracker();
+    }
   }
 
   setSampleRate(rate: number) {
@@ -316,7 +329,7 @@ class Job {
   /** Decoded channels at the file's rate. */
   async pushChannels(channels: Float32Array[]) {
     if (!this.vocals) return this.push(downmix(channels));
-    this.trackPeaks(this.mix!.process(downmix(channels)));
+    this.trackMix(this.mix!.process(downmix(channels)));
     const stereo = channels.length > 1 ? channels.slice(0, 2) : [channels[0], channels[0]];
     const atRate = this.toSep ? stereo.map((c, i) => this.toSep![i].process(c)) : stereo;
     await this.push(await this.vocals.push(atRate), false, false);
@@ -326,7 +339,7 @@ class Job {
   async endVocals() {
     if (!this.vocals) return;
     if (this.toSep) await this.push(await this.vocals.push(this.toSep.map((r) => r.process(new Float32Array(0), true))), false, false);
-    this.trackPeaks(this.mix!.process(new Float32Array(0), true));
+    this.trackMix(this.mix!.process(new Float32Array(0), true), true);
     await this.push(await this.vocals.finish(), false, false);
     console.debug(`[harfiyen] vocals separated in ${this.vocals.elapsed.toFixed(1)} s`);
   }
@@ -376,10 +389,30 @@ class Job {
       committed: this.committed(),
       decoded: this.offset + this.rec.decodedSeconds,
       elapsed,
-      bands: this.bands.take(),
-      loudness: this.bands.takeLoudness(),
+      bands: this.takeBands(),
+      loudness: this.takeLoudness(),
       timing: this.rec.timing,
     });
+  }
+
+  private takeBands() {
+    if (!this.mixBands) return this.bands.take();
+    this.bands.take(); // The vocals' own levels: not shown.
+    return this.mixBands.take();
+  }
+
+  private takeLoudness() {
+    this.mixBands?.takeLoudness();
+    return this.bands.takeLoudness();
+  }
+
+  /** The mix, in vocals mode: its peaks and band levels. */
+  private trackMix(pcm: Float32Array, last = false) {
+    this.trackPeaks(pcm);
+    const fb = this.mixFbank!;
+    fb.acceptWaveform(pcm);
+    if (last) fb.inputFinished();
+    fb.compute((f) => this.mixBands!.push(f));
   }
 
   private trackPeaks(pcm: Float32Array) {
@@ -401,8 +434,8 @@ class Job {
     this.lastPost = now;
     const peaks = Float32Array.from(this.peaks);
     this.peaks = [];
-    const bands = this.bands.take();
-    const loudness = this.bands.takeLoudness();
+    const bands = this.takeBands();
+    const loudness = this.takeLoudness();
     const decoded = this.rec.decodedSeconds;
     post(
       {
