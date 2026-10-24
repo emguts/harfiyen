@@ -269,10 +269,22 @@ class WhisperRecognizer implements SpeechStream {
       let gen = await this.model.generate(enc);
       let silent = !this.music && gen.noSpeechProb > NO_SPEECH_PROB && gen.avgLogprob < LOGPROB_FLOOR;
       // "auto": the window was decoded in the language of the one before it (every window
-      // sees its own guess for free); in another, it is decoded again in that one.
+      // sees its own guess for free); in another, it is decoded again in that one. The
+      // guess is one per window: where two languages share it (a French verse between
+      // English choruses), the decode that reads better is kept, not the guess's, and the
+      // next window still starts in the guess. Before any words, the language decoded in
+      // is only the default, never kept.
+      let next: number | null = null;
       if (this.auto && !silent && gen.detected !== this.model.language) {
+        const before = { gen, language: this.model.language };
         this.model.language = gen.detected;
         gen = await this.model.generate(enc);
+        const better = before.gen.tokens.length && (!gen.tokens.length || before.gen.avgLogprob > gen.avgLogprob);
+        if (this.langWords.size && better) {
+          next = gen.detected;
+          gen = before.gen;
+          this.model.language = before.language;
+        }
         silent = !this.music && gen.noSpeechProb > NO_SPEECH_PROB && gen.avgLogprob < LOGPROB_FLOOR;
       }
       const windowLang = this.model.languageCode(this.model.language);
@@ -325,6 +337,7 @@ class WhisperRecognizer implements SpeechStream {
         this.loops = gen.looped ? this.loops + 1 : 0;
         if (gen.looped) advance = Math.min(n, Math.max(advance, LOOP_ADVANCE[this.loops - 1] ?? n));
       }
+      if (next !== null) this.model.language = next;
     } finally {
       this.model.release(enc);
     }
