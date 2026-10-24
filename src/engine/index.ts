@@ -6,7 +6,7 @@ import { GreedySearch, ModifiedBeamSearch, type Search } from "./search";
 import { SymbolTable } from "./tokens";
 import { SileroVad } from "./vad";
 
-export type { DecodeOptions, DecodingMethod, ModelConfig, SpeechLang } from "./config";
+export type { DecodeOptions, DecodingMethod, LangChoice, ModelConfig, SpeechLang } from "./config";
 export type { EncoderProvider } from "./models";
 export type { Word } from "./tokens";
 export { Recognizer } from "./recognizer";

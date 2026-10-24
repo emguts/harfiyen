@@ -108,6 +108,7 @@ export function useProjects(
       imported: job.imported,
       method: job.options.method,
       lang: job.options.lang,
+      detectedLang: job.detectedLang,
       music: job.options.music || undefined,
       vocals: (job.options.music && job.options.vocals) || undefined,
       duration: job.duration ?? job.decoded,

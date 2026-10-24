@@ -10,7 +10,7 @@
 
 import type { UserFont } from "../captions/fonts";
 import type { CaptionSettings } from "../captions/style";
-import type { DecodingMethod, SpeechLang, Word } from "../engine";
+import type { DecodingMethod, LangChoice, Word } from "../engine";
 import { readCrop, type Crop } from "./crop";
 import { DEFAULT_JUMP_CUT, type JumpCut } from "./cuts";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
@@ -41,7 +41,9 @@ export interface Project {
   imported?: string;
   method: DecodingMethod;
   /** The language spoken in the media; missing in projects from before there was a choice (Turkish). */
-  lang?: SpeechLang;
+  lang?: LangChoice;
+  /** With lang "auto": the language Whisper heard most (a Whisper code). */
+  detectedLang?: string;
   /** Transcribed in music mode; missing when not, and in projects from before there was one. */
   music?: boolean;
   /** Music mode heard the separated vocals; missing when not. */
@@ -303,6 +305,7 @@ export function projectToFile(p: Project): string {
     imported: p.imported,
     method: p.method,
     ...(p.lang && p.lang !== "tr" && { lang: p.lang }),
+    ...(p.lang === "auto" && p.detectedLang && { detectedLang: p.detectedLang }),
     ...(p.music && { music: true }),
     ...(p.music && p.vocals && { vocals: true }),
     duration: p.duration,
@@ -392,7 +395,9 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     model: isModelId(d.model) ? d.model : DEFAULT_MODEL,
     imported: typeof d.imported === "string" ? d.imported : undefined,
     method: (d.method as DecodingMethod) ?? "beam-lm",
-    lang: d.lang === "en" ? "en" : undefined,
+    lang: d.lang === "en" || d.lang === "auto" ? d.lang : undefined,
+    detectedLang:
+      d.lang === "auto" && typeof d.detectedLang === "string" && /^[a-z]{2,3}$/.test(d.detectedLang) ? d.detectedLang : undefined,
     music: d.music === true || undefined,
     vocals: (d.music === true && d.vocals === true) || undefined,
     duration: num(d.duration),

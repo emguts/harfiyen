@@ -43,9 +43,17 @@ export type DecodingMethod = "greedy" | "beam" | "beam-lm";
 /** The language spoken in the media. Only Whisper knows English. */
 export type SpeechLang = "tr" | "en";
 
+/**
+ * The language chosen before transcribing: one the whole app speaks, or
+ * "auto", where Whisper tells the language of every 30 s window itself (any
+ * of its own, a song in two languages too) and the transcript's language is
+ * the one most of its words were in.
+ */
+export type LangChoice = SpeechLang | "auto";
+
 export interface DecodeOptions {
   /** Missing in jobs and projects from before there was a choice: Turkish. */
-  lang?: SpeechLang;
+  lang?: LangChoice;
   /**
    * Songs: Whisper does not ask the speech VAD, which mistakes sung vocals over
    * instruments for silence; only quiet windows are skipped, and words are not

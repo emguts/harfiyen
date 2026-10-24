@@ -1,6 +1,5 @@
 import type { RefObject } from "react";
-import type { SpeechLang } from "../engine";
-import { LANG_NAMES } from "../lib/lang";
+import { isSpeechLang, LANG_NAMES, langName } from "../lib/lang";
 import { translateProgress, translationLang as targetOf, type TranslateState } from "../lib/useTranslator";
 import {
   DEFAULT_VOICE,
@@ -170,7 +169,8 @@ export function DubPanel({
   translation: boolean;
   translationLang: string | null;
   /** The transcript's language. */
-  sourceLang: SpeechLang;
+  /** Any of Whisper's languages; only Turkish and English translate. */
+  sourceLang: string;
   /** The transcript changed after it was translated. */
   translationStale: boolean;
   translate: TranslateState;
@@ -194,7 +194,7 @@ export function DubPanel({
   const fromTranslation = (!textMode || canTranslateDub) && voice.lang !== sourceLang;
   const hasTranslation = translation && translationLang === voice.lang;
   // The transcript is translated into its other language only.
-  const translatable = targetOf(sourceLang) === voice.lang;
+  const translatable = isSpeechLang(sourceLang) && targetOf(sourceLang) === voice.lang;
   // The one button translates first.
   const needsTranslation = fromTranslation && !hasTranslation && translatable;
   const ready = textMode && !fromTranslation ? customText.trim().length > 0 : needsTranslation ? canTranslateDub : canDub;
@@ -245,8 +245,8 @@ export function DubPanel({
         )}
         {fromTranslation && !hasTranslation && !translatable && (
           <Hint>
-            {LANG_NAMES[voice.lang]} seslendirme için {LANG_NAMES[sourceLang]} transkriptin çevirisi gerekir;{" "}
-            {LANG_NAMES[sourceLang]}den {LANG_NAMES[voice.lang]}ye çeviri yok.
+            {LANG_NAMES[voice.lang]} seslendirme için {langName(sourceLang)} transkriptin çevirisi gerekir; çeviri
+            yalnızca Türkçe ile İngilizce arasında yapılır.
           </Hint>
         )}
         {needsTranslation && (

@@ -1,4 +1,4 @@
-import type { DecodeOptions, SpeechLang, Word } from "../engine";
+import type { DecodeOptions, Word } from "../engine";
 import type { ModelId } from "../models";
 
 export type ProviderChoice = "auto" | "webgpu" | "wasm";
@@ -28,7 +28,7 @@ export type ToWorker =
   /** Punctuate and true-case plain words (one entry per transcript word). */
   | { type: "punctuate"; id: number; words: string[] }
   /** Whisper only: times for known words in parts of a file (a pasted text); `vocals`: in the separated vocals. */
-  | { type: "align"; id: number; file: File; lang: SpeechLang; spans: AlignSpan[]; vocals?: boolean };
+  | { type: "align"; id: number; file: File; lang: string; spans: AlignSpan[]; vocals?: boolean };
 
 /** Words said somewhere in start..end (at most 30 s) of a file. */
 export interface AlignSpan {
@@ -66,6 +66,8 @@ export type FromWorker =
       /** Speech loudness (one log-mel value per band frame), appended; for "Sesle vurgula". */
       loudness: Float32Array;
       speed: number;
+      /** Language "auto": the language most words so far were in (a Whisper code). */
+      lang?: string;
     }
   | {
       type: "done";
@@ -76,6 +78,8 @@ export type FromWorker =
       bands: Float32Array;
       loudness: Float32Array;
       timing: { encoder: number; search: number; chunks: number };
+      /** Language "auto": the language most words were in (a Whisper code). */
+      lang?: string;
     }
   | { type: "cancelled"; jobId: number }
   | { type: "punct-progress"; id: number; phase: "download" | "run"; done: number; total: number }

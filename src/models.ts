@@ -1,7 +1,7 @@
 // The speech models the user can choose from. Files live under
 // VITE_MODELS_BASE_URL (default /models) in each model's directory.
 
-import type { SpeechLang } from "./engine/config";
+import type { LangChoice, SpeechLang } from "./engine/config";
 
 export type ModelId = "seda" | "duyu" | "whisper-turbo" | "whisper-turbo-q4";
 
@@ -129,6 +129,10 @@ export const MODELS: ModelInfo[] = [
 export const DEFAULT_MODEL: ModelId = "seda";
 
 export const modelInfo = (id: ModelId): ModelInfo => MODELS.find((m) => m.id === id) ?? MODELS[0];
+
+/** Whether a model can transcribe in `lang`: "auto" takes Whisper, which tells the language itself. */
+export const modelKnows = (m: ModelInfo, lang: LangChoice) =>
+  lang === "auto" ? m.engine === "whisper" : m.langs.includes(lang);
 
 export const isModelId = (v: unknown): v is ModelId => MODELS.some((m) => m.id === v);
 

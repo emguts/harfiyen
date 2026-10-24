@@ -3,7 +3,6 @@
 // On WebGPU the encoder output and the KV cache stay on the GPU.
 
 import type * as OrtWeb from "onnxruntime-web";
-import type { SpeechLang } from "../engine/config";
 import type { EncoderProvider, Ort } from "../engine/models";
 
 type Session = OrtWeb.InferenceSession;
@@ -41,13 +40,26 @@ export interface Generation {
   avgLogprob: number;
   /** Stopped because the output started repeating itself. */
   looped: boolean;
+  /**
+   * The language token Whisper thinks the window is in (its own guess right
+   * after start-of-transcript, before the prompt names one).
+   */
+  detected: number;
 }
 
 /** Repeats of a tail block that count as a loop, by block length. */
 const loopRepeats = (len: number) => (len <= 2 ? 8 : 4);
 
-/** Whisper's language tokens follow start-of-transcript in its own order: English first, Turkish tenth. */
-const LANG_TOKEN: Record<SpeechLang, number> = { en: 1, tr: 10 };
+/**
+ * Whisper's language tokens follow start-of-transcript in its own order
+ * (openai-whisper's LANGUAGES): English first, Turkish tenth. large-v3 has all
+ * 100; older models stop before Cantonese.
+ */
+export const WHISPER_LANGS = (
+  "en zh de es ru ko fr ja pt tr pl ca nl ar sv it id hi fi vi he uk el ms cs ro da hu ta no th ur hr bg lt la " +
+  "mi ml cy sk te fa lv bn sr az sl kn et mk br eu is hy ne mn bs kk sq sw gl mr pa si km sn yo so af oc ka be tg " +
+  "sd gu am yi lo uz fo ht ps tk nn mt sa lb my bo tl mg as tt haw ln ha ba jw su yue"
+).split(" ");
 
 export class WhisperModel {
   /** The language token the prompt asks for; Turkish unless a recognizer says otherwise. */
@@ -65,8 +77,21 @@ export class WhisperModel {
   }
 
   /** Transcribe `lang` from now on. */
-  setLanguage(lang: SpeechLang) {
-    this.language = this.config.tokens.sot + LANG_TOKEN[lang];
+  /** Any of WHISPER_LANGS by its code; Turkish for one it does not know. */
+  setLanguage(lang: string) {
+    const i = WHISPER_LANGS.indexOf(lang);
+    this.language = this.config.tokens.sot + 1 + (i >= 0 && i < this.languageCount ? i : WHISPER_LANGS.indexOf("tr"));
+  }
+
+  /** The code of a language token (`Generation.detected`, `language`). */
+  languageCode(token: number): string {
+    return WHISPER_LANGS[token - this.config.tokens.sot - 1] ?? "tr";
+  }
+
+  /** Language tokens this model has: they run from start-of-transcript to translate, which comes before transcribe. */
+  private get languageCount() {
+    const t = this.config.tokens;
+    return Math.min(WHISPER_LANGS.length, t.transcribe - t.sot - 2);
   }
 
   static async create(
@@ -173,6 +198,10 @@ export class WhisperModel {
     const V = out.logits.dims[2];
     const all = out.logits.data as Float32Array;
     const noSpeechProb = softmaxAt(all.subarray(0, V), cfg.tokens.noSpeech);
+    // The same position holds Whisper's guess at the language: it sees only start-of-transcript.
+    const first = cfg.tokens.sot + 1;
+    let detected = first;
+    for (let id = first + 1; id < first + this.languageCount; id++) if (all[id] > all[detected]) detected = id;
     let logits = all.subarray((prompt.length - 1) * V, prompt.length * V);
 
     const tokens: number[] = [];
@@ -209,7 +238,7 @@ export class WhisperModel {
     } finally {
       this.release(...Object.values(selfKv), ...Object.values(crossKv));
     }
-    return { tokens, noSpeechProb, avgLogprob: tokens.length ? sumLogprob / tokens.length : 0, looped };
+    return { tokens, noSpeechProb, avgLogprob: tokens.length ? sumLogprob / tokens.length : 0, looped, detected };
   }
 
   /**

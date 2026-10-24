@@ -33,7 +33,7 @@ const SAMPLE: Record<DubLang, string> = {
  * source's start, but its words are not timed, so caption lines would cut it at made-up places; read whole, it
  * also sounds like one sentence. A Turkish transcript is read a caption line at a time.
  */
-export const dubBySentence = (voiceLang: DubLang, transcriptLang: DubLang) =>
+export const dubBySentence = (voiceLang: DubLang, transcriptLang: string) =>
   voiceLang !== transcriptLang || voiceLang === "en";
 
 /** Turn plain user text into timed placeholder words (one cue per sentence or line). */

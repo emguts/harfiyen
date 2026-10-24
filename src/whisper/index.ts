@@ -12,7 +12,7 @@
 import { OnlineFbank } from "../engine/fbank";
 import type { SmallProvider } from "../engine";
 import type { EncoderProvider, Ort } from "../engine/models";
-import type { DecodeOptions, SpeechLang } from "../engine/config";
+import type { DecodeOptions } from "../engine/config";
 import type { SpeechEngine, SpeechStream } from "../engine/stream";
 import type { Word } from "../engine/tokens";
 import { alignWords, FRAME_SEC, tokenFrames } from "./alignment";
@@ -121,7 +121,8 @@ export class WhisperEngine implements SpeechEngine {
     pcm: Float32Array,
     offset: number,
     words: string[],
-    lang: SpeechLang,
+    /** Any of Whisper's language codes. */
+    lang: string,
   ): Promise<{ start: number; end: number }[] | null> {
     const text = words.flatMap((w) => this.tok.encodeWord(w));
     if (!text.length || text.length > MAX_FORCED_TOKENS) return null;
@@ -140,9 +141,11 @@ export class WhisperEngine implements SpeechEngine {
   }
 
   createRecognizer(opts?: DecodeOptions): SpeechStream {
-    this.model.setLanguage(opts?.lang ?? "tr");
+    const auto = opts?.lang === "auto";
+    // "auto" starts out in Turkish; the first window says otherwise if it is not.
+    this.model.setLanguage(auto ? "tr" : (opts?.lang ?? "tr"));
     this.vad.reset();
-    return new WhisperRecognizer(this.model, this.tok, this.vad, !!opts?.music);
+    return new WhisperRecognizer(this.model, this.tok, this.vad, !!opts?.music, auto);
   }
 }
 
@@ -196,14 +199,25 @@ class WhisperRecognizer implements SpeechStream {
   private committed: Word[] = [];
   /** Windows in a row whose decoding looped. */
   private loops = 0;
+  /** With `auto`: words kept so far, by the language of their window. */
+  private langWords = new Map<string, number>();
 
   constructor(
     private model: WhisperModel,
     private tok: WhisperTokenizer,
     private vad: SileroVad,
     private music = false,
+    /** Each window in the language Whisper hears in it, not one named up front. */
+    private auto = false,
   ) {
     this.mel = new LogMel(model.config.numMel);
+  }
+
+  /** With `auto`, the language most kept words were in; null before any, and without `auto`. */
+  get language(): string | null {
+    let best: string | null = null;
+    for (const [code, n] of this.langWords) if (!best || n > this.langWords.get(best)!) best = code;
+    return best;
   }
 
   get decodedSeconds() {
@@ -252,8 +266,16 @@ class WhisperRecognizer implements SpeechStream {
     const t1 = performance.now();
     let advance = n;
     try {
-      const gen = await this.model.generate(enc);
-      const silent = !this.music && gen.noSpeechProb > NO_SPEECH_PROB && gen.avgLogprob < LOGPROB_FLOOR;
+      let gen = await this.model.generate(enc);
+      let silent = !this.music && gen.noSpeechProb > NO_SPEECH_PROB && gen.avgLogprob < LOGPROB_FLOOR;
+      // "auto": the window was decoded in the language of the one before it (every window
+      // sees its own guess for free); in another, it is decoded again in that one.
+      if (this.auto && !silent && gen.detected !== this.model.language) {
+        this.model.language = gen.detected;
+        gen = await this.model.generate(enc);
+        silent = !this.music && gen.noSpeechProb > NO_SPEECH_PROB && gen.avgLogprob < LOGPROB_FLOOR;
+      }
+      const windowLang = this.model.languageCode(this.model.language);
       if (!silent && gen.tokens.length) {
         const tsBegin = this.model.config.tokens.timestampBegin;
         let seg = splitSegments(gen.tokens, tsBegin, n, last);
@@ -296,6 +318,7 @@ class WhisperRecognizer implements SpeechStream {
             w.end = Math.max(w.end, w.start);
             this.lastEnd = w.end;
             this.committed.push(w);
+            if (this.auto) this.langWords.set(windowLang, (this.langWords.get(windowLang) ?? 0) + 1);
           }
         }
         // Always move on after a loop, and further when they keep coming.
