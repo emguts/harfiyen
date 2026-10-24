@@ -42,6 +42,10 @@ export interface Project {
   method: DecodingMethod;
   /** The language spoken in the media; missing in projects from before there was a choice (Turkish). */
   lang?: SpeechLang;
+  /** Transcribed in music mode; missing when not, and in projects from before there was one. */
+  music?: boolean;
+  /** Music mode heard the separated vocals; missing when not. */
+  vocals?: boolean;
   duration: number | null;
   elapsed: number | null;
   /** The transcription was stopped here and can be continued; missing when it finished. */
@@ -299,6 +303,8 @@ export function projectToFile(p: Project): string {
     imported: p.imported,
     method: p.method,
     ...(p.lang && p.lang !== "tr" && { lang: p.lang }),
+    ...(p.music && { music: true }),
+    ...(p.music && p.vocals && { vocals: true }),
     duration: p.duration,
     elapsed: p.elapsed,
     ...(p.stoppedAt !== undefined && { stoppedAt: p.stoppedAt }),
@@ -387,6 +393,8 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     imported: typeof d.imported === "string" ? d.imported : undefined,
     method: (d.method as DecodingMethod) ?? "beam-lm",
     lang: d.lang === "en" ? "en" : undefined,
+    music: d.music === true || undefined,
+    vocals: (d.music === true && d.vocals === true) || undefined,
     duration: num(d.duration),
     elapsed: num(d.elapsed),
     stoppedAt: num(d.stoppedAt) ?? undefined,

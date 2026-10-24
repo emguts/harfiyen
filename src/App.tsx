@@ -574,10 +574,14 @@ export function App() {
         setJumpCut(p.jumpCut ?? offJumpCut());
         setMethod(p.method);
         setVideoLang(p.lang ?? "tr");
+        // Music mode as the project was transcribed: continuing it, or refining an aligned
+        // text, hears the song the same way.
+        setMusic(!!p.music);
+        if (p.music) setVocals(!!p.vocals);
         const jobId = load({
           file,
           model: p.model ?? DEFAULT_MODEL,
-          options: optionsFor(p.method, p.lang),
+          options: optionsFor(p.method, p.lang, p.music, p.vocals),
           duration: p.duration,
           elapsed: p.elapsed,
           stoppedAt: p.stoppedAt,
