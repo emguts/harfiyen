@@ -454,6 +454,7 @@ npm run test:formatter              # noktalamayı sedalib'in çıktısıyla kar
 npm run eval:punct                  # noktalamayı Vikipedi metniyle ölçer (puan verir, model gerekir)
 npm run test:numbers                # sayıları rakama çevirme kurallarını dener
 npm run test:timing                 # elle zaman düzenlemeyi dener
+npm run test:cueedit                # dalga formunda blok düzenleme ve SRT sınırlarını dener
 npm run test:align                  # yapıştırılan metni dökümle hizalamayı dener
 npm run test:cuts                   # boşlukları kesmeyi (jump cut) dener
 npm run test:speakers               # konuşmacı düzeltmelerini ve dışa aktarımı dener

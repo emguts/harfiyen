@@ -227,9 +227,9 @@ export function wordsOutside(words: Word[], cuts: TimeRange[]): Word[] {
  * The words of the span at output time, as in an export of the jump-cut
  * video: shifted to its start, the cuts closed up, words inside a cut gone.
  */
-export function wordsThrough(words: Word[], span: TimeRange, cuts: TimeRange[]): Word[] {
+export function wordsThrough<T extends Word>(words: T[], span: TimeRange, cuts: TimeRange[]): T[] {
   const parts = keptParts(span, cuts);
-  const out: Word[] = [];
+  const out: T[] = [];
   for (const w of words) {
     if (w.end <= span.start || w.start >= span.end) continue;
     const start = toOutput(Math.max(span.start, w.start), parts);

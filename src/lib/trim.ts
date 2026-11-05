@@ -7,7 +7,7 @@ import type { TimeRange } from "./useTranscriber";
  * The words that fall in the range (any overlap), cut to it. `shift` times
  * them from the range's start, as in an export of only that part.
  */
-export function wordsIn(words: Word[], range: TimeRange | null, shift = false): Word[] {
+export function wordsIn<T extends Word>(words: T[], range: TimeRange | null, shift = false): T[] {
   if (!range) return words;
   const { start, end } = range;
   const by = shift ? start : 0;
