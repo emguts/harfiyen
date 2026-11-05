@@ -24,7 +24,8 @@ export type KineticStyleId =
   | "poster"
   | "darbe"
   | "maske"
-  | "tunel";
+  | "tunel"
+  | "satir";
 export type KineticPaletteId = "gece" | "neon" | "krem" | "mercan" | "firuze";
 
 /**
@@ -108,6 +109,11 @@ export const KINETIC_STYLES: KineticStyleInfo[] = [
     id: "tunel",
     label: "Tünel",
     note: "Kelimeler uzaktan gelir, söylenirken ekranda durur, sonraki kelimeyle birlikte kameranın içinden geçip gider.",
+  },
+  {
+    id: "satir",
+    label: "Satır akışı",
+    note: "Şarkı sözü ekranı gibi: bütün satırlar alt alta akar, söylenen satır parlak ve net, ötekiler sönük ve uzaklaştıkça hafif bulanık.",
   },
 ];
 
@@ -226,6 +232,18 @@ function flapChain(from: string, to: string): string[] {
 
 /** Seconds a tunnel step takes to fly in, half of it before its first word. */
 const TUNEL_ARRIVE = 0.4;
+
+/** "Satır akışı": a line comes to the reading place this long before its first word, over SATIR_SCROLL seconds. */
+const SATIR_LEAD = 0.35;
+const SATIR_SCROLL = 0.5;
+
+/** One line of "Satır akışı", wrapped to the frame: its rows and height, laid out once. */
+interface FlowLine {
+  rows: string[];
+  height: number;
+  /** Top of the line in the scrolling list. */
+  top: number;
+}
 
 /** Scratch layer for outlineText. */
 const outlineLayer = new OffscreenCanvas(8, 8);
@@ -371,6 +389,9 @@ export class KineticRenderer {
   private tunelGroups: Cue[];
   private threeGroups: Cue[];
   private boardGroups: Cue[];
+  private satirGroups: Cue[];
+  /** "Satır akışı"'s lines, laid out on first use (it measures with the canvas). */
+  private flowLines: FlowLine[] | null = null;
   /** Board size in cells: columns and text rows (a clock row sits above them). */
   private boardCols: number;
   private boardRows: number;
@@ -408,6 +429,9 @@ export class KineticRenderer {
     this.tunelGroups = buildCues(words, { gap: 0.4, maxDuration: 1.6, maxChars: 18, maxWords: 1, minDuration: 0.38 });
     // Narrow frames get shorter lines, so the type on the 3D meshes stays large.
     const upright = W < H;
+    // Lines as they are sung; an aligned text's own lines always start anew (Word.cue). A narrow
+    // frame wraps a line onto more rows rather than splitting it.
+    this.satirGroups = buildCues(words, { gap: 1.2, maxDuration: 9, maxChars: 48 });
     this.boardCols = upright ? 10 : W === H ? 14 : 20;
     this.boardRows = upright ? 6 : W === H ? 5 : 3;
     this.boardGroups = buildCues(words, {
@@ -461,6 +485,8 @@ export class KineticRenderer {
         this.drawMaskeScene(ctx, pal, t, punch);
       } else if (k.style === "tunel") {
         this.drawTunelScene(ctx, pal, t, energy);
+      } else if (k.style === "satir") {
+        this.drawSatirScene(ctx, pal, t);
       } else {
         this.drawDarbeScene(ctx, pal, t, energy, punch);
       }
@@ -1852,5 +1878,90 @@ export class KineticRenderer {
       });
       ctx.restore();
     }
+  }
+
+  /**
+   * "Satır akışı": every line in a list that scrolls up, as in a lyrics screen. The line being
+   * sung sits in the reading place, bright, sharp and full size; the others are dimmed (those
+   * gone by more than those to come, which can be read ahead) and softer the further away
+   * they are. The letters never change, so it stays easy on the eye.
+   */
+  private drawSatirScene(ctx: OffscreenCanvasRenderingContext2D, pal: KineticPalette, t: number) {
+    const { W, H, k } = this;
+    const gs = this.satirGroups;
+    if (!gs.length) return;
+    const short = Math.min(W, H);
+    const font = fontById(k.font);
+    const px = Math.round(short * 0.068);
+    ctx.font = `${font.weight} ${px}px ${captionStack(font.id)}`;
+    const lineH = px * 1.18;
+    const gap = px * 0.75;
+    const left = W * 0.08;
+    const lines = (this.flowLines ??= this.layoutFlow(ctx, W - left * 2, lineH, gap, !!font.capsOnly));
+
+    // The line in the reading place, and how far the scroll to it has come.
+    let a = 0;
+    for (let lo = 0, hi = gs.length - 1; lo <= hi; ) {
+      const mid = (lo + hi) >> 1;
+      if (gs[mid].start - SATIR_LEAD <= t) {
+        a = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    const e = a ? easeInOutCubic((t - (gs[a].start - SATIR_LEAD)) / SATIR_SCROLL) : 1;
+    const pos = a - 1 + e;
+    const scroll = a ? lines[a - 1].top + (lines[a].top - lines[a - 1].top) * e : lines[0].top;
+    const y0 = H * 0.36 - scroll;
+
+    const picture = k.backdrop === "video" || k.backdrop === "blur";
+    const blurMax = short * 0.008;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    lines.forEach((ln, i) => {
+      const y = y0 + ln.top;
+      if (y > H || y + ln.height < 0) return;
+      const dist = Math.abs(i - pos);
+      const near = Math.max(0, 1 - dist);
+      const dim = i < pos ? 0.28 : Math.max(0.18, 0.45 - (dist - 1) * 0.08);
+      const s = 0.94 + 0.06 * near;
+      const blur = Math.min(blurMax, Math.max(0, dist - 0.5) * blurMax * 0.4);
+      ctx.save();
+      ctx.globalAlpha = dim + (1 - dim) * near;
+      ctx.translate(left, y + ln.height / 2);
+      ctx.scale(s, s);
+      if (blur > 0.3) ctx.filter = `blur(${blur.toFixed(1)}px)`;
+      if (picture) {
+        ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+        ctx.shadowBlur = px * 0.25;
+      }
+      ctx.fillStyle = pal.text;
+      ln.rows.forEach((row, r) => ctx.fillText(row, 0, r * lineH - ln.height / 2 + (lineH - px) / 2));
+      ctx.restore();
+    });
+  }
+
+  /** "Satır akışı"'s lines wrapped to maxW, stacked from the top of the list. `ctx` holds the font. */
+  private layoutFlow(
+    ctx: OffscreenCanvasRenderingContext2D,
+    maxW: number,
+    lineH: number,
+    gap: number,
+    caps: boolean,
+  ): FlowLine[] {
+    const space = ctx.measureText(" ").width;
+    let top = 0;
+    return this.satirGroups.map((g) => {
+      const texts = g.words.map((w) =>
+        !caps ? w.text : hasDottedI(this.lang) ? w.text.toLocaleUpperCase(this.lang) : w.text.toUpperCase(),
+      );
+      const rows = wrapWords(
+        texts.map((tx) => ctx.measureText(tx).width),
+        space,
+        maxW,
+      ).map((ix) => ix.map((i) => texts[i]).join(" "));
+      const line = { rows, height: rows.length * lineH, top };
+      top += line.height + gap;
+      return line;
+    });
   }
 }

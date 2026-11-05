@@ -42,6 +42,8 @@ import {
   IconSearch,
   IconAlignText,
   IconUndo,
+  IconExpand,
+  IconCollapse,
 } from "./components/icons";
 import { RecordButton } from "./components/RecordButton";
 import { Inspector, type InspectorTab } from "./components/Inspector";
@@ -57,6 +59,8 @@ import { Transcript } from "./components/Transcript";
 import { Viewer } from "./components/Viewer";
 import type { DecodeOptions, DecodingMethod, LangChoice, SpeechLang, Word } from "./engine";
 import { buildCues } from "./lib/cues";
+import { splitCue, mergeCue } from "./lib/cueEdit";
+import { subtitleTimelineCues } from "./lib/subtitleTimeline";
 import { replaceRange } from "./lib/edit";
 import { retime, shiftAll, shiftSpan } from "./lib/timing";
 import {
@@ -106,6 +110,7 @@ import { readJumpCut } from "./lib/projectStore";
 import {
   effectiveOutput,
   loadOutput,
+  outputFps,
   resolutionOf,
   saveOutput,
   undecodable,
@@ -320,6 +325,16 @@ export function App() {
   const [trim, setTrim] = useState<TimeRange | null>(null);
   /** Picking the trim on the timeline ("Kes"): the range as it is being picked, kept on "Tamam". */
   const [trimming, setTrimming] = useState(false);
+  /** Waveform editing is a UI preference; small screens keep the compact transport. */
+  const [timelineOpen, setTimelineOpen] = useState(() => localStorage.getItem("harfiyen.timelineExpanded") === "1");
+  useEffect(() => localStorage.setItem("harfiyen.timelineExpanded", timelineOpen ? "1" : "0"), [timelineOpen]);
+  const [timelineWide, setTimelineWide] = useState(() => matchMedia("(min-width: 860px)").matches);
+  useEffect(() => {
+    const query = matchMedia("(min-width: 860px)");
+    const change = () => setTimelineWide(query.matches);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
   const [trimDraft, setTrimDraft] = useState<TimeRange | null>(null);
   const trimAtRef = useRef<(end: "start" | "end", t: number) => void>(() => {});
   /** Cutting out the quiet between words; belongs to the project, its lengths are remembered for the next. */
@@ -910,11 +925,20 @@ export function App() {
     () => wordsOutside(dubTimed ?? liveWords, cuts),
     [dubTimed, liveWords, cuts],
   );
+  const timelineExpanded = timelineOpen && timelineWide && !job?.recording && !trimming;
   // Timeline blocks follow the grouping of the chosen caption style.
   const groups = useMemo(
     () => buildCues(captionWords, presetById(settings.preset).grouping),
     [captionWords, settings.preset],
   );
+  const timelineCues = useMemo(
+    () => timelineExpanded ? subtitleTimelineCues(dubTimed ?? liveWords, trim, cuts) : [],
+    [timelineExpanded, dubTimed, liveWords, trim, cuts],
+  );
+  const timelineIndices = useMemo(() => new Map(shown.map((w, i) => [w, i])), [shown]);
+  const timelineWordIndex = useCallback((w: Word) => timelineIndices.get(w) ?? -1, [timelineIndices]);
+  const [timelineSelection, setTimelineSelection] = useState<number | null>(null);
+  useEffect(() => setTimelineSelection(null), [job?.id, translated, timelineExpanded]);
   const translationStale = useMemo(
     () => !!translation && translation.source !== sourceKey(words),
     [translation, words],
@@ -963,15 +987,23 @@ export function App() {
   );
   // Hand-edited times: a line or a word placed or moved in what is shown.
   const onRetime = useCallback(
-    (first: number, count: number, start: number, end: number) =>
-      commitWords(retime(shown, first, count, start, end)),
+    (first: number, count: number, start: number, end: number, push = false) =>
+      commitWords(retime(shown, first, count, start, end, push)),
     [shown, commitWords],
   );
   const onShiftSpan = useCallback(
-    (first: number, count: number, seconds: number) =>
-      commitWords(shiftSpan(shown, first, count, seconds)),
+    (first: number, count: number, seconds: number, push = false) =>
+      commitWords(shiftSpan(shown, first, count, seconds, push)),
     [shown, commitWords],
   );
+  const onSplitCue = useCallback((index: number) => {
+    const next = splitCue(shown, index, timelineCues);
+    if (next !== shown) commitWords(next);
+  }, [shown, timelineCues, commitWords]);
+  const onMergeCue = useCallback((first: number, nextFirst: number) => {
+    const next = mergeCue(shown, first, nextFirst, timelineCues);
+    if (next !== shown) commitWords(next);
+  }, [shown, timelineCues, commitWords]);
   /** Every caption moved: the transcript and its translation together, so they stay in step; one undo. */
   const onShiftAll = useCallback(
     (seconds: number) => {
@@ -1480,6 +1512,7 @@ export function App() {
     const encode = {
       codec: out.codec,
       bitrate: sourceInfo ? videoBitrate(out, sourceInfo) : null,
+      fps: sourceInfo ? outputFps(out, sourceInfo) : null,
       encoder: resolution?.encoders[out.codec] ?? null,
       size: resolution && {
         width: resolution.width,
@@ -1673,7 +1706,7 @@ export function App() {
   return (
     <div
       data-dragging={dragging || undefined}
-      className="group/shell grid h-full grid-rows-[46px_minmax(0,1fr)_64px_26px] max-[860px]:flex max-[860px]:h-auto max-[860px]:min-h-full max-[860px]:flex-col max-[860px]:*:flex-none"
+      className={`group/shell grid h-full ${timelineExpanded ? "grid-rows-[46px_minmax(0,1fr)_240px_26px]" : "grid-rows-[46px_minmax(0,1fr)_64px_26px]"} max-[860px]:flex max-[860px]:h-auto max-[860px]:min-h-full max-[860px]:flex-col max-[860px]:*:flex-none`}
     >
       {/* On phones only the title may shrink; buttons keep their size. */}
       <header className="flex items-center gap-2 border-b border-line-soft bg-pane pr-3 pl-3.5 select-none max-[860px]:h-11 max-[860px]:gap-1.5 max-[860px]:px-2.5 max-[860px]:*:shrink-0">
@@ -1981,6 +2014,7 @@ export function App() {
                 onRetime={editable ? onRetime : undefined}
                 onShift={editable ? onShiftSpan : undefined}
                 found={found}
+                revealWord={timelineExpanded ? timelineSelection : null}
                 speakerNames={speakers?.names}
                 onSpeaker={editable ? onSpeaker : undefined}
               />
@@ -2298,13 +2332,23 @@ export function App() {
         </div>
         {job ? (
           <Timeline
+            key={`${job.id}:${translated}`}
+            expanded={timelineExpanded}
+            words={shown}
+            wordIndex={timelineWordIndex}
+            editable={editable && !job.recording && !trimming && !dubTimed}
+            onRetime={onRetime}
+            onShift={onShiftSpan}
+            onSplit={onSplitCue}
+            onMerge={onMergeCue}
+            onSelect={setTimelineSelection}
             peaks={wave ?? job.peaks}
             duration={player.duration || job.duration || 0}
             decoded={job.status === "idle" ? 0 : job.decoded}
             doneFrom={job.range?.start ?? 0}
             time={player.time}
             media={player.el}
-            cues={groups}
+            cues={timelineExpanded ? timelineCues : groups}
             live={job.recording ? liveMeter.current : null}
             onSeek={player.seek}
             range={trimming ? trimDraft : trim}
@@ -2313,6 +2357,18 @@ export function App() {
           />
         ) : (
           <div className={TIMELINE} />
+        )}
+        {job && (
+          <button
+            className={`${TP_BTN} max-[860px]:hidden`}
+            onClick={() => setTimelineOpen((open) => !open)}
+            disabled={!!job.recording || trimming}
+            aria-pressed={timelineOpen}
+            aria-label={timelineOpen ? "Dalga formunu daralt" : "Dalga formunu genişlet"}
+            title={timelineOpen ? "Dalga formunu daralt" : "Dalga formunu genişlet"}
+          >
+            {timelineOpen ? <IconCollapse /> : <IconExpand />}
+          </button>
         )}
         {job && !job.live && trimming ? (
           <div className="ml-2 flex flex-none items-center gap-1.5 max-[860px]:ml-auto">

@@ -106,6 +106,8 @@ export interface Encode {
   codec: OutputCodec;
   bitrate: number | null;
   encoder: Encoder;
+  /** Frames per second to write at; null keeps the file's own (30 for auras). */
+  fps: number | null;
   /** Picture size of the output; null keeps the file's own, or the crop's (1080p for auras). */
   size: { width: number; height: number } | null;
   /** Part of the video picture to keep, in displayed pixels; null keeps all of it. Ignored for audio files. */
@@ -294,6 +296,8 @@ async function burn(
       allowRotationMetadata: false,
       ...(crop && { crop }),
       hardwareAcceleration: acceleration(encode),
+      // Raised, every output frame comes through process with its own time, so the text is drawn for each.
+      ...(encode.fps && { frameRate: encode.fps }),
       width: pictureW,
       height: pictureH,
       fit: "fill",
@@ -382,7 +386,7 @@ async function burnAudio(
   if (!codec) throw new Error("Bu tarayıcı MP4 için ses kodlayamıyor (AAC veya Opus gerekli).");
 
   const { width, height } = encode.size ?? AUDIO_VIDEO;
-  const { fps } = AUDIO_VIDEO;
+  const fps = encode.fps ?? AUDIO_VIDEO.fps;
   const canvas = new OffscreenCanvas(width, height);
   const compositor = await createCompositor(canvas);
   compositor.setLogo(logo);

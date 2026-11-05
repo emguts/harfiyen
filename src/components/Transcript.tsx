@@ -25,6 +25,8 @@ interface Props {
   onShift?: (first: number, count: number, seconds: number) => void;
   /** Find hits to mark, and which one is current. */
   found?: { matches: Match[]; current: number };
+  /** A cue selected in the waveform editor, in this word list. */
+  revealWord?: number | null;
   /** Language of the words, for the spelling check while editing. */
   lang: string;
   /** The speakers' names, when they were told apart (the words then carry `speaker`). */
@@ -312,6 +314,7 @@ export function Transcript({
   onRetime,
   onShift,
   found,
+  revealWord,
   lang,
   speakerNames,
   onSpeaker,
@@ -347,8 +350,13 @@ export function Transcript({
   const list = useRef<HTMLOListElement>(null);
   const userScrolledAt = useRef(0);
 
-  // Follow the playhead, unless the reader scrolled on their own recently.
+  // Reveal the waveform selection, including while playback is paused.
   const activeCue = active < 0 ? -1 : cues.findIndex((c) => active < c.first + c.words.length);
+  const revealCue = revealWord == null ? -1 : cues.findIndex((c) => revealWord >= c.first && revealWord < c.first + c.words.length);
+  useEffect(() => {
+    if (revealCue >= 0) list.current?.children[revealCue]?.scrollIntoView({ block: "nearest" });
+  }, [revealCue, revealWord]);
+  // Follow the playhead, unless the reader scrolled on their own recently.
   useEffect(() => {
     if (activeCue < 0 || !playing || Date.now() - userScrolledAt.current < 4000) return;
     list.current?.children[activeCue]?.scrollIntoView({ block: "nearest", behavior: "smooth" });

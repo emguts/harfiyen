@@ -7,6 +7,7 @@ import type { BurnState } from "../lib/useBurner";
 import { hasGpu } from "../render/compositor";
 import {
   effectiveOutput,
+  canRaiseFps,
   estimateSize,
   undecodable,
   resolutionOf,
@@ -238,6 +239,33 @@ export function ExportMenu({
                 })}
               </div>
             </Field>
+            {/* Only when the file is below 60 fps: a 60 fps video already moves as smoothly. */}
+            {source && canRaiseFps(source) && (
+              <Field label="Kare hızı">
+                <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Kare hızı">
+                  {(["source", "60"] as const).map((fps) => (
+                    <button
+                      key={fps}
+                      type="button"
+                      role="radio"
+                      aria-checked={out.fps === fps}
+                      onClick={() => onOutput({ ...output, fps })}
+                      className={TILE}
+                    >
+                      <span className="text-[12.5px] font-[560]">
+                        {fps === "60" ? "60 kare/sn" : `${Math.round(source.fps)} kare/sn`}
+                      </span>
+                      <span className="text-[11.5px] text-fg-3">
+                        {fps === "60" ? "Akıcı yazı, iki kat sürer" : source.video ? "Videonun kendisi" : "Hızlı"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {out.fps === "60" && source.video && (
+                  <MenuNote>Görüntünün kareleri aynı kalır; altyazı ve kinetik yazı 60 karede çizilir.</MenuNote>
+                )}
+              </Field>
+            )}
             <Field label="Kalite">
               <Select<OutputQuality>
                 label="Kalite"

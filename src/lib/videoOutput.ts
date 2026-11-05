@@ -12,11 +12,18 @@ export type Encoder = "hardware" | "software" | null;
 export type OutputQuality = "source" | "low" | "medium" | "high" | "very-high";
 /** The short side of the picture ("720" is 1280×720, or 720×1280 upright); "source" keeps the file's size. */
 export type OutputResolution = "source" | "720" | "1080" | "2160";
+/**
+ * "source": the file's own frame rate (30 for auras); "60": at least 60, so the captions and kinetic type move as
+ * smoothly as in the preview. A video's picture keeps its frames (each is shown for as many output frames as it
+ * lasts); only the text is drawn anew for every frame.
+ */
+export type OutputFrameRate = "source" | "60";
 export interface VideoOutput {
   codec: OutputCodec;
   quality: OutputQuality;
   /** "auto" until a size is picked: the file's own, or 1080p for a smaller picture (see `autoResolution`). */
   resolution: OutputResolution | "auto";
+  fps: OutputFrameRate;
 }
 
 /** Aura videos for audio files and recordings, at 1080p unless another size is chosen. */
@@ -33,7 +40,10 @@ const SHORT_SIDES = { "720": 720, "1080": 1080, "2160": 2160 } as const;
  */
 const UPSCALE_TO = 1080;
 
-export const DEFAULT_OUTPUT: VideoOutput = { codec: "avc", quality: "source", resolution: "auto" };
+export const DEFAULT_OUTPUT: VideoOutput = { codec: "avc", quality: "source", resolution: "auto", fps: "source" };
+
+/** A file this close to 60 fps (or above it) is written at its own rate. */
+const SMOOTH_FPS = 59;
 
 export function loadOutput(): VideoOutput {
   try {
@@ -46,7 +56,7 @@ export function loadOutput(): VideoOutput {
       // Before v2 "source" was the default, not a choice: those settings get "auto" now.
       const picked = saved.v === 2 && saved.resolution === "source";
       const resolution = saved.resolution in SHORT_SIDES || picked ? saved.resolution : "auto";
-      return { codec: saved.codec, quality: saved.quality, resolution };
+      return { codec: saved.codec, quality: saved.quality, resolution, fps: saved.fps === "60" ? "60" : "source" };
     }
   } catch {
     // Unreadable: the default.
@@ -125,13 +135,22 @@ export function resolutionOf(output: VideoOutput, source: SourceInfo): Resolutio
   return list.find((r) => r.value === want) ?? list.find((r) => r.value === "source" || r.value === "1080") ?? list[0];
 }
 
+/** Whether "60" can raise this file's frame rate: it is below 60 fps. */
+export const canRaiseFps = (source: SourceInfo) => source.fps < SMOOTH_FPS;
+
+/** The frame rate to write at when it is not the file's own (or the auras' 30); null to keep that. */
+export function outputFps(output: VideoOutput, source: SourceInfo): number | null {
+  return output.fps === "60" && canRaiseFps(source) ? 60 : null;
+}
+
 /** Video bitrate in bits per second for the chosen output. */
 export function videoBitrate(output: VideoOutput, source: SourceInfo): number {
   const { width, height } = resolutionOf(output, source);
   const efficiency = EFFICIENCY[output.codec];
   const pixels = width * height;
+  const fps = outputFps(output, source) ?? source.fps;
   // More frames need more bits, though not in proportion: 60 fps takes about 1.5 times 30 fps.
-  const motion = Math.pow(Math.min(120, Math.max(10, source.fps)) / 30, 0.6);
+  const motion = Math.pow(Math.min(120, Math.max(10, fps)) / 30, 0.6);
   const atLevel = (level: number) =>
     Math.ceil((3e6 * Math.pow(pixels / (1920 * 1080), 0.95) * efficiency * motion * 0.3 * Math.exp(2.5538 * level)) / 1000) *
     1000;
@@ -142,7 +161,9 @@ export function videoBitrate(output: VideoOutput, source: SourceInfo): number {
     const from = EFFICIENCY[source.video.codec ?? "avc"] ?? 1;
     const grown = pixels / (source.video.width * source.video.height);
     const shrink = Math.pow(grown, grown > 1 ? 0.5 : 0.95);
-    const matched = Math.ceil((source.video.bitrate * shrink * efficiency) / from / 1000) * 1000;
+    // Raised to 60 fps, the repeated frames cost little, the text drawn on each of them a little more.
+    const raised = Math.pow(Math.min(120, Math.max(10, fps)) / Math.min(120, Math.max(10, source.fps)), 0.3);
+    const matched = Math.ceil((source.video.bitrate * shrink * efficiency * raised) / from / 1000) * 1000;
     // Not below "low": a screen recording at a few hundred kbps would blur the burnt-in captions.
     return Math.max(atLevel(LEVELS.low), matched);
   }
@@ -166,6 +187,7 @@ export function effectiveOutput(output: VideoOutput, source: SourceInfo | null):
     resolution: resolution.value,
     codec: !resolution.encoders[output.codec] && resolution.encoders[other] ? other : output.codec,
     quality: output.quality === "source" && !source.video ? "high" : output.quality,
+    fps: canRaiseFps(source) ? output.fps : "source",
   };
 }
 
