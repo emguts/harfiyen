@@ -64,6 +64,27 @@ const times = (ws: Word[]) => ws.map((w) => `${w.start}-${w.end}`).join(" ");
   const back = shiftAll(words, -1);
   check("toplu kaydırma sıfırda durur", back[0].start === 0 && back[5].end === 6);
 }
+// The waveform editor's push: lines that touch, 0-2 and 2-4 seconds.
+const touching: Word[] = [
+  { text: "bir", start: 0, end: 1, cue: true },
+  { text: "iki", start: 1, end: 2 },
+  { text: "üç", start: 2, end: 3, cue: true },
+  { text: "dört", start: 3, end: 4 },
+];
+{
+  const out = shiftSpan(touching, 0, 2, -0.5, true);
+  check("itme: geri çekilen satır komşuyu sürüklemez", out[2].start === 2 && out[3].end === 4, times(out));
+  const left = shiftSpan(touching, 2, 2, -0.5, true);
+  check("itme: sola kayan satır öncekini geri iter", left[2].start === 1.5 && left[1].end === 1.5 && left[1].start === 1, times(left));
+}
+{
+  const out = retime(touching, 0, 2, 0, 1.5, true);
+  check("itme: kısalan bitiş komşuyu çekmez", out[1].end === 1.5 && out[2].start === 2, times(out));
+  const grow = retime(touching, 0, 2, 0, 2.6, true);
+  check("itme: uzayan bitiş komşuyu iter", grow[1].end === 2.6 && grow[2].start === 2.6 && grow[2].end === 3, times(grow));
+  const far = retime(touching, 0, 2, 0, 9, true);
+  check("itme: komşu en az MIN_SPAN kalır", far[2].start === 2.95 && far[2].end === 3, times(far));
+}
 check("zaman yazımı", formatTime(62.354) === "1:02.35" && formatTime(2.35) === "2.35", formatTime(62.354));
 check(
   "zaman okuma",
