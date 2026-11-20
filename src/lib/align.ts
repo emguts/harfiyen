@@ -9,6 +9,7 @@
 // Adapted from emguts/harfiyen (sarki-ozellikleri branch, src/lib/lyrics.ts).
 
 import type { Word } from "../engine";
+import { buildCues, importedCues, READING_RULES, type Cue } from "./cues";
 
 /** Cost of a text word with no transcribed word, and of a transcribed word with no text word. */
 const GAP_TEXT = 0.5;
@@ -318,6 +319,56 @@ export function alignText(heard: Word[], text: string, { lines }: { lines: boole
   if (!anchored.some(Boolean)) throw new Error("Metin dökümle eşleşmedi; doğru dosya ve dil mi?");
   fill(out, p, heard[0]?.start ?? 0);
   return { words: out, anchored };
+}
+
+/** Existing cues (lines) in a transcript, matching what the transcript/subtitle editor displays. */
+export function existingCues(words: Word[]): Cue[] {
+  return importedCues(words) ?? buildCues(words, READING_RULES);
+}
+
+/**
+ * Places each line of `text` directly onto the time span of the corresponding existing cue (1-to-1).
+ * Word timings inside each line are distributed proportionally by character length.
+ * Throws if either side is empty or if the line counts do not match.
+ */
+export function placeByLines(
+  existing: Word[],
+  text: string,
+  { lines = true }: { lines?: boolean } = {},
+): Word[] {
+  const cues = existingCues(existing);
+  const lineWords = textLines(text);
+  if (!lineWords.length) throw new Error("Yerleştirilecek metin boş.");
+  if (!cues.length) throw new Error("Mevcut dökümde yerleştirilecek satır yok.");
+  if (lineWords.length !== cues.length) {
+    throw new Error(
+      `Satır sayısı uyuşmuyor: mevcut ${cues.length} satır, yapıştırılan ${lineWords.length} satır.`,
+    );
+  }
+  const out: Word[] = [];
+  for (let i = 0; i < cues.length; i++) {
+    const tokens = lineWords[i];
+    const cueWords = cues[i].words;
+    const cueStart = cueWords[0]?.start ?? 0;
+    const cueEnd = Math.max(cueStart, cueWords[cueWords.length - 1]?.end ?? cueStart);
+    const span = cueEnd - cueStart;
+    const weights = tokens.map((w) => [...w].length + 1);
+    const total = weights.reduce((a, b) => a + b, 0);
+    let cur = cueStart;
+    let acc = 0;
+    for (let k = 0; k < tokens.length; k++) {
+      acc += weights[k];
+      const end = k === tokens.length - 1 ? cueEnd : cueStart + (span * acc) / total;
+      out.push({
+        text: tokens[k],
+        start: cur,
+        end,
+        ...(lines && k === 0 && { cue: true }),
+      });
+      cur = end;
+    }
+  }
+  return out;
 }
 
 /**

@@ -64,6 +64,8 @@ import { retime, shiftAll, shiftSpan } from "./lib/timing";
 import {
   alignText,
   applySpans,
+  existingCues,
+  placeByLines,
   planSpans,
   tapAlign,
   type TextTiming,
@@ -1028,6 +1030,7 @@ export function App() {
     (
       | { jobId: number; en: boolean; words: Word[]; translation?: Translation }
       | { jobId: number; speakers: Speakers | undefined }
+      | { jobId: number; prevTranslation: Translation | undefined }
     )[]
   >([]);
   const [canUndo, setCanUndo] = useState(false);
@@ -1139,6 +1142,11 @@ export function App() {
     const prev = h.pop();
     if (prev && "speakers" in prev) {
       if (job) setSpeakers(job.id, prev.speakers);
+    } else if (prev && "prevTranslation" in prev) {
+      if (job) {
+        setTranslation(job.id, prev.prevTranslation);
+        if (!prev.prevTranslation) setShowEn(false);
+      }
     } else if (prev?.en && job && (prev.translation ?? job.translation)) {
       // A replaced translation comes back whole, language included; an edit only brings back its words.
       setTranslation(
@@ -1352,6 +1360,34 @@ export function App() {
   };
   const onAlign = (text: string, lines: boolean, refine: boolean) =>
     placeText((heard) => alignText(heard, text, { lines }), refine);
+  const alignLineCount = useMemo(() => existingCues(words).length, [words]);
+  const onPlaceLines = (
+    text: string,
+    lines: boolean,
+    asTranslation?: TranslationLang,
+  ): string | null => {
+    if (!job) return null;
+    try {
+      const placed = placeByLines(words, text, { lines });
+      if (asTranslation) {
+        history.current.push({ jobId: job.id, prevTranslation: job.translation });
+        setCanUndo(true);
+        setTranslation(job.id, {
+          lang: asTranslation,
+          source: sourceKey(words),
+          words: placed,
+        });
+        setShowEn(true);
+        if (burner.state.status === "done") resetBurn();
+      } else {
+        commitWords(placed);
+      }
+      setAligning(false);
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  };
   const onTaps = (
     text: string,
     lines: boolean,
@@ -2083,10 +2119,12 @@ export function App() {
               text={alignDraft}
               onText={setAlignDraft}
               lang={sourceLang}
+              lineCount={alignLineCount}
               refineIssue={refineIssue}
               progress={alignProgress}
               playback={job?.file ? tapPlayback : null}
               onAlign={onAlign}
+              onPlaceLines={onPlaceLines}
               onTaps={onTaps}
               onClose={() => setAligning(false)}
             />

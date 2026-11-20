@@ -329,7 +329,12 @@ export function projectToFile(p: Project): string {
       translation: {
         lang: p.translation.lang,
         source: p.translation.source,
-        words: p.translation.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end) })),
+        words: p.translation.words.map((w) => ({
+          text: w.text,
+          start: r(w.start),
+          end: r(w.end),
+          ...(w.cue && { cue: true }),
+        })),
       },
     }),
     ...(p.speakers && {

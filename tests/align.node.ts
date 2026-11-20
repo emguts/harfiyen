@@ -7,7 +7,18 @@
 
 import type { Word } from "../src/engine";
 import { buildCues } from "../src/lib/cues";
-import { alignText, applySpans, looksLined, matchWords, planSpans, tapAlign, textLines, textUnits } from "../src/lib/align";
+import {
+  alignText,
+  applySpans,
+  existingCues,
+  looksLined,
+  matchWords,
+  placeByLines,
+  planSpans,
+  tapAlign,
+  textLines,
+  textUnits,
+} from "../src/lib/align";
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -217,6 +228,96 @@ try {
   threw = true;
 }
 check("boş metin hata verir", threw);
+
+// placeByLines / existingCues tests
+{
+  // 1. Respects explicit `cue: true` boundaries and proportional word weights
+  const explicit: Word[] = [
+    { text: "One", start: 1, end: 2, cue: true },
+    { text: "two", start: 2, end: 4 },
+    { text: "Three", start: 5, end: 6, cue: true },
+    { text: "four", start: 6, end: 7 },
+  ];
+  check("existingCues explicit sınırları korur", existingCues(explicit).length === 2);
+  const placed = placeByLines(explicit, "Biri iki\nÜçüncüsü");
+  check(
+    "placeByLines kelime zamanlarını orantılı dağıtır ve cue ekler",
+    placed.length === 3 &&
+      placed[0].text === "Biri" &&
+      placed[0].cue === true &&
+      Math.abs(placed[0].start - 1) < 1e-9 &&
+      Math.abs(placed[0].end - 2.6666666667) < 1e-6 &&
+      placed[1].text === "iki" &&
+      !placed[1].cue &&
+      Math.abs(placed[1].start - placed[0].end) < 1e-9 &&
+      Math.abs(placed[1].end - 4) < 1e-9 &&
+      placed[2].text === "Üçüncüsü" &&
+      placed[2].cue === true &&
+      placed[2].start === 5 &&
+      placed[2].end === 7,
+    JSON.stringify(placed),
+  );
+}
+
+{
+  // 2. Uses READING_RULES cues when no explicit `cue: true` exists, and skips blanks/headers/notes
+  const autoWords: Word[] = [
+    { text: "Hello", start: 0, end: 0.4 },
+    { text: "world", start: 0.4, end: 1.0 },
+    { text: "How", start: 3.0, end: 3.4 },
+    { text: "now", start: 3.4, end: 4.0 },
+  ];
+  const cues = existingCues(autoWords);
+  check("existingCues duraklamadan satırları bulur", cues.length === 2, `len=${cues.length}`);
+  const placed = placeByLines(autoWords, "[Nakarat]\n\nMerhaba dünya\n(x2)\n♪ Şimdi nasıl\n");
+  check(
+    "placeByLines başlıkları ve boş satırları atlar",
+    placed.length === 4 &&
+      placed[0].start === 0 &&
+      placed[1].end === 1.0 &&
+      placed[2].cue === true &&
+      placed[2].start === 3.0 &&
+      placed[3].end === 4.0,
+    JSON.stringify(placed),
+  );
+
+  // 3. lines: false omits `cue: true`
+  const unlined = placeByLines(autoWords, "Merhaba dünya\nŞimdi nasıl", { lines: false });
+  check(
+    "placeByLines lines:false cue işareti eklemez",
+    unlined.every((w) => !w.cue) && unlined[0].start === 0 && unlined[3].end === 4.0,
+  );
+
+  // 4. Mismatched line count throws
+  let mismatchThrew = false;
+  try {
+    placeByLines(autoWords, "Tek satır");
+  } catch {
+    mismatchThrew = true;
+  }
+  check("placeByLines satır sayısı uyuşmazsa hata verir", mismatchThrew);
+
+  // 5. Header-only / blank text throws
+  let emptyThrew = false;
+  try {
+    placeByLines(autoWords, "[Nakarat]\n\n(x2)\n");
+  } catch {
+    emptyThrew = true;
+  }
+  check("placeByLines boş/yalnızca başlıklı metinde hata verir", emptyThrew);
+}
+
+{
+  // 6. Zero-duration cue stays monotonic
+  const zeroCue: Word[] = [{ text: "Hi", start: 2, end: 2, cue: true }];
+  const placed = placeByLines(zeroCue, "Selam sana");
+  check(
+    "placeByLines sıfır süreli satırda geçerli zaman üretir",
+    placed.length === 2 &&
+      placed.every((w) => w.start === 2 && w.end === 2 && Number.isFinite(w.start)),
+    JSON.stringify(placed),
+  );
+}
 
 if (failed) {
   console.log(`\n${failed} failed`);
