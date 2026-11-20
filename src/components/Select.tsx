@@ -59,10 +59,12 @@ export function Select<T extends string>({
     const below = window.innerHeight - r.bottom - 8;
     const above = r.top - 8;
     const up = below < 220 && above > below;
+    const width = Math.min(window.innerWidth - 16, Math.max(r.width, 210));
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
     setPos({
-      left: r.left,
+      left,
       top: up ? r.top - 4 : r.bottom + 4,
-      width: r.width,
+      width,
       maxHeight: Math.min(380, up ? above : below),
       up,
     });
@@ -191,7 +193,7 @@ export function Select<T extends string>({
             {options.flatMap((o, i) => [
               o.group && o.group !== options[i - 1]?.group && (
                 <li
-                  key={`group-${o.group}`}
+                  key={`group-${i}-${o.group}`}
                   role="presentation"
                   className="px-2 pt-2 pb-1 text-[11px] font-semibold tracking-[0.04em] text-fg-3 uppercase first:pt-1"
                 >

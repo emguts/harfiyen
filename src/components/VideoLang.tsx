@@ -6,10 +6,15 @@ import { OPT_NOTE, OPT_TITLE, Select, type Option } from "./Select";
 
 const OPTIONS: Option<LangChoice>[] = [
   { value: "auto", label: "Otomatik" },
-  ...SPEECH_LANGS.map((l) => ({
+  ...SPEECH_LANGS.filter((l) => MAIN_LANGS.includes(l.code)).map((l) => ({
     value: l.code,
     label: l.name,
-    group: MAIN_LANGS.includes(l.code) ? "Ana diller" : "Diğer diller",
+    group: "Ana diller",
+  })),
+  ...SPEECH_LANGS.filter((l) => !MAIN_LANGS.includes(l.code)).map((l) => ({
+    value: l.code,
+    label: l.name,
+    group: "Diğer diller",
   })),
 ];
 
@@ -35,7 +40,7 @@ export function VideoLang({
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-fg-2">
-      <span className="flex min-w-[200px] flex-1 items-center gap-2.5">
+      <span className="flex min-w-[230px] flex-1 items-center gap-2.5">
         <span className="flex-none">Videodaki dil</span>
         <Select<LangChoice>
           label="Videodaki dil"
