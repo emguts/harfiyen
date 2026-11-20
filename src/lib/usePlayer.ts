@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { Beeper, inBleep } from "./bleep";
 
 export interface Player {
   /** Attach to the (invisible) <video>/<audio> that does decoding and sound. */
@@ -42,12 +43,14 @@ export const isVideoFile = (f: File) =>
  * Media element state for the custom WebGPU player. With a `range` (the
  * trim), playback stops at its end, and playing from outside it starts at
  * its beginning; seeking anywhere still works, to look around. Playback
- * jumps over the `cuts` (jump cut), as the exported video does.
+ * jumps over the `cuts` (jump cut), as the exported video does. Over the
+ * `bleeps` (censored words) the file's sound is turned out and a tone plays.
  */
 export function usePlayer(
   file: File | null,
   range: { start: number; end: number } | null = null,
   cuts: { start: number; end: number }[] = [],
+  bleeps: { start: number; end: number }[] = [],
 ): Player {
   const [el, setEl] = useState<HTMLMediaElement | null>(null);
   const [url, setUrl] = useState<string | null>(null);
@@ -68,6 +71,8 @@ export function usePlayer(
   rangeRef.current = range;
   const cutsRef = useRef(cuts);
   cutsRef.current = cuts;
+  const bleepsRef = useRef(bleeps);
+  bleepsRef.current = bleeps;
 
   // Object URL tied to the effect, so StrictMode's re-run cannot revoke one in use.
   useEffect(() => {
@@ -111,7 +116,26 @@ export function usePlayer(
     // highlights, but not faster than ~25 updates/s (React re-renders).
     let raf = 0;
     let last = -1;
+    // Over a bleep the element is turned to 0 and the tone sounds; `heard` is the level to give back.
+    const beeper = new Beeper();
+    let bleeping = false;
+    let heard = 1;
+    const setBleeping = (on: boolean) => {
+      if (on === bleeping) return;
+      bleeping = on;
+      if (on) {
+        heard = el.volume;
+        el.volume = 0;
+        beeper.set(el.muted ? 0 : heard);
+      } else {
+        el.volume = heard;
+        beeper.set(0);
+      }
+    };
     const tick = () => {
+      // A little ahead of the clock, which runs behind what the frame has just played.
+      const b = bleepsRef.current;
+      setBleeping(b.length > 0 && !el.paused && !el.seeking && inBleep(b, el.currentTime + 0.02));
       const r = rangeRef.current;
       if (r && !el.paused && el.currentTime >= r.end) {
         el.pause();
@@ -120,8 +144,16 @@ export function usePlayer(
       // In a cut: on to its end (not while that seek is still running).
       if (!el.paused && !el.seeking && cutsRef.current.length) {
         const t = el.currentTime;
-        const cut = cutsRef.current.find((c) => t >= c.start && t < c.end - 0.02);
-        if (cut) el.currentTime = cut.end;
+        const cut = cutsRef.current.find((c) => t >= c.start - 0.01 && t < c.end - 0.02);
+        if (cut) {
+          const stopAt = r ? r.end : Number.isFinite(el.duration) && el.duration > 0 ? el.duration : Infinity;
+          if (cut.end >= stopAt - 0.02) {
+            el.pause();
+            el.currentTime = Math.min(cut.end, stopAt);
+          } else {
+            el.currentTime = cut.end;
+          }
+        }
       }
       if (!el.paused && Math.abs(el.currentTime - last) >= 0.04) {
         last = el.currentTime;
@@ -132,6 +164,8 @@ export function usePlayer(
     raf = requestAnimationFrame(tick);
     return () => {
       offs.forEach((f) => f());
+      setBleeping(false);
+      beeper.close();
       cancelAnimationFrame(raf);
       cancelAnimationFrame(scrubFrame.current);
       scrubFrame.current = 0;

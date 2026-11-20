@@ -2,11 +2,15 @@
 // "auto" the one Whisper heard most); this is the one when nothing says otherwise.
 
 import type { LangChoice, SpeechLang } from "../engine/config";
+import { isMtLang, SPEECH_LANGS } from "../engine/languages";
 
 export const TRANSCRIPT_LANG = "tr";
 
 /** Names of the languages the app speaks, as the interface writes them. */
-export const LANG_NAMES: Record<string, string> = { tr: "Türkçe", en: "İngilizce" };
+export const LANG_NAMES: Record<string, string> = Object.fromEntries(SPEECH_LANGS.map((l) => [l.code, l.name]));
+
+/** Whether a transcript in `lang` can be translated (and into it). */
+export const hasTranslation = (lang: string) => isMtLang(lang);
 
 let displayNames: Intl.DisplayNames | null | undefined;
 
@@ -25,9 +29,9 @@ export function langName(code: string): string {
 }
 
 /** The name of a language choice, "Otomatik" for Whisper's own. */
-export const choiceName = (l: LangChoice) => (l === "auto" ? "Otomatik" : LANG_NAMES[l]);
+export const choiceName = (l: LangChoice) => (l === "auto" ? "Otomatik" : langName(l));
 
-export const isSpeechLang = (code: string): code is SpeechLang => code === "tr" || code === "en";
+export const isSpeechLang = (code: string): code is SpeechLang => SPEECH_LANGS.some((l) => l.code === code);
 
 /**
  * The language a transcript is in: the one chosen, or with "auto" the one

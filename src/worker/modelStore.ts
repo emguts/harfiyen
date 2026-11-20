@@ -84,7 +84,9 @@ export function complete(entries: CachedFile[]): boolean {
 
 /** Every stored entry of this file, in any version. */
 async function entriesOf(cache: Cache, f: FileRequest): Promise<CachedFile[]> {
-  return (await cache.keys(new URL(f.url, location.href).href, { ignoreSearch: true })).map((r) => parseKey(r.url));
+  return (await cache.keys(new URL(f.url, location.href).href, { ignoreSearch: true }))
+    .map((r) => parseKey(r.url))
+    .filter((c) => c.size > 0);
 }
 
 async function dropAll(cache: Cache, f: FileRequest) {
@@ -165,6 +167,59 @@ class BadFile extends Error {}
 
 const isQuota = (e: unknown) => e instanceof DOMException && e.name === "QuotaExceededError";
 
+const OFFLINE_ERR =
+  "İnternet bağlantısı yok (veya sunucuya ulaşılamıyor) ve bu model henüz indirilmemiş. Modeller bir kez indirildikten sonra çevrimdışı çalışır.";
+
+async function netFetch(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    if (e instanceof TypeError) throw new Error(OFFLINE_ERR);
+    throw e;
+  }
+}
+
+/**
+ * Read a model's JSON manifest: from the network when reachable (updating the
+ * cached copy), or from the cache when offline.
+ */
+export async function fetchManifest<T = unknown>(url: string): Promise<{ data: T | null; offline: boolean }> {
+  const full = new URL(url, location.href).href;
+  const cache = await openCache();
+  let offline = false;
+  try {
+    const res = await fetch(full, { cache: "no-cache" });
+    if (res.ok) {
+      const clone = res.clone();
+      try {
+        const data = (await res.json()) as T;
+        await cache?.put(full, clone).catch(() => {});
+        return { data, offline: false };
+      } catch {
+        // Not JSON (a host's fallback page, say): not kept, and no sign of being offline. The cached copy below.
+      }
+    } else if (desktop && res.status === 502) {
+      // electron/models.js returns 502 when offline and the manifest is not on disk yet.
+      offline = true;
+    }
+  } catch {
+    // Network unreachable: fall back to the cached copy below.
+    offline = true;
+  }
+  const pathname = new URL(full).pathname;
+  const hit =
+    (await cache?.match(full)) ??
+    (typeof caches !== "undefined" ? ((await caches.match(full)) ?? (await caches.match(pathname))) : undefined);
+  if (!hit) return { data: null, offline };
+  try {
+    return { data: (await hit.json()) as T, offline };
+  } catch {
+    // A copy that is not JSON was kept by mistake: dropped, so the next try reads the network.
+    await cache?.delete(full).catch(() => {});
+    return { data: null, offline };
+  }
+}
+
 async function put(cache: Cache, key: string, body: BodyInit) {
   try {
     await cache.put(key, new Response(body));
@@ -211,7 +266,7 @@ async function fetchParted(
   if (i === n) return false;
 
   const start = i * PART;
-  const res = await fetch(f.url, {
+  const res = await netFetch(f.url, {
     signal: o.signal,
     cache: o.reload ? "reload" : undefined,
     headers: start ? { Range: `bytes=${start}-` } : undefined,
@@ -295,7 +350,7 @@ export async function fetchAll(files: FileRequest[], onProgress: Progress): Prom
   let allCached = true;
 
   async function download(f: FileRequest, key: string, reload: boolean): Promise<Uint8Array> {
-    const res = await fetch(f.url, reload ? { cache: "reload" } : undefined);
+    const res = await netFetch(f.url, reload ? { cache: "reload" } : undefined);
     if (!res.ok) throw new Error(`${f.url}: HTTP ${res.status}`);
     // In the desktop app only a file its store has to download is a download; the rest is read from disk.
     if (!desktop || res.headers.get("X-Model-Store") === "miss") allCached = false;
@@ -375,7 +430,7 @@ export async function listCached(): Promise<CachedFile[]> {
   if (desktop) return listDisk();
   const cache = await openCache();
   if (!cache) return [];
-  return (await cache.keys()).map((req) => parseKey(req.url));
+  return (await cache.keys()).map((req) => parseKey(req.url)).filter((c) => c.size > 0);
 }
 
 export async function removeCached(keys: string[]): Promise<void> {
@@ -390,7 +445,7 @@ export async function removeCached(keys: string[]): Promise<void> {
 /** storeFile in the desktop app: reading the file through makes its store keep it. */
 async function storeOnDisk(f: FileRequest, onBytes: (n: number) => void, signal?: AbortSignal) {
   for (const retry of [false, true]) {
-    const res = await fetch(f.url, { signal, cache: "no-store" });
+    const res = await netFetch(f.url, { signal, cache: "no-store" });
     if (!res.ok || !res.body) throw new Error(`${fileName(f)}: HTTP ${res.status}`);
     const reader = res.body.getReader();
     let size = 0;
@@ -462,7 +517,7 @@ export async function storeFile(f: FileRequest, onBytes: (n: number) => void, si
   }
   const key = cacheKey(f);
   for (const reload of [false, true]) {
-    const res = await fetch(f.url, { signal, ...(reload && { cache: "reload" as const }) });
+    const res = await netFetch(f.url, { signal, ...(reload && { cache: "reload" as const }) });
     if (!res.ok || !res.body) throw new Error(`${fileName(f)}: HTTP ${res.status}`);
     let size = 0;
     let first: number | undefined;

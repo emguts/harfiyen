@@ -28,7 +28,7 @@ export interface ModelConfig extends EncoderShape {
    * files: more accurate, no live text needed. Same weights and states.
    */
   final?: EncoderShape;
-  lm: {
+  lm?: {
     sosId: number;
     numLayers: number;
     hiddenSize: number;
@@ -40,8 +40,8 @@ export interface ModelConfig extends EncoderShape {
 
 export type DecodingMethod = "greedy" | "beam" | "beam-lm";
 
-/** The language spoken in the media. Only Whisper knows English. */
-export type SpeechLang = "tr" | "en";
+import type { SpeechLang } from "./languages";
+export type { SpeechLang };
 
 /**
  * The language chosen before transcribing: one the whole app speaks, or

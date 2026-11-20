@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Harfiyen MCP: Videoyu yapay zekaya anlatarak kurgula</title>
+    <meta name="description" content="Harfiyen'in yazıya döküm, metinden kurgu, bip'leme, çeviri, seslendirme ve altyazılı video motorları MCP sunucusu olarak. Claude Code, Codex ve diğer MCP istemcilerine tek komutla eklenir; ses ve video bilgisayarından çıkmaz." />
+    <link rel="canonical" href="https://harfiyen.dev/mcp/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://harfiyen.dev/mcp/" />
+    <meta property="og:title" content="Harfiyen MCP: Videoyu yapay zekaya anlatarak kurgula" />
+    <meta property="og:description" content="Yazıya dök, ee'leri at, isimleri bip'le, çevir, seslendir, altyazıyı videoya yaz. Hepsi bilgisayarında." />
+    <meta property="og:image" content="https://harfiyen.dev/mcp/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://harfiyen.dev/mcp/og.jpg" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#14171a" />
+    <script src="/site/site.js"></script>
+    <link rel="stylesheet" href="/site/site.css" />
+    <style>
+      /* Only this page's parts; the rest is /site/site.css. */
+      .cmd {
+        margin: 28px 0 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 8px 8px 16px;
+        background: var(--well);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .cmd code {
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        white-space: nowrap;
+        scrollbar-width: none;
+      }
+      .cmd code::-webkit-scrollbar {
+        display: none;
+      }
+      .copy {
+        flex: none;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1;
+        color: #fff;
+        background: var(--cini);
+        border: 0;
+        border-radius: 7px;
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+      .copy:hover {
+        background: var(--cini-press);
+      }
+      .note {
+        margin: 10px 0 0;
+        font-size: 14px;
+        color: var(--text-3);
+      }
+
+      video {
+        display: block;
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        object-fit: cover;
+        margin-top: 32px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #0f1215;
+      }
+
+      blockquote {
+        margin: 16px 0 0;
+        padding: 2px 0 2px 16px;
+        border-left: 3px solid var(--cini);
+        color: var(--text);
+      }
+      .steps code {
+        color: var(--text);
+      }
+      .caption {
+        margin: 10px 0 0;
+        font-size: 14px;
+        color: var(--text-3);
+      }
+      pre {
+        margin: 12px 0 0;
+        padding: 14px 16px;
+        background: var(--well);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <a class="logo" href="/" aria-label="Harfiyen">
+          <img class="logo-dark" src="/brand/harfiyen-logo-light.png" alt="Harfiyen" />
+          <img class="logo-light" src="/brand/harfiyen-logo.png" alt="Harfiyen" />
+          <span>MCP</span>
+        </a>
+        <nav>
+          <a href="https://github.com/ozcancelik/harfiyen/tree/main/mcp">GitHub</a>
+          <a href="/">Uygulama</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <h1>Videoyu yapay zekaya anlatarak kurgula.</h1>
+      <p class="lead">
+        Harfiyen'in yazıya döküm, kurgu, bip'leme, çeviri, seslendirme ve altyazı motorları MCP sunucusu olarak çalışır.
+        Ses ve video bilgisayarından çıkmaz.
+      </p>
+      <div class="cmd">
+        <code class="c">claude mcp add harfiyen -- npx -y harfiyen-mcp</code>
+        <button class="copy" type="button">Kopyala</button>
+      </div>
+      <p class="note">Claude Code için. Codex, Cursor ve Claude Desktop'ta da çalışır, <a href="#kurulum">Kurulum</a>'a bak.</p>
+      <video src="/mcp/terminal.mp4" poster="/mcp/terminal.jpg" autoplay muted loop playsinline preload="auto" aria-label="Claude Code'da Harfiyen MCP araçlarının çalışması"></video>
+
+      <section>
+        <h2>Bir cümle, bitmiş bir video</h2>
+        <blockquote>
+          klip.mp4'ün ilk 26 saniyesindeki ee'leri ve boşlukları at, isimleri bip'le, vurgu stilinde altyazılı video yap.
+        </blockquote>
+        <ol class="steps">
+          <li><code>transcribe</code>: 54 kelime, Türkçe</li>
+          <li><code>cut_words</code>: 2 kelime ve 6 boşluk kesildi</li>
+          <li><code>bleep_words</code>: 9 kelime bip'lendi</li>
+          <li><code>render_captions</code>: 1920x1080, 22,7 sn</li>
+        </ol>
+        <p class="caption">Hangi aracın hangi sırayla çağrılacağına yapay zeka karar verir.</p>
+      </section>
+
+      <section>
+        <h2>Neler yapar</h2>
+        <p>
+          Web uygulamasıyla aynı kod ve aynı modeller. Uygulamada kaydettiğin <code>.harfiyen</code> projesi MCP'de,
+          MCP'de yaptığın iş uygulamada açılır.
+        </p>
+        <ul>
+          <li><b>Yazıya döküm:</b> kelime zamanlı ve noktalamalı. Türkçede Seda, Mihu ve Duyu; Whisper ile 31 dil.</li>
+          <li><b>Metinden kurgu:</b> kelimeyi silince videodan kesilir. Dolgu sesleri ve uzun duraklar da gider.</li>
+          <li><b>Bip'leme:</b> seçilen kelimenin sesi bip olur; altyazıda yıldız, buzlama ya da bant.</li>
+          <li><b>Altyazılı video:</b> dokuz stil, kinetik tipografi; 9:16, 4:5, 1:1 ve 16:9 kadraj.</li>
+          <li><b>Çeviri ve seslendirme:</b> Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Rusça.</li>
+          <li><b>Konuşmacılar:</b> kimin ne zaman konuştuğu ayrılır, adlar altyazıya yazılır.</li>
+        </ul>
+        <p>Bütün araçlar ve ayarlar <a href="https://github.com/ozcancelik/harfiyen/tree/main/mcp">README</a>'de.</p>
+      </section>
+
+      <section id="kurulum">
+        <h2>Kurulum</h2>
+        <ul>
+          <li>Node 20 ya da üstü, PATH'te <code>ffmpeg</code> ve <code>ffprobe</code>.</li>
+          <li>Altyazılı video için Google Chrome; yoksa video ffmpeg ile yazılır.</li>
+          <li>Modeller ilk kullanımda, sen onaylayınca <code>~/.harfiyen-mcp</code> klasörüne bir kez iner.</li>
+        </ul>
+        <p>Codex'e eklemek için:</p>
+        <pre>codex mcp add harfiyen -- npx -y harfiyen-mcp</pre>
+        <p>Claude Desktop, Cursor ve diğer MCP istemcilerinde yapılandırmaya şunu ekle:</p>
+        <pre>{
+  "mcpServers": {
+    "harfiyen": { "command": "npx", "args": ["-y", "harfiyen-mcp"] }
+  }
+}</pre>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span class="fnote">Harfiyen, açık kaynak (MIT)</span>
+        <a href="/">Uygulama</a>
+        <a href="/mcp/">MCP</a>
+        <a href="/support/">Destek</a>
+        <a href="/privacy/">Gizlilik</a>
+        <a href="https://github.com/ozcancelik/harfiyen">GitHub</a>
+      </div>
+    </footer>
+
+    <script>
+      document.querySelectorAll(".copy").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var text = btn.parentElement.querySelector(".c").textContent;
+          var done = function () {
+            btn.textContent = "Kopyalandı";
+            setTimeout(function () {
+              btn.textContent = "Kopyala";
+            }, 1600);
+          };
+          if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+        });
+      });
+    </script>
+  </body>
+</html>

@@ -1,3 +1,4 @@
+import type { Censor } from "../lib/bleep";
 import type { CueRules } from "../lib/cues";
 import type { AuraPaletteId, AuraStyleId } from "../render/aura";
 import { DEFAULT_KINETIC, type KineticSettings } from "../render/kinetic";
@@ -63,6 +64,12 @@ export interface CaptionSettings {
   font: FontId;
   /** Font size relative to the shorter side of the frame. */
   size: number;
+  /** Weight asked for; missing: the font's own. Only variable fonts take one (see weightBounds). */
+  weight?: number;
+  /** Italic: the font's own where it has one, else the text is slanted. Missing: upright. */
+  italic?: boolean;
+  /** Space between letters in em (negative: tighter). Missing: none. */
+  tracking?: number;
   position: "bottom" | "middle" | "top";
   textColor: string;
   accentColor: string;
@@ -77,6 +84,8 @@ export interface CaptionSettings {
   voiceEmphasis: boolean;
   /** The speaker's name above the caption where they start talking (when the speakers were told apart). */
   speakerNames?: boolean;
+  /** What a bleeped (censored) word looks like in the captions. Missing: stars. */
+  censor?: Censor;
   /** Missing in settings saved before there was a logo. */
   logo?: LogoSettings;
   /** No captions in the player or the video (a dub-only video, say); kept with the project. */
@@ -116,10 +125,14 @@ export interface Preset {
   defaults: Omit<
     CaptionSettings,
     | "preset"
+    | "weight"
+    | "italic"
+    | "tracking"
     | "aura"
     | "auraStyle"
     | "voiceEmphasis"
     | "speakerNames"
+    | "censor"
     | "logo"
     | "hidden"
     | "kinetic"
@@ -352,10 +365,14 @@ export const settingsFor = (id: PresetId, prev?: CaptionSettings): CaptionSettin
   const overrides = prev?.overrides ?? [];
   return {
     preset: id,
+    weight: prev?.weight,
+    italic: prev?.italic,
+    tracking: prev?.tracking,
     aura: prev?.aura ?? "cini",
     auraStyle: prev?.auraStyle ?? "aura",
     voiceEmphasis: prev?.voiceEmphasis ?? false,
     speakerNames: prev?.speakerNames ?? false,
+    censor: prev?.censor ?? "stars",
     logo: prev?.logo ?? DEFAULT_LOGO,
     hidden: prev?.hidden ?? false,
     kinetic: prev?.kinetic ?? DEFAULT_KINETIC,

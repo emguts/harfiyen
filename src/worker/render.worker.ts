@@ -40,12 +40,14 @@ import {
   Quality,
   QUALITY_HIGH,
   VideoSample,
+  VideoSampleSink,
 } from "mediabunny";
 import { historyAt, levelsAt, paletteById, usesHistory } from "../render/aura";
 import { addUserFont, loadCaptionFont, type UserFont } from "../captions/fonts";
 import { CaptionRenderer } from "../captions/renderer";
 import { shownPhoto, shownPicture, type CaptionSettings } from "../captions/style";
 import type { Word } from "../engine";
+import { bleepPlanes } from "../lib/bleep";
 import { isKept, keptLength, keptParts, toFile, toOutput, type Kept } from "../lib/cuts";
 import { AUDIO_VIDEO, type Encoder, type OutputCodec } from "../lib/videoOutput";
 import type { Placement } from "../lib/crop";
@@ -78,6 +80,8 @@ export type ToRender =
       logo: LogoLayer | null;
       /** The user's photo, a copy of the player's (transferred); null when this project does not use it. */
       photo: ImageBitmap | null;
+      /** The user's background video file when the background media is a video; null otherwise. */
+      photoVideo: Blob | null;
       encode: Encode;
       /** The file the user picked to save into; null renders to the private disk (or memory). */
       handle: FileSystemFileHandle | null;
@@ -116,6 +120,8 @@ export interface Encode {
   trim: { start: number; end: number } | null;
   /** Stretches taken out of it (jump cut), sorted, in file seconds; null for none. */
   cuts: { start: number; end: number }[] | null;
+  /** Stretches of the file's sound replaced by a bleep (censored words), sorted, in file seconds; null for none. */
+  bleeps: { start: number; end: number }[] | null;
 }
 
 // The browser's own choice when the hardware encoder is not there: the processor's.
@@ -159,20 +165,54 @@ function mixDub(sample: AudioSample, dub: DubMix, t0: number): AudioSample {
   });
 }
 
-/** How long the sound fades out before a cut and in after it, seconds. */
-const CUT_FADE = 0.012;
+/**
+ * The sample with the bleep over the stretches in `ranges` (file time); `t0` is where the sample's clock starts in
+ * the file. The sample itself when no range falls in it.
+ */
+function bleepSample(sample: AudioSample, ranges: { start: number; end: number }[], t0: number): AudioSample {
+  const n = sample.numberOfFrames;
+  const channels = sample.numberOfChannels;
+  const from = sample.timestamp + t0;
+  const to = from + n / sample.sampleRate;
+  if (!ranges.some((r) => r.end > from && r.start < to)) return sample;
+  const out = new Float32Array(n * channels);
+  const planes: Float32Array[] = [];
+  for (let c = 0; c < channels; c++) {
+    const plane = out.subarray(c * n, (c + 1) * n);
+    sample.copyTo(plane, { planeIndex: c, format: "f32-planar" });
+    planes.push(plane);
+  }
+  bleepPlanes(planes, from, sample.sampleRate, ranges);
+  return new AudioSample({
+    data: out,
+    format: "f32-planar",
+    numberOfChannels: channels,
+    sampleRate: sample.sampleRate,
+    timestamp: sample.timestamp,
+  });
+}
+
+/** How long the sound crossfades across a cut, seconds. */
+const CUT_FADE = 0.015;
+
+interface CutClock {
+  frames: number;
+  /** Faded-out audio frames right after the previous cut's start, mixed into the next kept segment's head. */
+  tail?: Float32Array[];
+}
 
 /**
  * The kept parts of a sample, one after another from `clock.frames` (output
- * frames written so far), faded at the cuts. `t0` is where the sample's
+ * frames written so far), crossfaded at the cuts. `t0` is where the sample's
  * timestamps start in the file. The sample itself is not closed.
  */
-function cutAudio(sample: AudioSample, t0: number, kept: Kept[], span: { start: number; end: number }, clock: { frames: number }): AudioSample[] {
+function cutAudio(sample: AudioSample, t0: number, kept: Kept[], span: { start: number; end: number }, clock: CutClock): AudioSample[] {
   const rate = sample.sampleRate;
   const n = sample.numberOfFrames;
   const channels = sample.numberOfChannels;
   const from = sample.timestamp + t0;
   const to = from + n / rate;
+  const fadeFrames = Math.max(1, Math.round(CUT_FADE * rate));
   const out: AudioSample[] = [];
   for (const k of kept) {
     if (k.end <= from) continue;
@@ -185,16 +225,43 @@ function cutAudio(sample: AudioSample, t0: number, kept: Kept[], span: { start: 
     // Fades only where a cut is: the span's own ends are written as they are.
     const fadeIn = k.start > span.start + 1e-3;
     const fadeOut = k.end < span.end - 1e-3;
+    const tailLen = fadeOut ? Math.min(fadeFrames, Math.max(0, n - b)) : 0;
+    const nextTail: Float32Array[] | undefined = tailLen > 0 ? [] : undefined;
+
     for (let c = 0; c < channels; c++) {
       const plane = data.subarray(c * len, (c + 1) * len);
       sample.copyTo(plane, { planeIndex: c, format: "f32-planar", frameOffset: a, frameCount: len });
-      if (!fadeIn && !fadeOut) continue;
-      for (let i = 0; i < len; i++) {
-        const t = from + (a + i) / rate;
-        const g = Math.min(1, fadeIn ? (t - k.start) / CUT_FADE : 1, fadeOut ? (k.end - t) / CUT_FADE : 1);
-        if (g < 1) plane[i] *= Math.max(0, g);
+      if (fadeIn || fadeOut) {
+        for (let i = 0; i < len; i++) {
+          const t = from + (a + i) / rate;
+          const gIn = fadeIn ? Math.min(1, Math.max(0, (t - k.start) / CUT_FADE)) : 1;
+          // When we have post-cut tail frames to overlap into the next part, only micro-taper the last 3ms here.
+          const outWindow = tailLen > 0 ? 0.003 : CUT_FADE;
+          const gOut = fadeOut ? Math.min(1, Math.max(0, (k.end - t) / outWindow)) : 1;
+          const g = Math.min(gIn, gOut);
+          if (g < 1) plane[i] *= Math.sin(g * (Math.PI / 2));
+        }
+      }
+      // Mix in the overlapping tail from the previous cut for a true crossfade.
+      const prevTail = fadeIn && a === Math.max(0, Math.round((k.start - from) * rate)) ? clock.tail?.[c] : undefined;
+      if (prevTail && Math.abs(from + a / rate - k.start) < 2 / rate) {
+        const mixLen = Math.min(len, prevTail.length);
+        for (let i = 0; i < mixLen; i++) {
+          plane[i] = Math.max(-1, Math.min(1, plane[i] + prevTail[i]));
+        }
+      }
+      if (nextTail && tailLen > 0) {
+        const tPlane = new Float32Array(tailLen);
+        sample.copyTo(tPlane, { planeIndex: c, format: "f32-planar", frameOffset: b, frameCount: tailLen });
+        for (let i = 0; i < tailLen; i++) {
+          const g = 1 - (i + 0.5) / tailLen;
+          tPlane[i] *= Math.sin(g * (Math.PI / 2));
+        }
+        nextTail.push(tPlane);
       }
     }
+    if (fadeIn && Math.abs(from + a / rate - k.start) < 2 / rate) clock.tail = undefined;
+    if (nextTail) clock.tail = nextTail;
     out.push(
       new AudioSample({
         data,
@@ -241,17 +308,19 @@ async function burn(
   dub: DubMix | null,
   logo: LogoLayer | null,
   photo: ImageBitmap | null,
+  photoVideo: Blob | null,
   encode: Encode,
   sink: Sink,
   handle: FileSystemFileHandle | null,
 ) {
   const started = performance.now();
   // The 2D canvas in a worker only sees fonts registered on the worker.
-  await loadCaptionFont(settings.font, self.fonts);
+  await loadCaptionFont(settings.font, self.fonts, settings.italic);
   const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
   const track = await input.getPrimaryVideoTrack();
   // A video used for its sound is drawn as an audio file is.
-  if (!track || settings.picture === "hidden") return burnAudio(jobId, input, words, settings, bands, loudness, lang, speakers, dub, logo, photo, encode, sink, handle, started);
+  if (!track || settings.picture === "hidden")
+    return burnAudio(jobId, input, words, settings, bands, loudness, lang, speakers, dub, logo, photo, photoVideo, encode, sink, handle, started);
   if (!(await track.canDecode())) throw new Error(`Videonun kodlaması (${track.codec ?? "bilinmiyor"}) bu tarayıcıda çözülemiyor.`);
 
   // Rotation is baked into the frames (allowRotationMetadata: false below),
@@ -281,6 +350,7 @@ async function burn(
   // With a jump cut, what is kept of the trim (or the file), and the output's sound written so far.
   const span = { start: t0, end: encode.trim?.end ?? Infinity };
   const kept = encode.cuts?.length ? keptParts(span, encode.cuts) : null;
+  const bleeps = encode.bleeps?.length ? encode.bleeps : null;
   const clock = { frames: 0 };
   const conversion = await Conversion.init({
     input,
@@ -315,12 +385,15 @@ async function burn(
     },
     // The file's audio, resampled to the dub's rate, with the dub mixed in; the cuts taken out.
     audio:
-      dub || kept
+      dub || kept || bleeps
         ? {
             ...(dub && { numberOfChannels: channels, sampleRate: DUB_RATE }),
             forceTranscode: true,
             process: (sample) => {
-              const mixed = dub ? mixDub(sample, dub, t0) : sample;
+              // The file's own sound is bleeped before the dub goes over it.
+              const heard = bleeps ? bleepSample(sample, bleeps, t0) : sample;
+              const mixed = dub ? mixDub(heard, dub, t0) : heard;
+              if (heard !== sample && heard !== mixed) heard.close();
               if (!kept) return mixed;
               const parts = cutAudio(mixed, t0, kept, span, clock);
               if (mixed !== sample) mixed.close();
@@ -355,6 +428,68 @@ async function burn(
   await finish(jobId, sink, handle, started);
 }
 
+async function openBgVideo(blob: Blob) {
+  const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+  const track = await input.getPrimaryVideoTrack();
+  if (!track || !(await track.canDecode())) {
+    input.dispose();
+    return null;
+  }
+  const sink = new VideoSampleSink(track);
+  let iter: AsyncGenerator<VideoSample, void, unknown> | null = null;
+  let current: { sample: VideoSample; time: number } | null = null;
+  let next: { sample: VideoSample; time: number } | null = null;
+  let offset = 0;
+  let cycleEnd = 0;
+
+  const normalize = async (s: VideoSample): Promise<VideoSample> => {
+    if (!s.rotation && !s.flip) return s;
+    const rotated = await s.transform({});
+    s.close();
+    return rotated;
+  };
+
+  const pull = async (): Promise<{ sample: VideoSample; time: number } | null> => {
+    iter ??= sink.samples();
+    let r = await iter.next();
+    if (r.done) {
+      if (cycleEnd <= offset) return null;
+      offset = cycleEnd;
+      iter = sink.samples();
+      r = await iter.next();
+      if (r.done) return null;
+    }
+    const sample = await normalize(r.value);
+    const t = offset + Math.max(0, sample.timestamp);
+    cycleEnd = Math.max(cycleEnd, t + Math.max(1 / 60, sample.duration));
+    return { sample, time: t };
+  };
+
+  return {
+    frameAt: async (time: number): Promise<VideoFrame | null> => {
+      if (!current) current = await pull();
+      if (!current) return null;
+      if (!next) next = await pull();
+      while (next && next.time <= time + 1e-4) {
+        current.sample.close();
+        current = next;
+        next = await pull();
+      }
+      return current.sample.toVideoFrame();
+    },
+    close: async () => {
+      current?.sample.close();
+      next?.sample.close();
+      current = null;
+      next = null;
+      const it = iter;
+      iter = null;
+      await it?.return();
+      input.dispose();
+    },
+  };
+}
+
 async function burnAudio(
   jobId: number,
   input: Input,
@@ -367,6 +502,7 @@ async function burnAudio(
   dub: DubMix | null,
   logo: LogoLayer | null,
   photo: ImageBitmap | null,
+  photoVideo: Blob | null,
   encode: Encode,
   sink: Sink,
   handle: FileSystemFileHandle | null,
@@ -397,6 +533,7 @@ async function burnAudio(
   const span = { start: t0, end: t1 };
   const kept = keptParts(span, encode.cuts ?? []);
   const duration = keptLength(kept);
+  const bgVideo = ground && photo && photoVideo ? await openBgVideo(photoVideo) : null;
 
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: sink.fastStart }), target: sink.target });
   const video = new CanvasSource(canvas, {
@@ -422,19 +559,24 @@ async function burnAudio(
       const time = frame / fps;
       const at = toFile(time, kept);
       const levels = levelsAt(bands, at);
-      compositor.render(
-        ground && photo
-          ? { kind: "photo", image: photo }
-          : {
-              kind: "aura",
-              time: at,
-              levels,
-              palette,
-              style: settings.auraStyle ?? "aura",
-              history: usesHistory(settings.auraStyle) ? historyAt((s) => levelsAt(bands, s), at) : undefined,
-            },
-        kinetic ? kinetic.frame(at, levels) : (captions?.frame(at) ?? null),
-      );
+      const bgFrame = bgVideo ? await bgVideo.frameAt(time) : null;
+      try {
+        compositor.render(
+          ground && photo
+            ? { kind: "photo", image: photo, video: bgFrame }
+            : {
+                kind: "aura",
+                time: at,
+                levels,
+                palette,
+                style: settings.auraStyle ?? "aura",
+                history: usesHistory(settings.auraStyle) ? historyAt((s) => levelsAt(bands, s), at) : undefined,
+              },
+          kinetic ? kinetic.frame(at, levels) : (captions?.frame(at) ?? null),
+        );
+      } finally {
+        bgFrame?.close();
+      }
       await video.add(time, 1 / fps);
     }
     const sec = (performance.now() - started) / 1000;
@@ -452,8 +594,10 @@ async function burnAudio(
       }
       // At the file's time (the sink's), the dub mixed in; then cut to the kept parts at the sample
       // (the first may begin before the trim, the last end after it) and timed from 0:00.
-      const mixed = dub ? mixDub(sample, dub, 0) : sample;
+      const heard = encode.bleeps?.length ? bleepSample(sample, encode.bleeps, 0) : sample;
+      const mixed = dub ? mixDub(heard, dub, 0) : heard;
       const parts = cutAudio(mixed, 0, kept, span, clock);
+      if (heard !== sample && heard !== mixed) heard.close();
       if (mixed !== sample) mixed.close();
       sample.close();
       for (const part of parts) {
@@ -472,6 +616,7 @@ async function burnAudio(
     await output.finalize();
   } finally {
     running.delete(jobId);
+    await bgVideo?.close();
     compositor.destroy();
     input.dispose();
   }
@@ -507,6 +652,7 @@ self.onmessage = (ev: MessageEvent<ToRender>) => {
         m.dub,
         m.logo,
         m.photo,
+        m.photoVideo,
         m.encode,
         sink,
         m.handle,

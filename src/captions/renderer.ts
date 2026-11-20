@@ -7,7 +7,7 @@ import { buildCues, type Cue } from "../lib/cues";
 import { hasDottedI, TRANSCRIPT_LANG } from "../lib/lang";
 import { speakerColor } from "../lib/speakers";
 import { loudWords } from "./emphasis";
-import { captionStack, fontById, type CaptionFont } from "./fonts";
+import { captionCss, captionStack, fontById, type CaptionFont } from "./fonts";
 import { presetById, type CaptionSettings, type Preset } from "./style";
 
 export interface CaptionImage {
@@ -41,6 +41,8 @@ const FOCUS_IN = { focus: 0.3, sharpen: 0.35 };
 const LIVE_RATE = 240;
 /** Size of a word said loudly ("Sesle vurgula"), relative to the others. */
 const LOUD = 1.3;
+/** Slant (tan of 12°) of an italic in a font that has none of its own. */
+const SLANT = 0.2126;
 const easeOutBack = (x: number) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
 
 /** Readable text on top of an accent colour. */
@@ -136,6 +138,65 @@ export class CaptionRenderer {
     return { ...this.cached, scale };
   }
 
+  /**
+   * Buzlama: the word's place drawn as the caption would draw it (same font, colour and outline), then
+   * pixelated into blocks about a fifth of a letter's height, so it reads as a word that cannot be read.
+   * `text` is the placeholder from censorWords: the word itself never reaches the picture.
+   */
+  private pixelWord(
+    ctx: OffscreenCanvasRenderingContext2D,
+    text: string,
+    color: string,
+    stroke: number,
+    tx: number,
+    ty: number,
+    cy: number,
+    w: number,
+    lh: number,
+    px: number,
+  ) {
+    const padX = stroke + px * 0.06;
+    const x0 = Math.floor(tx - padX);
+    const y0 = Math.floor(cy - lh / 2);
+    const bw = Math.ceil(w + padX * 2);
+    const bh = Math.ceil(lh);
+    const full = new OffscreenCanvas(bw, bh);
+    const f = full.getContext("2d")!;
+    f.font = ctx.font;
+    if ("letterSpacing" in ctx) f.letterSpacing = ctx.letterSpacing;
+    f.textBaseline = ctx.textBaseline;
+    f.lineJoin = ctx.lineJoin;
+    if (stroke) {
+      f.strokeStyle = "rgba(0, 0, 0, 0.92)";
+      f.lineWidth = stroke * 2;
+      f.strokeText(text, tx - x0, ty - y0);
+    }
+    f.fillStyle = color;
+    f.fillText(text, tx - x0, ty - y0);
+    // Down to one pixel per block (averaging the letters into greys), then back up without smoothing.
+    const cell = Math.max(2, Math.round(px * 0.15));
+    const small = new OffscreenCanvas(Math.max(1, Math.round(bw / cell)), Math.max(1, Math.round(bh / cell)));
+    const sc = small.getContext("2d")!;
+    sc.imageSmoothingQuality = "high";
+    sc.drawImage(full, 0, 0, small.width, small.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(small, x0, y0, bw, bh);
+    ctx.imageSmoothingEnabled = true;
+  }
+
+  /** A bar over the word's place: from `tx` on, `w` wide, centred on `cy`. */
+  private censorWord(ctx: OffscreenCanvasRenderingContext2D, tx: number, cy: number, w: number, lh: number, px: number) {
+    const padX = px * 0.08;
+    const h = lh * 0.78;
+    ctx.beginPath();
+    ctx.roundRect(tx - padX, cy - h / 2, w + padX * 2, h, h * 0.3);
+    ctx.fillStyle = "#0b0f14";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+    ctx.lineWidth = Math.max(1, px * 0.03);
+    ctx.stroke();
+  }
+
   private groupAt(t: number): number {
     const gs = this.groups;
     let lo = 0;
@@ -165,13 +226,23 @@ export class CaptionRenderer {
     const texts = g.words.map((w) => (upper ? w.text.toLocaleUpperCase(this.lang) : w.text));
     // Each word's size relative to px (loud words are larger).
     const size = g.words.map((w) => (this.loud.has(w) ? LOUD : 1));
-    const css = (size: number) => `${font.weight} ${size}px ${captionStack(font.id)}`;
+    const css = (size: number) => captionCss(font, size, { weight: s.weight, italic: s.italic });
+    // A font without an italic of its own is slanted as it is drawn.
+    const slant = !!s.italic && !font.italicFiles;
     const ctx = this.canvas.getContext("2d")!;
+    // Space between letters, in em; the canvas must support it (letterSpacing).
+    const track = "letterSpacing" in ctx ? (s.tracking ?? 0) : 0;
+    // Set along with the font (resizing the canvas resets both). A word's width counts the space after its last letter too.
+    const setFont = (size: number) => {
+      ctx.font = css(size);
+      if (track) ctx.letterSpacing = `${track * size}px`;
+    };
+    const wordWidth = (t: string, size: number) => ctx.measureText(t).width - track * size;
     let px = Math.max(10, Math.round(Math.min(W, H) * s.size));
     // Lines wrap between words only: shrink until the longest word fits the
     // frame (padding scales with the font, so one step is enough).
-    ctx.font = css(px);
-    const longest = Math.max(...texts.map((t, i) => ctx.measureText(t).width * size[i]));
+    setFont(px);
+    const longest = Math.max(...texts.map((t, i) => wordWidth(t, px) * size[i]));
     // Both sides' padX, stroke and word box, in units of px (see below).
     const pads =
       (s.background === "box" ? 1 : s.background === "glass" ? 1.2 : 0.7) +
@@ -179,11 +250,10 @@ export class CaptionRenderer {
       (preset.effect === "box" ? 0.64 : 0);
     const need = longest + px * pads;
     if (need > W * 0.86) px = Math.max(10, Math.floor((px * W * 0.86) / need));
-    const fontCss = css(px);
-    ctx.font = fontCss;
+    setFont(px);
 
     // Text widths grow with the font size, so larger words are measured at px and scaled.
-    const widths = texts.map((t, i) => ctx.measureText(t).width * size[i]);
+    const widths = texts.map((t, i) => wordWidth(t, px) * size[i]);
     const space = ctx.measureText(" ").width;
     const stroke = s.background === "outline" ? Math.max(2, px * 0.12) : 0;
     const wordPad = preset.effect === "box" ? px * 0.16 : 0;
@@ -216,7 +286,9 @@ export class CaptionRenderer {
     // image's edges; the caption itself (and its box) stays w x h.
     const blurs = preset.wordIn === "focus" || preset.wordIn === "sharpen";
     const grows = preset.wordIn === "sharpen" ? 0.15 : 0;
-    const bleedX = blurs ? Math.ceil(px * 0.6 + (Math.max(...lineWidths) * grows) / 2) : 0;
+    // A slanted word leans out to the right at the top.
+    const leanX = slant ? Math.ceil(px * 0.25 * Math.max(...size)) : 0;
+    const bleedX = Math.max(leanX, blurs ? Math.ceil(px * 0.6 + (Math.max(...lineWidths) * grows) / 2) : 0);
     const bleedY = blurs ? Math.ceil(px * 0.6 + (Math.max(...lineHs) * grows) / 2) : 0;
     // The name sits above the caption, both centred; the image is as wide as the wider.
     const tag = speaker >= 0 ? this.tagLayout(ctx, speaker, px, font, !!upper) : null;
@@ -228,7 +300,7 @@ export class CaptionRenderer {
     this.canvas.width = cw + bleedX * 2;
     this.canvas.height = h + top + bleedY * 2;
     ctx.translate(bleedX + ox, bleedY + top);
-    ctx.font = fontCss; // resizing resets the context
+    setFont(px); // resizing resets the context
     // "middle" centres the font's em box, which leaves capitals sitting low
     // (the room below is for descenders). Centre the capital height instead,
     // measured from the font itself so it holds for any font.
@@ -253,10 +325,12 @@ export class CaptionRenderer {
           continue;
         }
         const isActive = i === active;
+        // A censored word has no box or accent of its own: pixels or a bar stand in its place.
+        const censored = !!g.words[i].bleep && (s.censor === "blur" || s.censor === "bar");
         let color = s.textColor;
         ctx.globalAlpha = preset.effect === "karaoke" && i > active ? 0.45 : 1;
         ctx.save();
-        if (size[i] !== 1) ctx.font = css(px * size[i]);
+        if (size[i] !== 1) setFont(px * size[i]);
         // A loud word takes the accent; with "fill" the accent is the fill, so only its size changes.
         if (size[i] !== 1 && preset.effect !== "fill") color = s.accentColor;
         if (isActive && grow < 1) {
@@ -288,7 +362,7 @@ export class CaptionRenderer {
           }
         }
 
-        if (preset.effect === "box" && isActive) {
+        if (preset.effect === "box" && isActive && !censored) {
           ctx.fillStyle = s.accentColor;
           ctx.beginPath();
           ctx.roundRect(x, cy - lh * 0.47, widths[i] + wordPad * 2, lh * 0.94, px * 0.18);
@@ -301,6 +375,20 @@ export class CaptionRenderer {
         const tx = x + wordPad;
         const ty = cy + (capH * size[i]) / 2;
         const boxed = preset.effect === "box" && isActive;
+        if (censored) {
+          // The word is not drawn: pixelated or a bar in its place (the text is only a stand-in for its width).
+          if (s.censor === "blur") this.pixelWord(ctx, texts[i], color, stroke * size[i], tx, ty, cy, widths[i], lh, px * size[i]);
+          else this.censorWord(ctx, tx, cy, widths[i], lh, px * size[i]);
+          ctx.restore();
+          x += widths[i] + wordPad * 2 + space;
+          continue;
+        }
+        if (slant) {
+          // Leaning about the baseline, and moved back so the word stays centred where it was.
+          ctx.translate((-SLANT * capH * size[i]) / 2, ty);
+          ctx.transform(1, 0, -SLANT, 1, 0, 0);
+          ctx.translate(0, -ty);
+        }
         if (s.background === "outline" && !boxed) {
           ctx.strokeStyle = "rgba(0, 0, 0, 0.92)";
           ctx.lineWidth = stroke * 2 * size[i];
@@ -373,6 +461,7 @@ export class CaptionRenderer {
     const dot = Math.round(tp * 0.55);
     const gap = tp * 0.45;
     ctx.font = css;
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "0px"; // the name is set tight, whatever the captions are
     let text = this.speakers![speaker];
     if (upper) text = text.toLocaleUpperCase(this.lang);
     const max = W * 0.86 - padX * 2 - dot - gap;
@@ -402,6 +491,7 @@ export class CaptionRenderer {
     const { s } = this;
     ctx.save();
     ctx.font = L.css;
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
     ctx.textBaseline = "alphabetic";
     ctx.lineJoin = "round";
     if (L.pill) {

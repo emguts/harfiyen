@@ -54,6 +54,7 @@ export function Viewer({
   cropLocked = false,
   logo = null,
   photo = null,
+  photoVideo = null,
   size = null,
 }: {
   /** Raw microphone levels while recording (updated in place). */
@@ -87,12 +88,15 @@ export function Viewer({
   logo?: LogoLayer | null;
   /** The user's photo, drawn in place of the aura when the settings pick it; null when there is none. */
   photo?: ImageBitmap | null;
+  /** Object URL of the user's background video, when the background media is a video. */
+  photoVideo?: string | null;
   /** The size the video is written at, when known; the preview draws at it. */
   size?: { w: number; h: number } | null;
 }) {
   const stage = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [compositor, setCompositor] = useState<Compositor | null>(null);
+  const [bgVideo, setBgVideo] = useState<HTMLVideoElement | null>(null);
   /** The video's own size; the frame drawn is the cropped part of it. */
   const [picture, setPicture] = useState(AUDIO_FRAME);
   const [fontTick, setFontTick] = useState(0);
@@ -132,13 +136,14 @@ export function Viewer({
   }, [active, url]);
 
   const activeFont = settings.kinetic?.on ? settings.kinetic.font : settings.font;
+  const activeItalic = !settings.kinetic?.on && !!settings.italic;
   useEffect(() => {
     let live = true;
-    loadCaptionFont(activeFont, document.fonts).then(() => live && setFontTick((n) => n + 1));
+    loadCaptionFont(activeFont, document.fonts, activeItalic).then(() => live && setFontTick((n) => n + 1));
     return () => {
       live = false;
     };
-  }, [activeFont]);
+  }, [activeFont, activeItalic]);
 
   useEffect(() => {
     if (!el || !isVideo) {
@@ -273,6 +278,57 @@ export function Viewer({
   const lastLive = useRef(performance.now());
   const liveHistory = useRef(new LiveHistory());
 
+  // Keep the looping muted background video in sync with the main media clock.
+  useEffect(() => {
+    if (!bgVideo || !photoPic) return;
+    bgVideo.muted = true;
+    bgVideo.loop = true;
+    if (live) {
+      const startLive = () => void bgVideo.play().catch(() => {});
+      startLive();
+      bgVideo.addEventListener("loadedmetadata", startLive);
+      return () => {
+        bgVideo.removeEventListener("loadedmetadata", startLive);
+        bgVideo.pause();
+      };
+    }
+    if (!el) return;
+    const syncTime = () => {
+      const d = bgVideo.duration;
+      if (Number.isFinite(d) && d > 0 && !bgVideo.seeking) {
+        const target = el.currentTime % d;
+        if (Math.abs(bgVideo.currentTime - target) > 0.08) bgVideo.currentTime = target;
+      }
+    };
+    const onPlay = () => {
+      syncTime();
+      void bgVideo.play().catch(() => {});
+    };
+    const onPause = () => bgVideo.pause();
+    const onSeeked = () => {
+      if (el.paused) syncTime();
+    };
+    const onLoaded = () => {
+      syncTime();
+      if (!el.paused) void bgVideo.play().catch(() => {});
+    };
+    if (!el.paused) onPlay();
+    else syncTime();
+    bgVideo.addEventListener("loadedmetadata", onLoaded);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("ended", onPause);
+    el.addEventListener("seeked", onSeeked);
+    return () => {
+      bgVideo.removeEventListener("loadedmetadata", onLoaded);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("ended", onPause);
+      el.removeEventListener("seeked", onSeeked);
+      bgVideo.pause();
+    };
+  }, [bgVideo, el, live, photoPic, photoVideo]);
+
   // Render loop: redraw only when the picture, caption or size changed.
   useEffect(() => {
     const c = canvas.current;
@@ -280,16 +336,37 @@ export function Viewer({
     if (!compositor || !c || !st || (!el && !live)) return;
     let raf = 0;
     let last = "";
+    let anchorMedia = -1;
+    let anchorWall = 0;
+    let smoothT = 0;
     /** A video frame has been drawn: from then on a seek keeps it up until the new one is decoded. */
     let drawn = false;
     const cropKey = `${placement ? JSON.stringify(placement) : ""}|${shownLogo ? `${shownLogo.corner}${shownLogo.size}${shownLogo.opacity}` : ""}`;
-    const photoFrame: PhotoFrame | null = photoPic && photo ? { kind: "photo", image: photo } : null;
+    const photoFrame: PhotoFrame | null =
+      photoPic && photo ? { kind: "photo", image: photo, video: bgVideo } : null;
     const loop = () => {
       const dpr = window.devicePixelRatio || 1;
       const fit = Math.min(1, (st.clientWidth * dpr) / frame.w, (st.clientHeight * dpr) / frame.h);
       const w = Math.max(2, Math.round(frame.w * fit));
       const h = Math.max(2, Math.round(frame.h * fit));
-      const t = el && !live ? el.currentTime : liveRef.current;
+      let t = liveRef.current;
+      if (el && !live) {
+        const rawT = el.currentTime;
+        const now = performance.now();
+        if (el.paused || el.ended || el.seeking || el.readyState < 2 || Math.abs(rawT - smoothT) > 0.08) {
+          anchorMedia = rawT;
+          anchorWall = now;
+          smoothT = rawT;
+        } else {
+          if (rawT !== anchorMedia) {
+            anchorMedia = rawT;
+            anchorWall = now;
+          }
+          const extrapolated = anchorMedia + ((now - anchorWall) / 1000) * el.playbackRate;
+          smoothT = Math.max(smoothT, Math.min(anchorMedia + 0.04, extrapolated));
+        }
+        t = smoothT;
+      }
       // No picture (or a video used for its sound) and no photo: the aura. It follows the media clock (so
       // the export matches); while recording it drifts with the wall clock instead.
       let aura: AuraFrame | null = null;
@@ -324,24 +401,26 @@ export function Viewer({
       const cap = kineticRef.current
         ? kineticRef.current.frame(t, aura?.levels ?? levelsAt(bandsRef.current, t))
         : (captionsRef.current?.frame(t) ?? null);
+      const bgKey = bgVideo && photoFrame ? `${bgVideo.currentTime}|${bgVideo.readyState}` : "";
       const key = aura
         ? `${w}x${h}|${aura.time}|${aura.palette}|${aura.style}|${bandsRef.current.length}|${cap ? `${cap.key}|${cap.scale}` : ""}`
-        : `${w}x${h}|${t}|${el?.readyState}|${cropKey}|${cap ? `${cap.key}|${cap.scale}` : ""}`;
+        : `${w}x${h}|${t}|${el?.readyState}|${bgKey}|${cropKey}|${cap ? `${cap.key}|${cap.scale}` : ""}`;
       const video = !aura && !photoFrame && isVideo && el ? (el as HTMLVideoElement) : null;
+      const activeVideo = video ?? (photoFrame ? bgVideo : null);
       // While scrubbing, the element has no frame (readyState < 2) until the
       // seek lands; drawing then would flash black, so the last frame stays.
-      const waiting = !!video && drawn && video.readyState < 2;
+      const waiting = !!activeVideo && drawn && activeVideo.readyState < 2;
       if (key !== last && !waiting) {
         last = key;
         compositor.resize(w, h);
         compositor.render(aura ?? photoFrame ?? video, cap);
-        if (video && video.readyState >= 2) drawn = true;
+        if (activeVideo && activeVideo.readyState >= 2) drawn = true;
       }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo, blurred, ground, photoPic, photo]);
+  }, [compositor, el, isVideo, frame, live, liveLevels, placement, shownLogo, blurred, ground, photoPic, photo, bgVideo]);
 
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === stage.current);
@@ -421,6 +500,9 @@ export function Viewer({
         fullscreen ? "rounded-none" : "rounded-ui"
       } ${hidden ? "cursor-none" : ""}`}
     >
+      {active && photoPic && photoVideo && (
+        <video ref={setBgVideo} src={photoVideo} className={MEDIA} muted loop playsInline preload="auto" />
+      )}
       {live ? (
         <>
           <canvas ref={canvas} className={canvasClass} aria-label="Canlı altyazı" />

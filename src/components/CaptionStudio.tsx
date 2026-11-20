@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { captionStack, FONTS, fontById, isUserFont, loadCaptionFont, type FontId } from "../captions/fonts";
+import { captionStack, captionWeight, FONTS, fontById, isUserFont, loadCaptionFont, weightBounds, type FontId } from "../captions/fonts";
 import {
   ACCENT_COLORS,
   presetById,
@@ -79,6 +79,14 @@ const POSITIONS = [
   { value: "bottom" as const, label: "Altta" },
 ];
 
+const CENSORS = [
+  { value: "stars" as const, label: "Yıldız", note: "Kelime s**** diye yazılır" },
+  { value: "blur" as const, label: "Buzlama", note: "Kelimenin yeri pikselleşir, okunmaz" },
+  { value: "bar" as const, label: "Bant", note: "Kelimenin üstünde koyu bir şerit" },
+  { value: "hide" as const, label: "Gizle", note: "Kelime altyazıda hiç görünmez" },
+  { value: "off" as const, label: "Açık", note: "Yazı olduğu gibi kalır, yalnız ses bip'lenir" },
+];
+
 const BACKGROUNDS = [
   { value: "box" as const, label: "Kutu", note: "Yazının arkasında koyu kutu" },
   { value: "outline" as const, label: "Kontur", note: "Harflerin çevresinde siyah çizgi" },
@@ -94,6 +102,7 @@ export function CaptionStudio({
   lang = TRANSCRIPT_LANG,
   onScene,
   speakerCount = 0,
+  bleepCount = 0,
 }: {
   settings: CaptionSettings;
   /** The project's ground, behind the style cards. */
@@ -106,6 +115,8 @@ export function CaptionStudio({
   onScene: () => void;
   /** How many speakers the open transcript tells apart; their names can be shown from two. */
   speakerCount?: number;
+  /** How many words are censored: the choice of how the captions show them comes with the first. */
+  bleepCount?: number;
 }) {
   const userFonts = useUserFonts();
   const fontFile = useRef<HTMLInputElement>(null);
@@ -119,9 +130,11 @@ export function CaptionStudio({
 
   const set = (patch: Partial<CaptionSettings>) => onChange(withOverrides(settings, patch));
   /** Back to the preset's own look. */
-  const resetLook = () => onChange(settingsFor(settings.preset, { ...settings, overrides: [] }));
+  const resetLook = () =>
+    onChange(settingsFor(settings.preset, { ...settings, overrides: [], weight: undefined, italic: undefined, tracking: undefined }));
   const preset = presetById(settings.preset);
   const font = fontById(settings.font);
+  const weights = weightBounds(font);
   const capsOnly = !!font.capsOnly && hasDottedI(lang);
   const added = userFonts.fonts.find((f) => f.id === settings.font);
   // A project whose added font was deleted, or opened in another browser.
@@ -132,7 +145,7 @@ export function CaptionStudio({
     setFontError(null);
     try {
       const f = await addFontFile(file);
-      set({ font: f.id });
+      set({ font: f.id, weight: undefined });
     } catch (e) {
       setFontError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -159,6 +172,33 @@ export function CaptionStudio({
           <LinkButton type="button" className="justify-self-start" onClick={onScene}>
             Sahne sekmesine git
           </LinkButton>
+        </Section>
+      )}
+      {bleepCount > 0 && (
+        <Section title="Bip'lenen kelimeler">
+          <RowGroup>
+            <RowLabel>Altyazıda</RowLabel>
+            <Select
+              label="Bip'lenen kelime"
+              value={settings.censor ?? "stars"}
+              options={CENSORS}
+              onChange={(censor) => onChange({ ...settings, censor })}
+              disabled={disabled}
+              render={(o, inList) => (
+                <span className={OPT_TEXT}>
+                  <span className={OPT_TITLE}>{o.label}</span>
+                  {inList && <span className={OPT_NOTE}>{CENSORS.find((c) => c.value === o.value)!.note}</span>}
+                </span>
+              )}
+            />
+          </RowGroup>
+          <Hint>
+            {bleepCount} kelime bip'li; sesi her durumda bip olur. Altyazı dosyalarında (SRT, VTT) buzlama ve bant
+            yıldız olarak yazılır.
+            {settings.kinetic?.on && (settings.censor === "blur" || settings.censor === "bar")
+              ? " Kinetik tipografide buzlama ve bant çizilemez, yerinde yıldız kullanılır."
+              : ""}
+          </Hint>
         </Section>
       )}
       {speakerCount > 1 && (
@@ -220,7 +260,7 @@ export function CaptionStudio({
           label="Yazı tipi"
           value={font.id}
           options={fontOptions}
-          onChange={(font) => set({ font })}
+          onChange={(font) => set({ font, weight: undefined })}
           disabled={disabled}
           canRemove={isUserFont}
           onRemove={(id) => {
@@ -230,6 +270,7 @@ export function CaptionStudio({
               onChange({
                 ...settings,
                 font: preset.defaults.font,
+                weight: undefined,
                 overrides: settings.overrides?.filter((k) => k !== "font"),
               });
             void removeFont(id);
@@ -279,6 +320,34 @@ export function CaptionStudio({
             Bu yazı tipinde {[...added.missing].join(" ")} yok, bu harfler {FONTS[0].label} ile görünür.
           </Hint>
         )}
+        {weights && (
+          <Row>
+            <RowLabel>Kalınlık</RowLabel>
+            <Range
+              min={weights[0]}
+              max={weights[1]}
+              step={10}
+              value={captionWeight(font, settings.weight)}
+              onChange={(e) => set({ weight: Number(e.target.value) })}
+            />
+            <RowValue>{captionWeight(font, settings.weight)}</RowValue>
+          </Row>
+        )}
+        <Row>
+          <RowLabel>İtalik</RowLabel>
+          <Switch checked={!!settings.italic} onChange={(e) => set({ italic: e.target.checked })} />
+        </Row>
+        <Row>
+          <RowLabel>Harf aralığı</RowLabel>
+          <Range
+            min={-0.05}
+            max={0.2}
+            step={0.005}
+            value={settings.tracking ?? 0}
+            onChange={(e) => set({ tracking: Number(e.target.value) })}
+          />
+          <RowValue>{Math.round((settings.tracking ?? 0) * 100)}</RowValue>
+        </Row>
         <Row>
           <RowLabel>Boyut</RowLabel>
           <Range

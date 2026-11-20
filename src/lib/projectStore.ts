@@ -10,7 +10,8 @@
 
 import type { UserFont } from "../captions/fonts";
 import type { CaptionSettings } from "../captions/style";
-import type { DecodingMethod, LangChoice, Word } from "../engine";
+import type { DecodingMethod, LangChoice, SpeechLang, Word } from "../engine";
+import { isMtLang, SPEECH_LANGS } from "../engine/languages";
 import { readCrop, type Crop } from "./crop";
 import { DEFAULT_JUMP_CUT, type JumpCut } from "./cuts";
 import { DEFAULT_MODEL, isModelId, type ModelId } from "../models";
@@ -316,7 +317,14 @@ export function projectToFile(p: Project): string {
     ...(p.crop && { crop: p.crop }),
     ...(p.trim && { trim: p.trim }),
     ...(p.jumpCut && { jumpCut: p.jumpCut }),
-    words: p.words.map((w) => ({ text: w.text, start: r(w.start), end: r(w.end), ...(w.cue && { cue: true }) })),
+    words: p.words.map((w) => ({
+      text: w.text,
+      start: r(w.start),
+      end: r(w.end),
+      ...(w.cue && { cue: true }),
+      ...(typeof w.cut === "boolean" && { cut: w.cut }),
+      ...(typeof w.cutGap === "boolean" && { cutGap: w.cutGap }),
+    })),
     ...(p.translation && {
       translation: {
         lang: p.translation.lang,
@@ -377,11 +385,13 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
         start: w.start as number,
         end: w.end as number,
         ...(w.cue === true && { cue: true }),
+        ...(typeof w.cut === "boolean" && { cut: w.cut }),
+        ...(typeof w.cutGap === "boolean" && { cutGap: w.cutGap }),
       }));
   const words = readWords(d.words);
   const t = d.translation as Record<string, unknown> | undefined;
   const translation: Translation | undefined =
-    (t?.lang === "en" || t?.lang === "tr") && typeof t.source === "string"
+    typeof t?.lang === "string" && isMtLang(t.lang) && typeof t.source === "string"
       ? { lang: t.lang, source: t.source, words: readWords(t.words) }
       : undefined;
   const media = d.media as MediaInfo | null;
@@ -395,7 +405,12 @@ export function projectFromFile(text: string, defaults: CaptionSettings): Projec
     model: isModelId(d.model) ? d.model : DEFAULT_MODEL,
     imported: typeof d.imported === "string" ? d.imported : undefined,
     method: (d.method as DecodingMethod) ?? "beam-lm",
-    lang: d.lang === "en" || d.lang === "auto" ? d.lang : undefined,
+    lang:
+      d.lang === "auto"
+        ? "auto"
+        : SPEECH_LANGS.some((l) => l.code === d.lang && l.code !== "tr")
+          ? (d.lang as SpeechLang)
+          : undefined,
     detectedLang:
       d.lang === "auto" && typeof d.detectedLang === "string" && /^[a-z]{2,3}$/.test(d.detectedLang) ? d.detectedLang : undefined,
     music: d.music === true || undefined,

@@ -1,0 +1,164 @@
+# Harfiyen MCP
+
+Harfiyen'in motorlarını [MCP](https://modelcontextprotocol.io) sunucusu olarak çalıştırır: yazıya döküm, noktalama,
+çeviri, konuşmacı ayırma, boşluk kesme planı ve altyazılı video. Web uygulamasıyla aynı kod ve aynı modeller
+kullanılır (`../src`); ses ve video bilgisayardan çıkmaz.
+
+Oynatıcı ve canlı mikrofon burada yoktur. Altyazılı video, uygulamanın kendi video yazıcısıyla bilgisayardaki
+Chrome'da yazılır (cam stili, aura ve kinetik tipografi dahil, uygulamayla aynı çizilir); Chrome yoksa ffmpeg ve libass
+ile dokuz stil yazılır.
+
+## Kurulum
+
+Depo kökünde `npm install` ve `npm run models` (modeller `public/models` altına iner), sonra:
+
+```sh
+cd mcp && npm install
+```
+
+ffmpeg ve ffprobe PATH'te olmalı. Altyazılı video için Google Chrome kurulu olmalı (yolu `CHROME` ile verilebilir;
+puppeteer-core tarayıcı indirmez); Chrome yoksa video ffmpeg ile yazılır, cam, aura ve kinetik stiller çizilemez. Modeller `HARFIYEN_MODELS` ile başka bir klasörden de okunabilir.
+Modeller yoksa araçlar kullanıcıya sorulmasını söyleyen bir hata verir; kullanıcı kabul ederse `download_models` aracı modeli web uygulamasının model sunucusundan `~/.harfiyen-mcp/models` altına indirir (kabul edilmeden hiçbir şey inmez; adres `HARFIYEN_MODELS_URL` ile değişir, hedef `HARFIYEN_MODELS` ile). `status` eksik modelleri boyutlarıyla listeler.
+Transkriptler `~/.harfiyen-mcp/transcripts` altında saklanır (`HARFIYEN_MCP_HOME` ile değişir).
+
+Claude Code'a eklemek için:
+
+```sh
+claude mcp add harfiyen -- npx -y harfiyen-mcp
+```
+
+Codex'e eklemek için:
+
+```sh
+codex mcp add harfiyen -- npx -y harfiyen-mcp
+```
+
+Claude Desktop, Cursor ve diğer MCP istemcilerinde yapılandırmaya:
+
+```json
+{
+  "mcpServers": {
+    "harfiyen": { "command": "npx", "args": ["-y", "harfiyen-mcp"] }
+  }
+}
+```
+
+Depodan çalıştırmak için (geliştirme):
+
+```sh
+claude mcp add harfiyen -- node --import tsx /yol/harfiyen/mcp/src/server.ts
+```
+
+## Araçlar
+
+| Araç | Ne yapar |
+| --- | --- |
+| `status` | Diskteki modeller, ffmpeg, kayıtlı transkript sayısı |
+| `transcribe` | Ses ya da videoyu kelime zamanlı yazıya döker (Seda, Mihu, Duyu, Whisper), noktalama ve sayı yazımıyla; Whisper 31 dilde (`lang`), Seda, Mihu ve Duyu yalnızca Türkçe |
+| `import_subtitles` | SRT / VTT'yi transkript olarak açar |
+| `import_project`, `export_project`, `set_source` | Web uygulamasının `.harfiyen` projesini açar ve yazar; medya dosyası yeniden bağlanır |
+| `set_range` | Transkriptte kesit (bölüm) seçer ya da kaldırır (saniye ya da kelime sırasıyla); yeniden yazıya döküm yapmadan yalnızca o kesiti dışa aktarır, seslendirir ve videoya yazar |
+| `cut_words` | Metinden kurgu (kelime bazlı video kesme): seçilen kelime/saniye aralıklarını, dolgu seslerini (`fillers`) ve uzun duraksamaları (`silences`) keser (`mode: "cut"`), geri yükler (`mode: "restore"` / `"reset"`) ya da videonun farklı yerlerinden birden fazla önemli bölümü seçip geri kalanını keser (`mode: "keep_only"`). Kesimler `render_captions` ile tek geçişte birleştirilir |
+| `bleep_words` | Kelime bip'leme (sansür): seçilen kelimeleri sıraya, saniyeye ya da metne (`words`) göre bip'ler (`mode: "add"` / `"remove"` / `"reset"`). `render_captions` sesi bip'ler (ffmpeg ve Chrome yolunda), altyazıda `censor` ile yıldız, pikselleştirme, bant, gizle ya da açık gösterir; `export_transcript` çıktıları maskelenir |
+| `list_transcripts`, `get_transcript`, `export_transcript` | Okuma; satırlar, düz metin, SRT, VTT, kelime zamanlı JSON |
+| `rename_transcript`, `delete_transcript` | Transkripti yeniden adlandırma; transkripti, düzenleme geçmişini ve varsa seslendirmesini diskten silme |
+| `edit_words`, `find_replace`, `find_text` | Düzeltme ve arama; değişmeyen kelimelerin zamanı korunur. `find_text` eşleşmelerin yerini ve zamanını listeler |
+| `retime_words`, `shift_timing` | Bir satırın ya da kelimenin zamanı; bütün altyazıyı kaydırma |
+| `edit_translation` | Çeviriyi düzeltme (`find_replace` de `language: translation` ile çeviride çalışır) |
+| `assign_speaker`, `merge_speakers`, `rename_speaker` | Konuşmacıyı elle düzeltme: bir satırı başkasına verme, iki kişiyi birleştirme, adlandırma |
+| `punctuate`, `apply_numbers` | Metni düzelttikten sonra noktalamayı ve sayı yazımını yeniden uygulama |
+| `dub`, `export_dub`, `speak_text`, `preview_voice` | Seslendirme: transkripti yapay sesle okuyup satırları kendi zamanına yerleştirme, WAV'a yazma, dosyasız metin seslendirme, ses önizleme |
+| `undo`, `history` | Son 20 düzenlemeyi geri alma; kelimeler, zamanlar, çeviri ve konuşmacılar birlikte döner |
+| `align_text` | Doğru metni (şarkı sözü, konuşma metni) dökümün zamanlarına hizalar |
+| `translate` | tr, en, de, fr, es, ru arasında cümle cümle (`target`); İngilizce olmayan çiftler İngilizce üzerinden iki adımda |
+| `tell_speakers`, `rename_speaker` | Kim ne zaman konuşuyor; adlar SRT, VTT ve videoda görünür |
+| `plan_jump_cut` | Kesilecek sessizlikleri ve dolgu seslerini listeler |
+| `render_captions` | Altyazıyı videoya yazar: stil, yazı tipi, sesle vurgula, jump cut, 9:16 / 4:5 / 1:1 / 16:9 kadraj (`crop_position: orta/sol/sag/ust/alt`), seslendirme karıştırma ve seçilen görünümü `.harfiyen` projesine kaydetme (`save_to_project`) |
+| `job_status`, `cancel_job` | `background: true` ile başlatılan işlerin durumu ve çalışan işi (Chrome / ffmpeg süreciyle birlikte) durdurma |
+
+Uzun işler tek tek, sırayla çalışır (modeller belleği paylaşır) ve ilerleme bildirimi gönderir.
+
+## Sınırlar
+
+- Her şey işlemcide çalışır. Seda, Mihu ve Duyu hızlıdır; Whisper Turbo gerçek zamandan uzun sürebilir.
+- Altyazı stilleri web uygulamasındakinin yakın bir taklididir, birebir aynı görünmez.
+- Canlı mikrofon yok.
+
+## Chrome ile yazma
+
+`render_captions` videoyu varsayılan olarak uygulamanın kendi render worker'ıyla (`../src/worker/render.worker.ts`),
+görünmez bir Chrome'da yazar; çıktı uygulamanınkiyle aynı çizilir (cam stili, aura, kinetik tipografi, konuşmacı etiketi,
+yazı tipleri). Chrome yalnızca video yazmak için gerekir; yazıya döküm, çeviri, seslendirme ve konuşmacı işleri onsuz çalışır.
+
+- `engine: auto` (varsayılan): Chrome kuruluysa Chrome, değilse ffmpeg ve libass; cevapta ffmpeg'in uygulamadan farklı çizebileceği not edilir.
+- `engine: chrome`: Chrome şart, yoksa hata. `engine: ffmpeg`: Chrome'a hiç gitmez.
+- `preset: cam`, `text_background: glass`, `kinetic`, `kinetic_backdrop`, `picture: aura` / `blur`, `aura`, `aura_style`, `photo_file`, `logo_file` yalnızca Chrome ile çizilir; Chrome yoksa hata verir.
+- Stil, proje ve `preset` verilmediyse `sade` ile başlanır (ffmpeg yolundaki varsayılanla aynı). Projedeki ayarlar olduğu gibi kullanılır.
+
+Kadraj, seslendirme (`original_volume`), boşluk kesme, `hidden` (yazısız video), `crf`, `width` ve `font_file` iki yolda da çalışır. Kaynak video sayfaya
+belleğe değil tarayıcının özel diskine (OPFS) akıtılır, uzun videolar bellek tutmaz; seslendirme sesi ise bütün olarak
+belleğe alınır (saatlik bir videoda yaklaşık 1 GB). İlk kullanımda `../src` ve `render-host/` Vite ile derlenip
+`~/.harfiyen-mcp/render-host` altına konur (birkaç saniye); kod değişince kendiliğinden yeniden derlenir. Chrome'un yolu
+`CHROME` ile verilebilir. Chrome yolunda `size` uygulamanın boyudur (kısa kenarın
+payı), `bold` yoktur: kalınlık için `weight` (100–900, yalnızca değişken yazı tiplerinde), eğiklik için `italic`, harf aralığı için `tracking` (em) kullanılır. ffmpeg yolunda `italic` ve `tracking` çalışır, `weight` yalnızca kalın/normal olur. Google Chrome H.264 kodlayıcısını içerir; bazı Chromium sürümleri içermez.
+
+## Altyazı stilleri ve yazı tipleri
+
+`style`: `klasik`, `sade`, `karaoke`, `akis`, `odak`, `vurgu`, `pop`, `netles`, `tek-kelime`. `emphasis: true`
+çevresinden yüksek sesle söylenen kelimeleri büyük yazar (web uygulamasındaki "Sesle vurgula" ile aynı seçim).
+
+Web uygulamasının on yazı tipi `fonts/` altında TTF olarak gelir, kuruluma gerek kalmaz (`font: "Anton"` gibi).
+Kendi yazı tipin için `font_file` (TTF ya da OTF) verilir. `uppercase` Türkçe kurala uygun büyük harf yazar
+(i → İ); yalnızca büyük harfli Luckiest Guy, Bangers ve Bebas Neue'de otomatik açılır, yoksa "i" noktasız çıkar. Anton, Bebas Neue, Bangers ve Luckiest Guy tek kalınlıklı olduğundan kalın kapalı gelir (`bold`).
+
+## Uygulamayla proje alışverişi
+
+`import_project` uygulamada kaydettiğin `.harfiyen` dosyasını açar (kelimeler, çeviri, konuşmacılar, bölüm seçimi).
+Projede medya yoktur: dosyanın yanında projenin kayıtlı medya adı aranır, bulunamazsa `set_source` ile verilir.
+`export_project` transkripti uygulamanın açabileceği `.harfiyen` olarak yazar; medya varsa ses dalgası ve aura verisi
+de hesaplanıp eklenir. Uygulamanın altyazı stili, kadraj ve jump cut ayarları MCP'nin kullanmadığı alanlardır;
+olduğu gibi saklanır, projeyi geri yazınca kaybolmaz. Kanallar uygulamadaki gibi ortalanır, bu yüzden hesaplanan
+dalga formu uygulamanınkiyle neredeyse aynıdır.
+
+### Projenin stili ve kadrajı
+
+`render_captions` transkript bir projeden geldiyse (`import_project`) projenin görünümünü varsayılan alır; verdiğin
+parametreler üstüne yazar, `use_project: false` projeyi yok sayar.
+
+| Projede | Burada |
+| --- | --- |
+| Stil | klasik, karaoke, akış, odak, vurgu, pop, netleş, sade, tek kelime birebir; dolgu → karaoke; cam → klasik (not düşülür) |
+| Yazı tipi, boyut, konum, renkler, büyük harf | aynen (boyut karenin kısa kenarına göre, uygulamadaki gibi) |
+| Zemin (kutu / kontur / gölge) | aynen; cam → kutu |
+| Sesle vurgula, konuşmacı adı, gizli altyazı | aynen |
+| Kadraj | kırpma kutusu (köşe ve boyutuyla), ya da sığdır ve siyah / bulanık zemin |
+| Boşluk kesme | açıksa aynı ayarlarla |
+
+Chrome varsa cam stili, kinetik tipografi ve gizli ya da bulanık görüntü projedeki gibi çizilir. Projede dosya olarak
+saklanmayanlar (özel yüklenmiş yazı tipi, arka plan fotoğrafı, logo) `font_file`, `photo_file` ya da `logo_file`
+verilmediyse cevapta "Not:" olarak bildirilir; verildiyse projenin köşe/boyut/saydamlık ve fotoğraf bulanıklığı ayarları
+varsayılan alınır. Chrome yoksa ayrıca cam stili, kinetik tipografi ve gizli ya da bulanık görüntü not edilir.
+Style değiştirirsen projenin o stile ait boyutu, konumu ve zemini kullanılmaz (pop'un boyutu sade'de anlamsız olurdu).
+
+## Seslendirme
+
+Web uygulamasının dört sesi CPU'da çalışır: EMA Lightning (varsayılan), Antalia Mini, Ahenk Cep ve Supertonic 3
+(Türkçe, İngilizce, Almanca, Fransızca, İspanyolca ve Rusça; 10 ses). Hızları yaklaşık olarak gerçek zamanın EMA'da 29, Antalia'da 25, Ahenk'te 16, Supertonic'te
+5 katıdır. Türkçe dışındaki diller her zaman Supertonic'tir.
+
+- `dub`: transkripti ya da çevirisini (`language: translation`) okur. Her satır kendi zamanında başlar; yerine sığmayan
+  satır en fazla 1,35 kat (Supertonic'te 1,15) hızlı okunur, taşan son satırlar öncekilerin sessizliğine kayar, hâlâ
+  sığmayan için uyarı verilir. Başka dilde voice-over (tr, en, de, fr, es, ru): `translate` (`target`), sonra `dub` ile `language: translation`.
+- `speaker_voices` (`dub`): konuşmacıları `tell_speakers` ile ayırdıktan sonra her birine ayrı ses verilir, örneğin
+  `[{ speaker: "Konuşmacı 1", style: "M3" }, { speaker: "2", style: "F1" }]`. Konuşmacı adıyla ya da numarasıyla (1'den)
+  seçilir; verilmeyen alan genel ses ayarından gelir, listede olmayan konuşmacı genel sesle okunur. Bir satırı, ilk
+  kelimesini söyleyen konuşmacı okur. Supertonic'te sesler M1–M5 ve F1–F5; diğer modellerde tek ses vardır, orada `pitch` ve
+  `seed` ayırır. Birden çok model kullanılırsa hepsi bellekte tutulur.
+- `render_captions` seslendirmeyi varsa karıştırır (`original_volume` 0–0,5, uygulamadaki gibi varsayılan 0: dosyanın
+  kendi sesi duyulmaz). Seslendirmeyle aynı dildeki altyazı sesin zamanını izler (`follow_dub`); jump cut okunan
+  cümlelerin altını kesmez. Metin ya da çeviri `dub`dan sonra değişirse seslendirme "eski" sayılır, altyazı sesi
+  izlemez ve cevapta not düşülür.
+- `speak_text`: dosya olmadan metin okur; kelimeler sesin zamanıyla bir transkripte yerleşir ve ses o transkriptin
+  medyası olur. `render_captions` bundan koyu zeminli, seslendirmeli, altyazılı bir video yapar.
+- Yerleştirme kuralları uygulamanın `tts.worker.ts` ve `useDubber.ts` dosyalarından taşındı (`src/dub.ts`); iki yerde
+  aynı sayılar tutulmalı. Uygulamanın seslendirmesi tarayıcıda saklanır, `.harfiyen` dosyasında yoktur; MCP'ye alınamaz.

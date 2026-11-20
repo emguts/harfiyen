@@ -7,7 +7,10 @@ const LINKS = [
   { label: "harfiyen.dev", href: "https://harfiyen.dev" },
   { label: "Kaynak kod", href: REPO },
   { label: "Sürüm notları", href: `${REPO}/blob/main/CHANGELOG.md` },
+  { label: "MCP sunucusu", href: "https://harfiyen.dev/mcp/" },
   { label: "Hata bildir", href: `${REPO}/issues` },
+  { label: "Destek", href: "https://harfiyen.dev/support/" },
+  { label: "Gizlilik", href: "https://harfiyen.dev/privacy/" },
 ];
 
 export function About() {
@@ -27,8 +30,8 @@ export function About() {
       <div className="grid gap-1.5">
         <span className="text-[12px] text-fg-3 tabular-nums">Sürüm {__APP_VERSION__}</span>
         <p className="m-0 max-w-[460px] text-[13px] leading-normal text-fg-2">
-          Türkçe ses ve videoyu tarayıcında yazıya dök, altyazı ekle, dışa aktar. Her şey senin bilgisayarında
-          çalışır; dosyan hiçbir yere gönderilmez.
+          Videoyu tarayıcında yazıya dök, çevir, seslendir, altyazı ekle, dışa aktar. Türkçe ve İngilizce desteklenir.
+          Her şey senin bilgisayarında çalışır; dosyan hiçbir yere gönderilmez.
         </p>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1.5">

@@ -1,11 +1,17 @@
 import type { LangChoice } from "../engine";
-import { choiceName, LANG_NAMES } from "../lib/lang";
+import { MAIN_LANGS, SPEECH_LANGS } from "../engine/languages";
+import { langName } from "../lib/lang";
 import { modelKnows, type ModelInfo } from "../models";
+import { OPT_NOTE, OPT_TITLE, Select, type Option } from "./Select";
 
-const LANGS: LangChoice[] = ["tr", "en", "auto"];
-
-const BTN =
-  "h-6 rounded-[5px] border-0 bg-transparent px-2.5 text-[12px] font-medium text-fg-2 hover:not-disabled:not-aria-pressed:text-fg aria-pressed:bg-raised aria-pressed:text-fg-strong aria-pressed:shadow-[0_1px_3px_var(--shadow-pop)] disabled:opacity-45";
+const OPTIONS: Option<LangChoice>[] = [
+  { value: "auto", label: "Otomatik" },
+  ...SPEECH_LANGS.map((l) => ({
+    value: l.code,
+    label: l.name,
+    group: MAIN_LANGS.includes(l.code) ? "Ana diller" : "Diğer diller",
+  })),
+];
 
 /** The language spoken in the media, chosen before transcribing. */
 export function VideoLang({
@@ -28,26 +34,25 @@ export function VideoLang({
   disabled?: boolean;
 }) {
   return (
-    <span className="flex flex-wrap items-center gap-2.5 text-[12px] text-fg-2">
-      Videodaki dil
-      <span className="flex gap-0.5 rounded-md border border-line-soft bg-well p-0.5" role="group" aria-label="Videodaki dil">
-        {LANGS.map((l) => (
-          <button
-            key={l}
-            type="button"
-            className={BTN}
-            aria-pressed={value === l}
-            disabled={disabled}
-            onClick={() => onChange(l)}
-            title={
-              l === "auto"
-                ? "Whisper her 30 saniyelik parçanın dilini kendisi bulur; iki dilli bir şarkı da olur. Çeviri, seslendirme ve rakamlar yalnızca Türkçe ya da İngilizce çıkarsa kullanılır."
-                : undefined
-            }
-          >
-            {choiceName(l)}
-          </button>
-        ))}
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-fg-2">
+      <span className="flex min-w-[200px] flex-1 items-center gap-2.5">
+        <span className="flex-none">Videodaki dil</span>
+        <Select<LangChoice>
+          label="Videodaki dil"
+          value={value}
+          options={OPTIONS}
+          onChange={onChange}
+          disabled={disabled}
+          render={(o, inList) => (
+            <span className="flex min-w-0 items-baseline justify-between gap-3">
+              <span className={OPT_TITLE}>{o.label}</span>
+              {inList && o.value === "auto" && <span className={`${OPT_NOTE} flex-none`}>dili bulur</span>}
+              {inList && o.value !== "auto" && !MAIN_LANGS.includes(o.value) && (
+                <span className={`${OPT_NOTE} flex-none`}>deneysel</span>
+              )}
+            </span>
+          )}
+        />
       </span>
       {onMusic && (
         <label className="flex items-center gap-1.5" title="Whisper'da ses etkinliği algılayıcı kapanır; şarkı sözleri atılmaz">
@@ -64,14 +69,14 @@ export function VideoLang({
           Vokali ayır
         </label>
       )}
-    </span>
+    </div>
   );
 }
 
 /** Why the chosen model cannot transcribe `lang`, if it cannot; `gpuReason`: why Whisper cannot run here. */
 export function langProblem(lang: LangChoice, model: ModelInfo, gpuReason: string | null) {
   if (modelKnows(model, lang)) return null;
-  const what = lang === "auto" ? "Dili kendiliğinden bulmak" : `${LANG_NAMES[lang]} yazıya dökmek`;
+  const what = lang === "auto" ? "Dili kendiliğinden bulmak" : `${langName(lang)} yazıya dökmek`;
   if (gpuReason) return `${what} yalnızca Whisper ile olur; Whisper bu cihazda çalışmıyor. ${gpuReason}`;
   return `${model.name} yalnızca Türkçe anlar; ${what} için üst çubuktan Whisper Turbo ya da Whisper Turbo Hafif'i seç.`;
 }

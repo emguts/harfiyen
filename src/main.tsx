@@ -4,7 +4,7 @@ import "./lib/theme";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { moveCacheToDisk } from "./worker/modelStore";
+import { desktop, moveCacheToDisk } from "./worker/modelStore";
 import "./index.css";
 
 // The desktop app's models moved from the browser cache to its own folder.
@@ -15,3 +15,18 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </StrictMode>,
 );
+
+if (!desktop && import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`)
+      .then((reg) => {
+        // An installed app resumes from the background without navigating, which
+        // is the only time the browser checks for a new worker on its own.
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") reg.update().catch(() => {});
+        });
+      })
+      .catch(() => {});
+  });
+}
